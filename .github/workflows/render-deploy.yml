@@ -1,0 +1,28 @@
+# main'e her gönderimde Render'ı yeniden yayınlatır.
+# Render'ın kendi GitHub bildirimi çalışmadığında da site güncel kalır.
+# Kurulum: GitHub → Settings → Secrets and variables → Actions → New repository secret
+#   Name: RENDER_DEPLOY_HOOK   Value: Render → Settings → Deploy Hook adresi
+name: Render'a yayınla
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Testleri çalıştır
+        uses: actions/checkout@v4
+      - run: python -m unittest discover -s tests
+      - name: Render deploy hook'unu çağır
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK" ]; then
+            echo "RENDER_DEPLOY_HOOK gizli anahtarı tanımlı değil; yayın atlandı."
+            exit 0
+          fi
+          curl -fsS -X POST "$RENDER_DEPLOY_HOOK" > /dev/null
+          echo "Render yayını başlatıldı."
