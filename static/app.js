@@ -11,6 +11,9 @@ let STATE = {
   sortMode: 'quant', // 'quant' | 'agf' | 'no'
   altiliSelections: {},
   altiliGroupIdx: 0,
+  extras: {},      // at_id -> safkan karnesi (hafif): 1-5 yüzdeleri, sınıf karnesi, HP seyri
+  idman: {},       // kosu_kodu -> koşunun idman (galop/sprint/kenter) tablosu
+  pending: {},     // devam eden istekler (aynı veri iki kez istenmesin)
   weights: null // null = sunucu varsayılanı; sunucu tek doğruluk kaynağıdır
 };
 
@@ -441,6 +444,9 @@ function renderCurrentRace() {
           </div>
         </div>
 
+        <!-- Derece Karnesi (1.-5.'lik %) & Son İdman -->
+        <div id="hx-${h.no}" class="mt-2 text-[10px] bg-[#F6F3EC] rounded-lg px-2.5 py-1.5 border border-[#E2DDD2]">${horseExtrasHTML(race, h)}</div>
+
         <!-- Komiser / Handikapçı Notu -->
         <div class="mt-2 text-[11px] text-[#44403C] bg-[#FAF8F3] rounded-lg px-2.5 py-1.5 border border-[#E2DDD2] flex items-start gap-1.5">
           <span class="text-[#8C5A3C] font-bold">✒️</span>
@@ -451,6 +457,137 @@ function renderCurrentRace() {
   }).join('');
 
   renderPaceAndSimulationView(race);
+  loadRaceExtras(race);
+}
+
+// ------------------------------------------------------------------
+// SAFKAN KARNESİ (1.-5.'lik yüzdeleri, HP) ve İDMAN — koşu açıldığında arka planda yüklenir
+// ------------------------------------------------------------------
+function fetchJSON(url) {
+  if (STATE.pending[url]) return STATE.pending[url];
+  const p = fetch(url).then(r => r.json()).then(json => {
+    if (!json.ok) throw new Error(json.error || 'Veri alınamadı');
+    return deepEscape(json.data);
+  }).finally(() => { delete STATE.pending[url]; });
+  STATE.pending[url] = p;
+  return p;
+}
+
+function ensureRaceIdman(race) {
+  if (!race.kosu_kodu || !race.idman_at_kodu) return Promise.resolve(null);
+  if (STATE.idman[race.kosu_kodu]) return Promise.resolve(STATE.idman[race.kosu_kodu]);
+  const date = encodeURIComponent(STATE.program.date || '');
+  return fetchJSON(`/api/race_idman?kosu=${race.kosu_kodu}&at=${race.idman_at_kodu}&date=${date}`)
+    .then(d => { STATE.idman[race.kosu_kodu] = d; return d; })
+    .catch(() => { STATE.idman[race.kosu_kodu] = { rows: [], failed: true }; return STATE.idman[race.kosu_kodu]; });
+}
+
+function idmanForHorse(race, h) {
+  const d = race.kosu_kodu ? STATE.idman[race.kosu_kodu] : null;
+  if (!d) return undefined;               // henüz yüklenmedi
+  return (d.rows || []).find(r => r.no === h.no) || null;  // null = idmanı yok
+}
+
+function loadRaceExtras(race) {
+  const raceIdx = STATE.currentRaceIndex;
+  ensureRaceIdman(race).then(() => {
+    if (STATE.currentRaceIndex !== raceIdx) return;
+    race.horses.forEach(h => paintHorseExtras(race, h));
+  });
+  const queue = race.horses.filter(h => h.at_id && !STATE.extras[h.at_id]);
+  race.horses.filter(h => !h.at_id || STATE.extras[h.at_id]).forEach(h => paintHorseExtras(race, h));
+  let active = 0;
+  const next = () => {
+    if (STATE.currentRaceIndex !== raceIdx) return;  // başka koşuya geçildi
+    while (active < 3 && queue.length) {
+      const h = queue.shift();
+      active++;
+      const isArab = (race.age_group || '').toLowerCase().includes('arap') ? '1' : '0';
+      fetchJSON(`/api/horse_history?lite=1&at_id=${encodeURIComponent(h.at_id)}&weight=${h.weight}&dist=${race.distance_m}&arab=${isArab}`)
+        .then(d => { STATE.extras[h.at_id] = d; })
+        .catch(() => { STATE.extras[h.at_id] = { failed: true }; })
+        .finally(() => {
+          active--;
+          if (STATE.currentRaceIndex === raceIdx) paintHorseExtras(race, h);
+          next();
+        });
+    }
+  };
+  next();
+}
+
+function paintHorseExtras(race, h) {
+  const el = document.getElementById(`hx-${h.no}`);
+  if (el) el.innerHTML = horseExtrasHTML(race, h);
+}
+
+function pctPill(label, val, strong) {
+  return `<span class="${strong ? 'text-[#0F291E] font-extrabold' : 'text-[#44403C] font-bold'}">${label} <span class="mono">%${val}</span></span>`;
+}
+
+function hpTrendHTML(hp) {
+  if (!hp || hp.current == null) return '';
+  const ch = hp.change_5 || 0;
+  const arrow = ch > 0 ? `<span class="text-[#0F291E]">▲${ch}</span>` : (ch < 0 ? `<span class="text-[#7A1C1C]">▼${Math.abs(ch)}</span>` : '<span class="text-[#78716C]">=</span>');
+  return `<span class="mono font-bold text-[#18181B]" title="Son 5 koşudaki HP değişimi">HP ${hp.current} ${arrow}</span>`;
+}
+
+function idmanDurumBadge(durum) {
+  if (!durum) return '';
+  const u = durum.toLocaleUpperCase('tr-TR');
+  const cls = u.includes('ÇOK RAHAT') ? 'bg-[#0F291E] text-[#E6C762]'
+            : u.includes('RAHAT') ? 'bg-[#1B4332]/15 text-[#0F291E] border border-[#1B4332]/30'
+            : u.includes('ÇALIŞ') ? 'bg-[#F7F1E3] text-[#8C5A3C] border border-[#A67C37]/40'
+            : 'bg-[#7A1C1C]/10 text-[#7A1C1C]';
+  return `<span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold ${cls}">${durum}</span>`;
+}
+
+function idmanSplitsText(row) {
+  return (row.splits || []).map(x => `<span class="mono">${x.dist}m ${x.time}</span>`).join(' • ');
+}
+
+function horseExtrasHTML(race, h) {
+  const ex = h.at_id ? STATE.extras[h.at_id] : null;
+  let karne;
+  if (!h.at_id) {
+    karne = '<span class="text-[#78716C]">Karne: TJK kimliği yok</span>';
+  } else if (!ex) {
+    karne = '<span class="text-[#78716C]">⏳ Derece karnesi yükleniyor…</span>';
+  } else if (ex.failed || !ex.career_stats) {
+    karne = '<span class="text-[#78716C]">Karne alınamadı</span>';
+  } else {
+    const c = ex.career_stats;
+    karne = c.starts ? `
+      <span class="text-[9px] font-extrabold text-[#8C5A3C] uppercase">Karne</span>
+      <span class="mono font-bold text-[#18181B]">${c.starts}K</span>
+      ${pctPill('1.', c.win_pct, true)} ${pctPill('2.', c.second_pct)} ${pctPill('3.', c.third_pct)}
+      ${pctPill('İlk 3', c.top3_pct, true)} ${pctPill('İlk 5', c.top5_pct)}
+      ${hpTrendHTML(ex.hp_history)}
+    ` : '<span class="text-[#78716C]">İlk koşusu — karne yok</span>';
+  }
+
+  const idm = idmanForHorse(race, h);
+  let idman;
+  if (!race.kosu_kodu) {
+    idman = '';
+  } else if (idm === undefined) {
+    idman = '<span class="text-[#78716C]">⏳ İdman bilgisi yükleniyor…</span>';
+  } else if (idm === null) {
+    idman = '<span class="text-[#78716C]">Bu koşu için kayıtlı idmanı yok</span>';
+  } else {
+    const ago = idm.days_before != null ? ` <span class="text-[#57534E]">(${idm.days_before} gün önce)</span>` : '';
+    const fastest = idm.son_400_rank === 1 ? '<span class="px-1.5 py-0.5 rounded bg-[#7A1C1C] text-white text-[9px] font-bold">EN HIZLI SON 400</span>' : '';
+    idman = `
+      <span class="text-[9px] font-extrabold text-[#0F291E] uppercase">İdman</span>
+      <span class="font-bold text-[#18181B]">${idm.tarih ? idm.tarih.slice(0, 5) : ''}${ago}</span>
+      <span class="font-bold text-[#8C5A3C]">${idm.tur || ''}</span>
+      ${idmanSplitsText(idm)} ${idmanDurumBadge(idm.galop_durumu)} ${fastest}
+    `;
+  }
+  return `
+    <div class="flex items-center gap-x-2 gap-y-0.5 flex-wrap">${karne}</div>
+    ${idman ? `<div class="flex items-center gap-x-2 gap-y-0.5 flex-wrap mt-1 pt-1 border-t border-[#E8E3D8]">${idman}</div>` : ''}
+  `;
 }
 
 function renderPaceAndSimulationView(race) {
@@ -852,6 +989,26 @@ function openHorseModal(horseNo) {
       </ul>
     </div>
 
+    <!-- DERECE KARNESİ: YARIŞ BAŞINA 1.-2.-3.-4.-5.'LİK -->
+    <div id="careerKarneSection" class="bg-white border border-[#D8D2C5] rounded-xl p-3.5 mb-3.5">
+      <div class="text-xs text-[#57534E] py-2 text-center">⏳ Derece karnesi (1.–5.'lik yüzdeleri) yükleniyor...</div>
+    </div>
+
+    <!-- SON İDMAN: GALOP / SPRINT / KENTER -->
+    <div id="idmanSection" class="bg-white border border-[#D8D2C5] rounded-xl p-3.5 mb-3.5">
+      <div class="text-xs text-[#57534E] py-2 text-center">⏳ Son idman bilgisi yükleniyor...</div>
+    </div>
+
+    <!-- KOŞU SINIFI KARNESİ: GRUP / KV / ŞARTLI / HANDİKAP -->
+    <div id="classKarneSection" class="bg-white border border-[#D8D2C5] rounded-xl p-3.5 mb-3.5">
+      <div class="text-xs text-[#57534E] py-2 text-center">⏳ Koşu sınıfı karnesi yükleniyor...</div>
+    </div>
+
+    <!-- HANDİKAP PUANI SEYRİ -->
+    <div id="hpHistorySection" class="bg-white border border-[#D8D2C5] rounded-xl p-3.5 mb-3.5">
+      <div class="text-xs text-[#57534E] py-2 text-center">⏳ Handikap puanı seyri yükleniyor...</div>
+    </div>
+
     <!-- 1. PİST SEVGİSİ (KUM vs ÇİM vs SENTETİK) & MESAFE KARNESİ -->
     <div id="surfaceAffinitySection" class="bg-white border border-[#D8D2C5] rounded-xl p-3.5 mb-3.5">
       <div class="text-xs text-[#57534E] py-2 text-center">⏳ Çim / Kum / Sentetik pist karnesi ve mesafe istatistikleri yükleniyor...</div>
@@ -890,11 +1047,20 @@ function openHorseModal(horseNo) {
   const showHistoryError = (msg) => {
     if (token !== HORSE_MODAL_TOKEN) return;
     const errHTML = `<div class="text-xs text-[#7A1C1C] py-2 text-center">⚠️ ${esc(msg)}</div>`;
-    ['surfaceAffinitySection', 'pedigreeTreeSection', 'bankomatHistoryTable'].forEach(id => {
+    ['surfaceAffinitySection', 'pedigreeTreeSection', 'bankomatHistoryTable', 'careerKarneSection', 'classKarneSection', 'hpHistorySection'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.innerHTML = errHTML;
     });
   };
+
+  // Son idman (koşu idman tablosundan)
+  const paintIdman = () => {
+    if (token !== HORSE_MODAL_TOKEN) return;
+    const el = document.getElementById('idmanSection');
+    if (el) el.innerHTML = modalIdmanHTML(race, h);
+  };
+  paintIdman();
+  ensureRaceIdman(race).then(paintIdman);
 
   if (!h.at_id) {
     showHistoryError('Bu safkanın TJK kimliği bültende bulunamadı; geçmiş koşu, soyağacı ve pist karnesi çekilemedi.');
@@ -914,6 +1080,14 @@ function openHorseModal(horseNo) {
         }
 
         const d = deepEscape(json.data);
+        STATE.extras[h.at_id] = d;
+        paintHorseExtras(race, h);
+        const ck = document.getElementById('careerKarneSection');
+        if (ck) ck.innerHTML = careerKarneHTML(d);
+        const cl = document.getElementById('classKarneSection');
+        if (cl) cl.innerHTML = classKarneHTML(d);
+        const hpEl = document.getElementById('hpHistorySection');
+        if (hpEl) hpEl.innerHTML = hpHistoryHTML(d);
 
         // A) Surface Affinity (Kum vs Çim vs Sentetik)
         if (surfEl) {
@@ -950,7 +1124,7 @@ function openHorseModal(horseNo) {
                         <span>${sf.icon}</span>
                         <strong class="text-[#18181B] uppercase">${sf.key} PİST</strong>
                         <span class="px-1.5 py-0.5 rounded border text-[10px] font-bold mono ${sf.badgeCls}">
-                          ${st.starts} Koşu: ${st.w1}-${st.w2}-${st.w3}-${st.w4}
+                          ${st.starts} Koşu: ${st.w1}-${st.w2}-${st.w3}-${st.w4}-${st.w5 || 0}
                         </span>
                       </div>
                       <span class="text-[11px] font-extrabold text-[#0F291E] mono">Uyum: ${st.affinity_score}/100</span>
@@ -1122,6 +1296,7 @@ function openHorseModal(horseNo) {
                   <th class="pb-1.5 px-1">Şart</th>
                   <th class="pb-1.5 px-1">Pist</th>
                   <th class="pb-1.5 px-1">P.D</th>
+                  <th class="pb-1.5 px-1 text-right">HP</th>
                   <th class="pb-1.5 px-1 text-center">Sıra</th>
                   <th class="pb-1.5 px-1 text-right">Perf.</th>
                   <th class="pb-1.5 px-1 text-right">Zorluk</th>
@@ -1135,9 +1310,10 @@ function openHorseModal(horseNo) {
                 ${rows.map(r => `
                   <tr class="hover:bg-[#FAF8F3]">
                     <td class="py-1.5 px-1 text-[#18181B] font-sans"><strong>${r.tarih.slice(0,5)}</strong> <span class="text-[10px] text-[#57534E]">${r.sehir}</span></td>
-                    <td class="py-1.5 px-1 text-[#44403C] font-sans truncate max-w-[75px]">${r.sart}</td>
+                    <td class="py-1.5 px-1 text-[#44403C] font-sans truncate max-w-[90px]" title="${r.sart}">${r.sart}</td>
                     <td class="py-1.5 px-1 text-[#18181B] font-semibold">${r.pist}</td>
-                    <td class="py-1.5 px-1 text-[#8C5A3C] font-bold">${r.pd}</td>
+                    <td class="py-1.5 px-1 text-[#8C5A3C] font-bold" title="${r.pd_label || ''}${r.penetrometre ? ' • Penetrometre ' + r.penetrometre : ''}">${r.pd}${r.penetrometre ? `<span class="text-[9px] text-[#78716C]"> ${r.penetrometre}</span>` : ''}</td>
+                    <td class="py-1.5 px-1 text-right text-[#18181B] font-bold">${r.hp}</td>
                     <td class="py-1.5 px-1 text-center font-extrabold ${r.sira <= 3 ? 'text-[#0F291E]' : 'text-[#57534E]'}">${r.sira}</td>
                     <td class="py-1.5 px-1 text-right font-bold text-[#18181B]">${r.performans.toFixed(2)}</td>
                     <td class="py-1.5 px-1 text-right text-[#57534E]">${r.zorluk.toFixed(1)}</td>
@@ -1154,6 +1330,175 @@ function openHorseModal(horseNo) {
       })
       .catch(err => showHistoryError(`TJK bağlantı hatası: ${err.message}`));
   }
+}
+
+function careerKarneHTML(d) {
+  const ss = d.surface_summary || {};
+  const c = d.career_stats;
+  if (!c || !c.starts) {
+    return `<h4 class="serif-title text-base font-bold text-[#0F291E] uppercase mb-1">🏅 Derece Karnesi</h4><div class="text-xs text-[#78716C]">Henüz koşu kaydı yok.</div>`;
+  }
+  const rows = [
+    ['Kariyer', c, true],
+    ['Son 10 Koşu', c.last10, false],
+    ['Çim', ss['Çim'], false],
+    ['Kum', ss['Kum'], false],
+    ['Sentetik', ss['Sentetik'], false],
+  ].filter(r => r[1] && r[1].starts);
+  const cell = (v, strong) => `<td class="py-1.5 px-1 text-right ${strong ? 'font-extrabold text-[#0F291E]' : 'text-[#44403C] font-semibold'}">%${v}</td>`;
+  return `
+    <div class="flex items-center justify-between mb-2">
+      <h4 class="serif-title text-base font-bold text-[#0F291E] uppercase">🏅 Derece Karnesi (Yarış Başına)</h4>
+      <span class="text-[10px] text-[#57534E] font-bold mono">${c.starts} Koşu: ${c.w1}-${c.w2}-${c.w3}-${c.w4}-${c.w5}</span>
+    </div>
+    <div class="grid grid-cols-5 gap-1.5 mb-3 text-center">
+      ${[['1.\'lik', c.win_pct, 'bg-[#0F291E] text-[#F9F6F0]'], ['2.\'lik', c.second_pct, 'bg-white border border-[#D8D2C5]'], ['3.\'lük', c.third_pct, 'bg-white border border-[#D8D2C5]'],
+         ['İlk 3', c.top3_pct, 'bg-[#F7F1E3] border border-[#A67C37]'], ['İlk 5', c.top5_pct, 'bg-[#F7F1E3] border border-[#A67C37]']].map(([l, v, cls]) => `
+        <div class="${cls} rounded-lg p-1.5">
+          <div class="text-[9px] font-bold ${cls.includes('0F291E') ? 'text-[#D4AF37]' : 'text-[#57534E]'}">${l}</div>
+          <div class="text-sm font-extrabold mono">%${v}</div>
+        </div>`).join('')}
+    </div>
+    <div class="overflow-x-auto -mx-1">
+      <table class="w-full text-[11px] whitespace-nowrap mono">
+        <thead><tr class="text-[9px] text-[#57534E] border-b border-[#D8D2C5] uppercase font-sans">
+          <th class="pb-1 px-1 text-left">Kırılım</th><th class="pb-1 px-1 text-right">K</th><th class="pb-1 px-1 text-right">1-2-3-4-5</th>
+          <th class="pb-1 px-1 text-right">1.%</th><th class="pb-1 px-1 text-right">2.%</th><th class="pb-1 px-1 text-right">3.%</th>
+          <th class="pb-1 px-1 text-right">İlk 3</th><th class="pb-1 px-1 text-right">İlk 5</th>
+        </tr></thead>
+        <tbody class="divide-y divide-[#E8E3D8]">
+          ${rows.map(([label, b, bold]) => `
+            <tr>
+              <td class="py-1.5 px-1 font-sans ${bold ? 'font-extrabold text-[#0F291E]' : 'font-bold text-[#18181B]'}">${label}</td>
+              <td class="py-1.5 px-1 text-right">${b.starts}</td>
+              <td class="py-1.5 px-1 text-right text-[#57534E]">${b.w1}-${b.w2}-${b.w3}-${b.w4}-${b.w5}</td>
+              ${cell(b.win_pct, true)}${cell(b.second_pct)}${cell(b.third_pct)}${cell(b.top3_pct, true)}${cell(b.top5_pct)}
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function classKarneHTML(d) {
+  const rows = d.class_breakdown || [];
+  if (!rows.length) {
+    return `<h4 class="serif-title text-base font-bold text-[#0F291E] uppercase mb-1">🏛️ Koşu Sınıfı Karnesi</h4><div class="text-xs text-[#78716C]">Henüz koşu kaydı yok.</div>`;
+  }
+  const tone = key => key.startsWith('grup') ? 'text-[#7A1C1C]' : key === 'kv' ? 'text-[#8C5A3C]' : key.startsWith('sartli') ? 'text-[#0F291E]' : key.startsWith('handikap') ? 'text-[#1B4332]' : 'text-[#57534E]';
+  return `
+    <div class="mb-2">
+      <h4 class="serif-title text-base font-bold text-[#0F291E] uppercase">🏛️ Koşu Sınıfı Karnesi</h4>
+      <p class="text-[10px] text-[#57534E]">Grup, Kısa Vade, Şartlı 1–5 ve Handikap koşularında yarış başına derece başarısı (tüm kariyer)</p>
+    </div>
+    <div class="overflow-x-auto -mx-1">
+      <table class="w-full text-[11px] whitespace-nowrap mono">
+        <thead><tr class="text-[9px] text-[#57534E] border-b border-[#D8D2C5] uppercase font-sans">
+          <th class="pb-1 px-1 text-left">Sınıf</th><th class="pb-1 px-1 text-right">K</th><th class="pb-1 px-1 text-right">1-2-3</th>
+          <th class="pb-1 px-1 text-right">1.%</th><th class="pb-1 px-1 text-right">İlk 3</th><th class="pb-1 px-1 text-right">İlk 5</th>
+          <th class="pb-1 px-1 text-right">Ort.S</th><th class="pb-1 px-1 text-right">En İyi</th>
+        </tr></thead>
+        <tbody class="divide-y divide-[#E8E3D8]">
+          ${rows.map(b => `
+            <tr>
+              <td class="py-1.5 px-1 font-sans font-extrabold ${tone(b.key)}">${b.label}</td>
+              <td class="py-1.5 px-1 text-right">${b.starts}</td>
+              <td class="py-1.5 px-1 text-right text-[#57534E]">${b.w1}-${b.w2}-${b.w3}</td>
+              <td class="py-1.5 px-1 text-right font-bold text-[#0F291E]">%${b.win_pct}</td>
+              <td class="py-1.5 px-1 text-right font-extrabold text-[#0F291E]">%${b.top3_pct}</td>
+              <td class="py-1.5 px-1 text-right text-[#44403C]">%${b.top5_pct}</td>
+              <td class="py-1.5 px-1 text-right text-[#57534E]">${b.avg_pos ?? '-'}</td>
+              <td class="py-1.5 px-1 text-right font-bold ${b.best_pos === 1 ? 'text-[#7A1C1C]' : 'text-[#18181B]'}">${b.best_pos ?? '-'}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function hpHistoryHTML(d) {
+  const hp = d.hp_history;
+  if (!hp || !hp.points || !hp.points.length) {
+    return `<h4 class="serif-title text-base font-bold text-[#0F291E] uppercase mb-1">📈 Handikap Puanı Seyri</h4><div class="text-xs text-[#78716C]">Handikap puanı kaydı yok.</div>`;
+  }
+  const pts = [...hp.points].reverse(); // eskiden yeniye
+  const lo = Math.max(0, (hp.min || 0) - 4), hi = (hp.max || 1) + 2;
+  const ch = hp.change_5 || 0;
+  return `
+    <div class="flex items-center justify-between mb-2">
+      <h4 class="serif-title text-base font-bold text-[#0F291E] uppercase">📈 Handikap Puanı Seyri</h4>
+      <span class="text-[10px] font-bold mono text-[#57534E]">Güncel <strong class="text-[#0F291E]">${hp.current}</strong> • En Yüksek ${hp.max} • En Düşük ${hp.min} •
+        <span class="${ch > 0 ? 'text-[#0F291E]' : ch < 0 ? 'text-[#7A1C1C]' : ''}">${ch > 0 ? '▲' : ch < 0 ? '▼' : '='}${Math.abs(ch)} (son 5)</span></span>
+    </div>
+    <div class="flex items-end gap-1 h-24 px-1 border-b border-[#D8D2C5]">
+      ${pts.map((p, i) => {
+        const hgt = Math.round(((p.hp - lo) / Math.max(1, hi - lo)) * 100);
+        const last = i === pts.length - 1;
+        return `
+          <div class="flex-1 flex flex-col items-center justify-end h-full" title="${p.tarih} • ${p.kcins} • ${p.sira ? p.sira + '.' : 'derecesiz'}">
+            <span class="text-[9px] mono font-bold ${last ? 'text-[#0F291E]' : 'text-[#57534E]'}">${p.hp}</span>
+            <div class="w-full rounded-t ${last ? 'bg-[#0F291E]' : (p.sira && p.sira <= 3 ? 'bg-[#A67C37]' : 'bg-[#C8C1B2]')}" style="height:${Math.max(6, hgt)}%"></div>
+          </div>`;
+      }).join('')}
+    </div>
+    <div class="flex gap-1 px-1 mt-1">
+      ${pts.map(p => `<div class="flex-1 text-center text-[8px] text-[#78716C] mono">${p.tarih.slice(0, 5)}</div>`).join('')}
+    </div>
+    <div class="mt-1.5 text-[9px] text-[#57534E] flex gap-3"><span><span class="inline-block w-2 h-2 bg-[#A67C37] rounded-sm"></span> İlk 3'e girdiği koşu</span><span><span class="inline-block w-2 h-2 bg-[#0F291E] rounded-sm"></span> Son koşu</span></div>
+  `;
+}
+
+function modalIdmanHTML(race, h) {
+  const head = `<h4 class="serif-title text-base font-bold text-[#0F291E] uppercase mb-2">🏇 Son İdman (Galop • Sprint • Kenter)</h4>`;
+  if (!race.kosu_kodu) return head + '<div class="text-xs text-[#78716C]">TJK bülteninde bu koşu için idman bağlantısı yok.</div>';
+  const idm = idmanForHorse(race, h);
+  if (idm === undefined) return head + '<div class="text-xs text-[#57534E] py-1 text-center">⏳ Son idman bilgisi yükleniyor...</div>';
+  if (idm === null) {
+    const failed = STATE.idman[race.kosu_kodu] && STATE.idman[race.kosu_kodu].failed;
+    return head + `<div class="text-xs text-[#78716C]">${failed ? 'TJK idman sayfası alınamadı.' : 'Bu koşu öncesinde kayıtlı idmanı bulunmuyor.'}</div>`;
+  }
+  const d = STATE.idman[race.kosu_kodu];
+  const field = (label, val) => val ? `<div><span class="text-[#57534E]">${label}:</span> <strong class="text-[#18181B]">${val}</strong></div>` : '';
+  return `
+    <div class="flex items-center justify-between mb-2">
+      <h4 class="serif-title text-base font-bold text-[#0F291E] uppercase">🏇 Son İdman (Galop • Sprint • Kenter)</h4>
+      ${idmanDurumBadge(idm.galop_durumu)}
+    </div>
+    <div class="grid grid-cols-3 gap-2 mb-2.5 text-center">
+      <div class="bg-[#0F291E] text-[#F9F6F0] rounded-lg p-2">
+        <div class="text-[9px] text-[#D4AF37] font-bold">İDMAN TÜRÜ</div>
+        <div class="text-sm font-extrabold">${idm.tur || '-'}</div>
+      </div>
+      <div class="bg-white border border-[#D8D2C5] rounded-lg p-2">
+        <div class="text-[9px] text-[#57534E] font-bold">TARİH</div>
+        <div class="text-sm font-extrabold mono text-[#18181B]">${idm.tarih || '-'}</div>
+        ${idm.days_before != null ? `<div class="text-[9px] text-[#57534E]">${idm.days_before} gün önce</div>` : ''}
+      </div>
+      <div class="bg-white border border-[#D8D2C5] rounded-lg p-2">
+        <div class="text-[9px] text-[#57534E] font-bold">SON 400m</div>
+        <div class="text-sm font-extrabold mono text-[#7A1C1C]">${idm.son_400 != null ? idm.son_400.toFixed(2) + 's' : '-'}</div>
+        ${idm.son_400_rank ? `<div class="text-[9px] text-[#57534E]">Koşuda ${idm.son_400_rank}. / ${d.timed_count}</div>` : ''}
+      </div>
+    </div>
+    <div class="bg-[#FAF8F3] rounded-lg p-2.5 border border-[#E2DDD2] mb-2">
+      <div class="text-[10px] font-extrabold text-[#8C5A3C] uppercase mb-1">Ara Dereceler</div>
+      <div class="flex flex-wrap gap-1.5">
+        ${(idm.splits || []).map(x => `<span class="px-2 py-0.5 rounded bg-white border border-[#D8D2C5] text-[11px] mono"><strong>${x.dist}m</strong> ${x.time}</span>`).join('') || '<span class="text-[11px] text-[#78716C]">Ara derece yok</span>'}
+      </div>
+      ${idm.pace_200 ? `<div class="text-[10px] text-[#57534E] mt-1.5 mono">Ortalama tempo: ${idm.pace_200}s / 200m (${idm.longest.dist}m üzerinden)</div>` : ''}
+    </div>
+    <div class="grid grid-cols-2 gap-1.5 text-xs">
+      ${field('Galop Durumu', idm.galop_durumu)}
+      ${field('İdman Jokeyi', idm.idman_jokeyi)}
+      ${field('Pist', idm.pist)}
+      ${field('Pist Durumu', idm.pist_durumu)}
+      ${field('Zemin', idm.zemin)}
+      ${field('Hava', idm.hava)}
+      ${field('Hipodrom', idm.hipodrom)}
+      ${field('Takı', idm.taki)}
+    </div>
+    ${idm.aciklama ? `<div class="mt-2 text-[11px] text-[#44403C] bg-[#F7F1E3] border border-[#A67C37]/40 rounded-lg px-2.5 py-1.5">✒️ ${idm.aciklama}</div>` : ''}
+  `;
 }
 
 function closeHorseModal() {
@@ -1196,6 +1541,14 @@ function renderXrayComparison() {
     { label: 'Sıklet (Kilo) Avantajı', a: hA.metrics.weight_rating, b: hB.metrics.weight_rating },
     { label: 'KGS Dinlenme & Tazelik', a: hA.metrics.fitness_rating, b: hB.metrics.fitness_rating }
   ];
+  const cA = (STATE.extras[hA.at_id] || {}).career_stats, cB = (STATE.extras[hB.at_id] || {}).career_stats;
+  if (cA && cB && cA.starts && cB.starts) {
+    rows.push(
+      { label: 'Kariyer Birincilik %', a: cA.win_pct, b: cB.win_pct },
+      { label: 'Kariyer İlk 3 %', a: cA.top3_pct, b: cB.top3_pct },
+      { label: 'Kariyer İlk 5 %', a: cA.top5_pct, b: cB.top5_pct }
+    );
+  }
 
   document.getElementById('xrayComparisonBody').innerHTML = `
     <div class="space-y-3">

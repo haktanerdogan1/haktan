@@ -24,6 +24,8 @@ import random
 import copy
 import html as html_lib
 import urllib.request
+import urllib.error
+from concurrent.futures import ThreadPoolExecutor
 import urllib.parse
 from datetime import datetime
 import time
@@ -121,11 +123,42 @@ TAKI_DESCRIPTIONS = {
 }
 
 
-def fetch_url(url, encoding="utf-8"):
-    req = urllib.request.Request(url, headers=HEADERS)
-    with urllib.request.urlopen(req, timeout=12) as resp:
-        raw = resp.read()
-    return raw.decode(encoding, "ignore")
+def fetch_url(url, encoding="utf-8", timeout=20, retries=1):
+    """TJK bazen yavaş yanıt verir: zaman aşımında bir kez daha dener."""
+    last_err = None
+    for attempt in range(retries + 1):
+        try:
+            req = urllib.request.Request(url, headers=HEADERS)
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                raw = resp.read()
+            return raw.decode(encoding, "ignore")
+        except urllib.error.HTTPError:
+            raise
+        except Exception as e:  # zaman aşımı / bağlantı kopması
+            last_err = e
+            if attempt < retries:
+                time.sleep(0.8)
+    raise last_err
+
+
+def fetch_cached(url, ttl):
+    """Ham TJK sayfasını önbellekli çeker (aynı sayfa farklı API çağrılarında yeniden indirilmez)."""
+    key = "raw_" + url
+    cached = cache_get(key, ttl)
+    if cached is not None:
+        return cached
+    body = fetch_url(url)
+    cache_set(key, body)
+    return body
+
+
+def tr_upper(text):
+    """Türkçe büyük harf: Python'da 'i'.upper() == 'I' olduğu için 'Handikap' -> 'HANDIKAP' olur."""
+    return (text or "").replace("i", "İ").replace("ı", "I").upper()
+
+
+def clean_cell(fragment):
+    return html_lib.unescape(re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', '', fragment))).strip()
 
 
 def parse_time_to_seconds(t_str):
@@ -206,6 +239,7 @@ def extract_horse_extras_from_html(html):
         forma_m = re.search(r'href=["\'](https://medya-cdn\.tjk\.org/formaftp/[^"\']+\.jpg)["\']', row)
         at_m = re.search(r'QueryParameter_AtId=(\d+)[^>]*>\s*([^<]+)', row)
         kb_m = re.search(r'QueryParameter_KisrakBabaAdi=[^"\'>]+["\'][^>]*>\s*([^<]+)', row)
+        idm_m = re.search(r'idmanpisti/Kosu\?KosuKodu=(\d+)', row)
         if at_m:
             at_id = at_m.group(1).strip()
             raw_name = html_lib.unescape(at_m.group(2)).strip()
@@ -214,7 +248,8 @@ def extract_horse_extras_from_html(html):
             extras[clean_name] = {
                 "at_id": at_id,
                 "forma_url": forma_m.group(1) if forma_m else None,
-                "damsire": damsire
+                "damsire": damsire,
+                "idman_kosu_kodu": idm_m.group(1) if idm_m else None
             }
     return extras
 
@@ -436,7 +471,7 @@ def assign_running_styles(horses):
     """
     Erken hız endekslerini sahaya göre sınıflandırır. Mutlak eşik tek başına yetmez:
     bir koşuda öne ancak birkaç at geçebilir.
-    - Kaçak (E): endeksi >= 60, sahanın ilk 3'ünde ve liderin en fazla 6 puan gerisinde
+    - Kaçak (E): endeksi >= 60, sahanın ilk 3'ünde (küçük sahada daha az) ve liderin en fazla 6 puan gerisinde
     - Son Düzlükçü (S): endeksi < 46 ya da sahanın son %30'unda
     - Diğerleri Takipçi (P)
     """
@@ -445,11 +480,13 @@ def assign_running_styles(horses):
     if not n:
         return
     top_idx = ranked[0]["running_style"]["index"]
+    # Küçük sahalarda öne geçebilecek at sayısı da azdır: 5 atta en çok 2, 10 atta 3
+    e_cap = min(3, max(1, int(n * 0.3 + 0.5)))
     s_from = n - max(1, int(round(n * 0.3))) if n >= 4 else n
     for rank, h in enumerate(ranked):
         rs = h["running_style"]
         idx = rs["index"]
-        if idx >= 60 and rank < 3 and idx >= top_idx - 6:
+        if idx >= 60 and rank < e_cap and idx >= top_idx - 6:
             code = "E"
         elif idx < 46 or rank >= s_from:
             code = "S"
@@ -811,29 +848,71 @@ def format_seconds_to_time_str(sec):
     return f"{mins}.{s_int:02d}.{hund:02d}"
 
 
+def classify_race(kcins):
+    """
+    TJK koşu cinsini sınıflar. Örnekler: 'G 3', 'KV-6/Dişi', 'ŞARTLI 4/Dişi', 'Handikap 15',
+    'Maiden/DHÖW', 'SATIŞ 2'. Dönen: (anahtar, etiket, sıralama)
+    Sıralama: Grup 1-2-3 > Kısa Vade > Şartlı 5..1 > Handikap (yüksekten düşüğe) > Maiden > Satış
+    """
+    c = tr_upper(kcins)
+    m = re.search(r'\b(?:G|GRUP)\s*-?\s*([123])\b', c)
+    if m:
+        g = int(m.group(1))
+        return f"grup{g}", f"Grup {g}", g
+    if re.search(r'\bKV\b|KISA VADE', c):
+        return "kv", "Kısa Vade (KV)", 10
+    m = re.search(r'ŞARTLI\s*(\d+)', c)
+    if m:
+        n = int(m.group(1))
+        if 1 <= n <= 5:
+            return f"sartli{n}", f"Şartlı {n}", 20 + (6 - n)
+        return "sartli_diger", "Şartlı (Diğer)", 26
+    m = re.search(r'HANDİKAP\s*(\d+)', c)
+    if m:
+        n = int(m.group(1))
+        return f"handikap{n}", f"Handikap {n}", 30 + (40 - min(n, 40))
+    if "HANDİKAP" in c:
+        return "handikap", "Handikap", 75
+    if "MAIDEN" in c or "MAİDEN" in c:
+        return "maiden", "Maiden", 80
+    if "SATIŞ" in c:
+        return "satis", "Satış", 85
+    return "diger", "Diğer", 95
+
+
 def compute_zorluk_degree(condition_str, hp_val=0):
-    c = (condition_str or "").upper()
-    if "G1" in c or "GRUP 1" in c:
+    """
+    Koşu Zorluk Katsayısı: Maiden (30.5) ... Grup 1 (52.0) + HP katkısı.
+    Handikap seviyeleri: H13 33.5 • H14-15 35 • H16-17 38 • H21+ 40'tan başlayıp yükselir.
+    """
+    c = tr_upper(condition_str)
+    key, _, _ = classify_race(condition_str)
+    if key == "grup1":
         base = 52.0
-    elif "G2" in c or "GRUP 2" in c:
+    elif key == "grup2":
         base = 48.0
-    elif "G3" in c or "GRUP 3" in c or "A2" in c or "A3" in c:
+    elif key == "grup3" or re.search(r'\bA[23]\b', c):
         base = 45.0
-    elif "KV" in c or "KISA VADE" in c:
+    elif key == "kv":
         base = 41.5
-    elif "HANDİKAP 17" in c or "HANDİKAP 16" in c:
-        base = 38.0
-    elif "HANDİKAP 15" in c or "HANDİKAP 14" in c:
-        base = 35.0
-    elif "HANDİKAP" in c:
-        base = 33.5
-    elif "ŞARTLI 5" in c or "ŞARTLI 4" in c:
+    elif key.startswith("handikap"):
+        m = re.search(r'HANDİKAP\s*(\d+)', c)
+        n = int(m.group(1)) if m else 13
+        if n >= 21:
+            base = 40.0 + (n - 21) * 0.8
+        elif n >= 16:
+            base = 38.0
+        elif n >= 14:
+            base = 35.0
+        else:
+            base = 33.5
+    elif key in ("sartli5", "sartli4"):
         base = 36.0
-    elif "ŞARTLI 3" in c or "ŞARTLI 2" in c:
+    elif key in ("sartli3", "sartli2"):
         base = 33.0
-    elif "MAIDEN" in c or "ŞARTLI 1" in c:
+    elif key in ("sartli1", "maiden"):
         base = 30.5
-    elif "SATIŞ" in c:
+    elif key == "satis":
         base = 31.0
     else:
         base = 32.0
@@ -901,218 +980,355 @@ def parse_detailed_stat_tables(stat_html):
     return sections
 
 
-def fetch_horse_bankomat_sheet(at_id, today_weight=57.0, target_dist=1200, is_arab=False):
+PD_MAP = {
+    "Normal": "NO", "Nemli": "NE", "Islak": "IS", "Sulu": "SL", "Çok Yumuşak": "ÇY",
+    "Biraz Yumuşak": "BY", "Yumuşak": "YM", "Ağır": "AĞ", "Çok Ağır": "ÇA", "Sert": "ST",
+    "Biraz Sert": "BS", "İyi": "İY",
+}
+
+
+def finish_stats(positions):
+    """Bitiriş sıralarından 1.-5. sayıları ve yüzdeleri (yarış başına)."""
+    k = len(positions)
+    counts = [sum(1 for p in positions if p == i) for i in range(1, 6)]
+    return build_finish_block(k, counts)
+
+
+def build_finish_block(k, counts):
+    w1, w2, w3, w4, w5 = (counts + [0] * 5)[:5]
+    pct = (lambda x: round(x / k * 100.0, 1)) if k else (lambda x: 0.0)
+    return {
+        "starts": k, "w1": w1, "w2": w2, "w3": w3, "w4": w4, "w5": w5,
+        "win_pct": pct(w1), "second_pct": pct(w2), "third_pct": pct(w3),
+        "top3_pct": pct(w1 + w2 + w3), "top5_pct": pct(w1 + w2 + w3 + w4 + w5),
+        # Geriye dönük uyum: eski alan adları
+        "podium_pct": pct(w1 + w2 + w3), "tabela_pct": pct(w1 + w2 + w3 + w4),
+    }
+
+
+def affinity_from(block):
+    if not block["starts"]:
+        return 0
+    return min(99, int(round(30 + block["win_pct"] * 0.9 + block["top3_pct"] * 0.55 + min(15, block["starts"] * 2))))
+
+
+def parse_horse_race_rows(tbody_html):
+    """AtKosuBilgileri koşu tablosu: Tarih, Şehir, Msf, Pist, S, Derece, Sıklet, Takı, Jokey, St, Gny,
+    Grup, K.No, Kcins, Ant., Sahip, HP, İkramiye, S20 (tüm kariyer)."""
+    rows = []
+    for tr in re.findall(r'<tr[^>]*>(.*?)</tr>', tbody_html, re.S):
+        tds = [clean_cell(td) for td in re.findall(r'<td[^>]*>(.*?)</td>', tr, re.S)]
+        if len(tds) < 17 or not re.match(r'\d{2}\.\d{2}\.\d{4}', tds[0]):
+            continue
+        rows.append(tds)
+    return rows
+
+
+def fetch_horse_bankomat_sheet(at_id, today_weight=57.0, target_dist=1200, is_arab=False, lite=False):
     """
-    Fetches individual horse past races, 3-generation Pedigree tree, and Surface/Distance/Track
-    affinity statistics from TJK live endpoints.
+    Safkanın TJK sayfalarından:
+    - Tüm kariyer koşuları -> 1.-2.-3.-4.-5.'lik yüzdeleri, koşu sınıfı karnesi, HP seyri,
+      son 10 koşunun Özel Performans & Derece Bülteni
+    - (lite=False ise) 3 Kuşak Pedigri ve Zemin/Mesafe istatistikleri
     """
     if not at_id:
-        return {"races": [], "summary": None, "pedigree": None, "surface_affinity": None}
+        return {"races": [], "summary": None, "pedigree": None, "surface_summary": {}}
 
-    cache_key = f"history_v3_{at_id}_{today_weight}_{target_dist}_{int(bool(is_arab))}"
+    cache_key = f"history_v4_{at_id}_{today_weight}_{target_dist}_{int(bool(is_arab))}_{int(bool(lite))}"
     cached = cache_get(cache_key, TTL_HISTORY)
     if cached is not None:
         return cached
 
-    url = f"https://www.tjk.org/TR/YarisSever/Query/ConnectedPage/AtKosuBilgileri?1=1&QueryParameter_AtId={at_id}"
-    html = fetch_url(url)
+    html = fetch_cached(f"https://www.tjk.org/TR/YarisSever/Query/ConnectedPage/AtKosuBilgileri?1=1&QueryParameter_AtId={at_id}", TTL_HISTORY)
 
-    # Also fetch 3-generation Pedigree & Detailed Stats
     pedigree_tree = None
     detailed_stats = {}
-    try:
-        ped_url = f"https://www.tjk.org/TR/YarisSever/Query/Pedigri/Pedigri?Atkodu={at_id}"
-        ped_html = fetch_url(ped_url)
-        pedigree_tree = parse_pedigri_tree(ped_html)
-    except Exception:
-        pedigree_tree = None
+    if not lite:
+        try:
+            pedigree_tree = parse_pedigri_tree(fetch_cached(f"https://www.tjk.org/TR/YarisSever/Query/Pedigri/Pedigri?Atkodu={at_id}", 24 * 3600))
+        except Exception:
+            pedigree_tree = None
+        try:
+            detailed_stats = parse_detailed_stat_tables(fetch_cached(f"https://www.tjk.org/TR/YarisSever/Query/AtKosuIstatistik/AtKosuIstatistik?Atkodu={at_id}", TTL_HISTORY))
+        except Exception:
+            detailed_stats = {}
 
-    try:
-        stat_url = f"https://www.tjk.org/TR/YarisSever/Query/AtKosuIstatistik/AtKosuIstatistik?Atkodu={at_id}"
-        stat_html = fetch_url(stat_url)
-        detailed_stats = parse_detailed_stat_tables(stat_html)
-    except Exception:
-        detailed_stats = {}
+    # Tablo gövdelerini içeriğe göre ayır (genç atlarda özet tablosu hiç olmayabilir)
+    summary_rows, race_rows = [], []
+    for tb in re.findall(r'<tbody.*?</tbody>', html, re.S):
+        rr = parse_horse_race_rows(tb)
+        if rr:
+            race_rows.extend(rr)
+            continue
+        for tr in re.findall(r'<tr[^>]*>(.*?)</tr>', tb, re.S):
+            cols = [clean_cell(c) for c in re.findall(r'<td[^>]*>(.*?)</td>', tr, re.S)]
+            if len(cols) >= 8 and cols[1].isdigit():
+                summary_rows.append(cols)
 
-    tbodies = re.findall(r'<tbody.*?</tbody>', html, re.S)
+    # --- Koşu satırları (tüm kariyer) ---
+    all_races = []
+    for tds in race_rows:
+        msf = int(tds[2]) if tds[2].isdigit() else 0
+        pist_raw = tds[3]
+        p_parts = pist_raw.split(":", 1)
+        p_letter = p_parts[0].strip() if p_parts else "K"
+        p_cond_full = p_parts[1].strip() if len(p_parts) > 1 else "Normal"
+        pen_m = re.search(r'([\d]+(?:[\.,]\d+)?)\s*$', p_cond_full)
+        penetrometre = pen_m.group(1).replace(",", ".") if pen_m else ""
+        p_cond = p_cond_full[:pen_m.start()].strip() if pen_m else p_cond_full
+        p_name = "Çim" if p_letter == "Ç" else ("Sentetik" if p_letter == "S" else "Kum")
+        pd_code = "SE" if p_letter == "S" else PD_MAP.get(p_cond, tr_upper(p_cond)[:2] or "NO")
+        sira = int(tds[4]) if tds[4].isdigit() and int(tds[4]) > 0 else None
+        try:
+            past_weight = float(re.findall(r'[\d\.]+', tds[6].replace(",", "."))[0])
+        except Exception:
+            past_weight = None
+        kcins = tds[13]
+        cls_key, cls_label, cls_order = classify_race(kcins)
+        hp_val = int(tds[16]) if tds[16].isdigit() else 0
+        all_races.append({
+            "tarih": tds[0], "sehir": tds[1], "msf": msf, "p_name": p_name, "pd": pd_code,
+            "pd_label": p_cond, "penetrometre": penetrometre, "sira": sira,
+            "derece_raw": tds[5], "siklet": past_weight, "taki": tds[7], "jokey": tds[8],
+            "kulvar": tds[9], "gny": tds[10], "kcins": kcins, "cls_key": cls_key,
+            "cls_label": cls_label, "cls_order": cls_order, "hp": hp_val,
+            "ikramiye": tds[17] if len(tds) > 17 else "",
+        })
+    finished = [r for r in all_races if r["sira"]]
 
-    # Parse Table 0: Official Surface Career Summary (Toplam, Çim, Kum, Sentetik)
+    # --- 1.-2.-3.-4.-5.'lik yüzdeleri: resmi özet tablosu, yoksa koşulardan ---
     surface_summary = {}
-    if len(tbodies) >= 1:
-        for tr in re.findall(r'<tr[^>]*>(.*?)</tr>', tbodies[0], re.S):
-            cols = [html_lib.unescape(re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', '', c))).strip() for c in re.findall(r'<td[^>]*>(.*?)</td>', tr, re.S)]
-            if len(cols) >= 8:
-                key = cols[0]
-                k = int(cols[1]) if cols[1].isdigit() else 0
-                w1 = int(cols[2]) if cols[2].isdigit() else 0
-                w2 = int(cols[3]) if cols[3].isdigit() else 0
-                w3 = int(cols[4]) if cols[4].isdigit() else 0
-                w4 = int(cols[5]) if cols[5].isdigit() else 0
-                tabela = w1 + w2 + w3 + w4
-                win_pct = round((w1 / k) * 100.0, 1) if k > 0 else 0.0
-                podium_pct = round(((w1 + w2 + w3) / k) * 100.0, 1) if k > 0 else 0.0
-                tabela_pct = round((tabela / k) * 100.0, 1) if k > 0 else 0.0
-                # Affinity Score (0-100) combining experience, win rate, and podium consistency
-                if k == 0:
-                    affinity_score = 0
-                else:
-                    affinity_score = min(99, int(round(30 + (win_pct * 0.9) + (podium_pct * 0.55) + min(15, k * 2))))
-                surface_summary[key] = {
-                    "starts": k, "w1": w1, "w2": w2, "w3": w3, "w4": w4,
-                    "earnings": cols[7],
-                    "win_pct": win_pct,
-                    "podium_pct": podium_pct,
-                    "tabela_pct": tabela_pct,
-                    "affinity_score": affinity_score
-                }
+    for cols in summary_rows:
+        counts = [int(c) if c.isdigit() else 0 for c in cols[2:7]]
+        block = build_finish_block(int(cols[1]), counts)
+        block["earnings"] = cols[7] if len(cols) > 7 else ""
+        key = "TOPLAM" if tr_upper(cols[0]) == "TOPLAM" else cols[0]
+        surface_summary[key] = block
+    def stats_over(races):
+        # Yarış başına: derecesiz biten koşular da paydada
+        return build_finish_block(len(races), [sum(1 for r in races if r["sira"] == i) for i in range(1, 6)])
 
-    # Determine Favorite Surface Verdict
+    if "TOPLAM" not in surface_summary:
+        surface_summary["TOPLAM"] = dict(stats_over(all_races), earnings="")
+        for s_name in ("Çim", "Kum", "Sentetik"):
+            surface_summary[s_name] = dict(stats_over([r for r in all_races if r["p_name"] == s_name]), earnings="")
+    for blk in surface_summary.values():
+        blk["affinity_score"] = affinity_from(blk)
+
+    career_stats = dict(surface_summary["TOPLAM"])
+    career_stats["last10"] = stats_over(all_races[:10])
+
     surf_candidates = []
     for s_name in ["Kum", "Çim", "Sentetik"]:
         st = surface_summary.get(s_name)
         if st and st["starts"] > 0:
-            surf_candidates.append((st["affinity_score"], st["podium_pct"], st["starts"], s_name))
+            surf_candidates.append((st["affinity_score"], st["top3_pct"], st["starts"], s_name))
     surf_candidates.sort(reverse=True)
     if surf_candidates:
-        best_s = surf_candidates[0]
-        fav_surface_verdict = f"En Sevdiği Pist: {best_s[3].upper()} (Yatkınlık Puanı: {best_s[0]}/100 • {best_s[2]} koşuda %{best_s[1]} İlk 3 başarısı)"
+        b = surf_candidates[0]
+        fav_surface_verdict = f"En Sevdiği Pist: {b[3].upper()} (Yatkınlık Puanı: {b[0]}/100 • {b[2]} koşuda %{b[1]} İlk 3 başarısı)"
     else:
         fav_surface_verdict = "Henüz pist istatistiği oluşmamış (Genetik/Orijin eğilimine bakınız)."
 
-    if len(tbodies) < 2:
-        return {
-            "races": [],
-            "summary": None,
-            "pedigree": pedigree_tree,
-            "surface_summary": surface_summary,
-            "fav_surface_verdict": fav_surface_verdict,
-            "detailed_stats": detailed_stats
-        }
+    # --- Koşu sınıfı karnesi (Grup / KV / Şartlı 1-5 / Handikap / Maiden / Satış) ---
+    groups = {}
+    for r in all_races:
+        g = groups.setdefault(r["cls_key"], {"key": r["cls_key"], "label": r["cls_label"], "order": r["cls_order"],
+                                              "positions": [], "dnf": 0, "last": r["tarih"]})
+        if r["sira"]:
+            g["positions"].append(r["sira"])
+        else:
+            g["dnf"] += 1
+    class_breakdown = []
+    for g in sorted(groups.values(), key=lambda x: x["order"]):
+        # Derecesiz biten koşular da yarış sayısına dahil (yüzdeler yarış başına)
+        counts = [sum(1 for p in g["positions"] if p == i) for i in range(1, 6)]
+        blk = build_finish_block(len(g["positions"]) + g["dnf"], counts)
+        blk.update({
+            "key": g["key"], "label": g["label"], "last_date": g["last"],
+            "avg_pos": round(sum(g["positions"]) / len(g["positions"]), 1) if g["positions"] else None,
+            "best_pos": min(g["positions"]) if g["positions"] else None,
+        })
+        class_breakdown.append(blk)
 
-    trs = re.findall(r'<tr.*?</tr>', tbodies[1], re.S)
-    parsed_races = []
-
-    pd_map = {
-        "Normal": "NO", "Nemli": "NE", "Islak": "IS", "Sulu": "SL",
-        "Çok Yumuşak": "ÇY", "Yumuşak": "YM", "Ağır": "AĞ", "Sentetik": "SE", "İyi": "İY"
+    # --- Handikap puanı seyri ---
+    hp_points = [{"tarih": r["tarih"], "hp": r["hp"], "sira": r["sira"], "kcins": r["kcins"]} for r in all_races if r["hp"] > 0]
+    hp_history = {
+        "points": hp_points[:12],
+        "current": hp_points[0]["hp"] if hp_points else None,
+        "max": max(p["hp"] for p in hp_points) if hp_points else None,
+        "min": min(p["hp"] for p in hp_points) if hp_points else None,
+        "change_5": (hp_points[0]["hp"] - hp_points[min(5, len(hp_points) - 1)]["hp"]) if len(hp_points) > 1 else 0,
     }
 
-    for tr in trs[:10]:
-        tds = [html_lib.unescape(re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', '', td))).strip() for td in re.findall(r'<td.*?</td>', tr, re.S)]
-        if len(tds) < 17 or not re.match(r'\d{2}\.\d{2}\.\d{4}', tds[0]):
-            continue
-
-        tarih = tds[0]
-        sehir = tds[1]
-        msf_str = tds[2]
-        msf = int(msf_str) if msf_str.isdigit() else 1400
-        pist_raw = tds[3]  # e.g. 'K:Nemli', 'Ç:Normal', 'S:Normal'
-        sira_str = tds[4]
-        sira = int(sira_str) if sira_str.isdigit() else 10
-        derece_raw = tds[5]
-        siklet_str = tds[6].replace(",", ".")
-        try:
-            past_weight = float(re.findall(r'[\d\.]+', siklet_str)[0])
-        except Exception:
-            past_weight = 57.0
-        taki = tds[7]
-        jokey = tds[8]
-        st_no = tds[9]
-        gny = tds[10]
-        kcins = tds[13]
-        hp_str = tds[16]
-        hp_val = int(hp_str) if hp_str.isdigit() else 0
-
-        # Parse Pist & P.D code (like '1400Kum', 'IS' / 'NO' / 'NE')
-        p_parts = pist_raw.split(":")
-        p_letter = p_parts[0].strip() if p_parts else "K"
-        p_cond = p_parts[1].strip() if len(p_parts) > 1 else "Normal"
-        p_name = "Çim" if p_letter == "Ç" else ("Sentetik" if p_letter == "S" else "Kum")
-        pd_code = "SE" if p_letter == "S" else pd_map.get(p_cond, p_cond[:2].upper())
-
-        zorluk = compute_zorluk_degree(kcins, hp_val)
-        sec = parse_time_to_seconds(derece_raw)
-
-        # Normalize time to 1200m equivalent (Bankomat Derece standard) and today's target distance
-        if sec and msf > 0:
-            # Distance fatigue exponent (Riegel formula adapted for turf/dirt: 1.055)
-            norm_1200_sec = sec * ((1200.0 / msf) ** 1.055)
-            norm_target_sec = sec * ((target_dist / msf) ** 1.055)
+    # --- Son 10 koşu: Özel Performans & Derece Bülteni ---
+    parsed_races = []
+    for r in all_races[:10]:
+        zorluk = compute_zorluk_degree(r["kcins"], r["hp"])
+        sec = parse_time_to_seconds(r["derece_raw"])
+        sira_calc = r["sira"] or 12
+        if sec and r["msf"] > 0:
+            norm_1200_sec = sec * ((1200.0 / r["msf"]) ** 1.055)
+            norm_target_sec = sec * ((target_dist / r["msf"]) ** 1.055)
             norm_1200_str = format_seconds_to_time_str(norm_1200_sec)
             norm_target_str = format_seconds_to_time_str(norm_target_sec)
-
-            # Standard par for 1200m (~73.5s for Thoroughbred, ~81.5s for Arabian)
             par_1200 = 81.8 if is_arab or norm_1200_sec > 78.5 else 73.8
-            speed_delta = par_1200 - norm_1200_sec
-            raw_perf = zorluk + (speed_delta * 2.4) - ((sira - 1) * 1.85)
+            raw_perf = zorluk + ((par_1200 - norm_1200_sec) * 2.4) - ((sira_calc - 1) * 1.85)
             performans = round(max(0.0, min(55.0, raw_perf)), 2)
         else:
-            norm_1200_str = "-"
-            norm_target_str = "-"
+            norm_1200_str = norm_target_str = "-"
             performans = 0.0
-
-        # Kiloya Göre Performans (Weight adjustment vs today's weight)
-        # If horse carried MORE weight in that past race than today, its weight-adjusted performance for today increases!
-        weight_factor = 1.0 + ((past_weight - today_weight) * 0.008)
-        kiloya_gore = round(max(0.0, performans * weight_factor), 2)
-
-        # Form Letter Grade (A, B, C, D, E)
-        if performans >= 34.5 or (sira <= 2 and performans >= 31.0):
+        pw = r["siklet"] if r["siklet"] else today_weight
+        kiloya_gore = round(max(0.0, performans * (1.0 + ((pw - today_weight) * 0.008))), 2)
+        if performans >= 34.5 or (sira_calc <= 2 and performans >= 31.0):
             form_grade = "A"
-        elif performans >= 30.5 or sira <= 3:
+        elif performans >= 30.5 or sira_calc <= 3:
             form_grade = "B"
-        elif performans >= 24.5 or sira <= 5:
+        elif performans >= 24.5 or sira_calc <= 5:
             form_grade = "C"
         elif performans >= 14.0:
             form_grade = "D"
         else:
             form_grade = "E"
-
-        # Yarış İçi Poz. % (Finishing dominance score)
-        poz_pct = round(max(8.3, min(100.0, (13 - min(12, sira)) / 12.0 * 100.0)), 1)
-
+        poz_pct = round(max(8.3, min(100.0, (13 - min(12, sira_calc)) / 12.0 * 100.0)), 1)
         parsed_races.append({
-            "tarih": tarih,
-            "sehir": sehir,
-            "sart": kcins,
-            "pist": f"{msf}{p_name}",
-            "pd": pd_code,
-            "jokey": jokey,
-            "sira": sira,
-            "taki": taki,
-            "siklet": past_weight,
-            "kulvar": st_no,
-            "gny": gny,
-            "performans": performans,
-            "zorluk": zorluk,
-            "form": form_grade,
-            "kiloya_gore": kiloya_gore,
-            "gercek_derece": derece_raw,
-            "norm_1200_derece": norm_1200_str,
-            "norm_target_derece": norm_target_str,
-            "poz_pct": poz_pct
+            "tarih": r["tarih"], "sehir": r["sehir"], "sart": r["kcins"], "sinif": r["cls_label"],
+            "pist": f"{r['msf']}{r['p_name']}", "pd": r["pd"], "pd_label": r["pd_label"],
+            "penetrometre": r["penetrometre"], "jokey": r["jokey"],
+            "sira": r["sira"] if r["sira"] else "-", "taki": r["taki"], "siklet": pw,
+            "kulvar": r["kulvar"], "gny": r["gny"], "hp": r["hp"] or "-",
+            "performans": performans, "zorluk": zorluk, "form": form_grade, "kiloya_gore": kiloya_gore,
+            "gercek_derece": r["derece_raw"], "norm_1200_derece": norm_1200_str,
+            "norm_target_derece": norm_target_str, "poz_pct": poz_pct,
         })
 
     valid_perfs = [r["performans"] for r in parsed_races if r["performans"] > 0]
     valid_kilo = [r["kiloya_gore"] for r in parsed_races if r["kiloya_gore"] > 0]
     valid_poz = [r["poz_pct"] for r in parsed_races]
-
     summary = {
         "avg_performans": round(sum(valid_perfs) / len(valid_perfs), 2) if valid_perfs else 0.0,
         "max_performans": round(max(valid_perfs), 2) if valid_perfs else 0.0,
         "avg_kiloya_gore": round(sum(valid_kilo) / len(valid_kilo), 2) if valid_kilo else 0.0,
         "avg_poz_pct": round(sum(valid_poz) / len(valid_poz), 1) if valid_poz else 50.0,
-        "total_analyzed": len(parsed_races)
+        "total_analyzed": len(parsed_races),
     }
 
     result = {
         "races": parsed_races,
         "summary": summary,
+        "career_stats": career_stats,
+        "class_breakdown": class_breakdown,
+        "hp_history": hp_history,
         "pedigree": pedigree_tree,
         "surface_summary": surface_summary,
         "fav_surface_verdict": fav_surface_verdict,
-        "detailed_stats": detailed_stats
+        "detailed_stats": detailed_stats,
+        "total_career_races": len(all_races),
     }
+    cache_set(cache_key, result)
+    return result
+
+
+# ------------------------- İDMAN (GALOP / SPRINT / KENTER) -------------------------
+IDMAN_SPLITS = [2200, 2000, 1800, 1600, 1400, 1200, 1000, 800, 600, 400, 200]
+IDMAN_DURUM_ORDER = {"ÇOK RAHAT": 1, "RAHAT": 2, "ÇALIŞIR": 3, "ÇALIŞARAK": 3, "ZORLANARAK": 4}
+
+
+def parse_idman_detail(detail_html):
+    """idmanpistiDetay: 'baslik' ve 'icerik' kutuları aynı sırada; ikisini eşleştirir."""
+    labels = [clean_cell(x).rstrip(":").rstrip(",").strip() for x in re.findall(r'<div class="baslik">(.*?)</div>', detail_html, re.S)]
+    values = [clean_cell(x) for x in re.findall(r'<div class="icerik">(.*?)</div>', detail_html, re.S)]
+    info = dict(zip(labels, values))
+    return {
+        "galop_durumu": info.get("Galop Durumu", ""),
+        "pist_durumu": info.get("Pist Durumu", ""),
+        "idman_jokeyi": info.get("İdman Jokey", "") or info.get("İdman Jokeyi", ""),
+        "hava": info.get("Hava Durumu", ""),
+        "zemin": info.get("Zemin Durumu", ""),
+        "taki": info.get("Takı Şekil", ""),
+        "aciklama": info.get("Açıklama", ""),
+    }
+
+
+def parse_race_idman_table(page_html):
+    m = re.search(r'<table[^>]*id="KosuIdmanGaloplari_table".*?</table>', page_html, re.S)
+    if not m:
+        return []
+    tbl = m.group(0)
+    headers = [clean_cell(h) for h in re.findall(r'<th[^>]*>(.*?)</th>', tbl, re.S)]
+    rows = []
+    for tr in re.findall(r'<tr[^>]*>(.*?)</tr>', tbl, re.S):
+        cells = re.findall(r'<td[^>]*>(.*?)</td>', tr, re.S)
+        if not cells:
+            continue
+        vals = [clean_cell(c) for c in cells]
+        rec = dict(zip(headers, vals))
+        det_m = re.search(r'idmanpistiDetay\?(?:1=1&amp;)?QueryParameter_Id=(\d+)', tr)
+        splits = {}
+        for d in IDMAN_SPLITS:
+            t = rec.get(str(d), "")
+            sec = parse_time_to_seconds(t)
+            if sec:
+                splits[d] = {"time": t, "sec": sec}
+        no = rec.get("At No", "")
+        rows.append({
+            "no": int(no) if no.isdigit() else None,
+            "name": rec.get("At Adı", ""),
+            "splits": [{"dist": d, "time": splits[d]["time"], "sec": splits[d]["sec"]} for d in sorted(splits, reverse=True)],
+            "tarih": rec.get("İ. Tarihi", ""),
+            "pist": rec.get("Pist", ""),
+            "tur": rec.get("İ. Türü", ""),
+            "hipodrom": rec.get("İdman Hipodromu", ""),
+            "detay_id": det_m.group(1) if det_m else None,
+        })
+    return rows
+
+
+def fetch_race_idman(kosu_kodu, at_kodu, race_date=""):
+    """
+    Koşudaki atların son idmanları (TJK 'İdm' sayfası) + her idmanın detayı
+    (Galop Durumu: Çok Rahat / Rahat / Çalışarak, idman jokeyi, zemin, hava).
+    """
+    cache_key = f"idman_{kosu_kodu}"
+    cached = cache_get(cache_key, 1200)
+    if cached is not None:
+        return cached
+    page = fetch_url(f"https://www.tjk.org/TR/YarisSever/Info/idmanpisti/Kosu?KosuKodu={kosu_kodu}&Atkodu={at_kodu}")
+    rows = parse_race_idman_table(page)
+
+    def load_detail(row):
+        if not row["detay_id"]:
+            return {}
+        try:
+            return parse_idman_detail(fetch_cached(f"https://www.tjk.org/TR/YarisSever/Info/idmanpistiDetay?QueryParameter_Id={row['detay_id']}", 24 * 3600))
+        except Exception:
+            return {}
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        details = list(pool.map(load_detail, rows))
+
+    try:
+        rdate = datetime.strptime(race_date, "%d/%m/%Y") if race_date else None
+    except ValueError:
+        rdate = None
+    for row, det in zip(rows, details):
+        row.update(det)
+        longest = row["splits"][0] if row["splits"] else None
+        row["longest"] = longest
+        row["pace_200"] = round(longest["sec"] / (longest["dist"] / 200.0), 2) if longest else None
+        s400 = next((x for x in row["splits"] if x["dist"] == 400), None)
+        row["son_400"] = s400["sec"] if s400 else None
+        row["durum_rank"] = IDMAN_DURUM_ORDER.get(tr_upper(row.get("galop_durumu", "")), None)
+        try:
+            row["days_before"] = (rdate - datetime.strptime(row["tarih"], "%d.%m.%Y")).days if rdate and row["tarih"] else None
+        except ValueError:
+            row["days_before"] = None
+
+    # Koşu içi sıralama: son 400m en hızlı idman
+    timed = sorted([r for r in rows if r["son_400"]], key=lambda r: r["son_400"])
+    for rank, r in enumerate(timed):
+        r["son_400_rank"] = rank + 1
+    result = {"kosu_kodu": kosu_kodu, "rows": rows, "count": len(rows), "timed_count": len(timed)}
     cache_set(cache_key, result)
     return result
 
@@ -1326,6 +1542,7 @@ def parse_tjk_csv(csv_text, html_extras=None):
                     "best_time_sec": best_time_sec,
                     "forma_url": extra.get("forma_url"),
                     "at_id": extra.get("at_id"),
+                    "idman_kosu_kodu": extra.get("idman_kosu_kodu"),
                     "is_ekuri": False
                 })
             else:
@@ -1340,6 +1557,13 @@ def parse_tjk_csv(csv_text, html_extras=None):
 
     if current_race:
         races.append(current_race)
+
+    # Koşunun TJK kodu (idman sayfası için): atların idman bağlantılarındaki en sık kod
+    for r in races:
+        codes = [h["idman_kosu_kodu"] for h in r["horses"] if h.get("idman_kosu_kodu")]
+        r["kosu_kodu"] = max(set(codes), key=codes.count) if codes else None
+        r["idman_at_kodu"] = next((h["at_id"] for h in r["horses"]
+                                   if h.get("idman_kosu_kodu") == r["kosu_kodu"] and h.get("at_id")), None)
 
     # Run Quantitative Analytics on each race
     for r in races:
@@ -1436,12 +1660,21 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         super().end_headers()
 
+    def send_json(self, status, payload):
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/api/horse_history":
             params = urllib.parse.parse_qs(parsed.query)
             at_id = params.get("at_id", [None])[0]
             is_arab = params.get("arab", ["0"])[0] == "1"
+            lite = params.get("lite", ["0"])[0] == "1"
             try:
                 if at_id and not at_id.isdigit():
                     raise ValueError("Geçersiz safkan kimliği")
@@ -1450,7 +1683,7 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
                     dist = int(float(params.get("dist", ["1400"])[0]))
                 except ValueError:
                     raise ValueError("Geçersiz sıklet veya mesafe parametresi")
-                data = fetch_horse_bankomat_sheet(at_id, today_weight=weight, target_dist=dist, is_arab=is_arab)
+                data = fetch_horse_bankomat_sheet(at_id, today_weight=weight, target_dist=dist, is_arab=is_arab, lite=lite)
                 body = json.dumps({"ok": True, "data": data}, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -1464,6 +1697,21 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(err_body)))
                 self.end_headers()
                 self.wfile.write(err_body)
+            return
+
+        if parsed.path == "/api/race_idman":
+            params = urllib.parse.parse_qs(parsed.query)
+            kosu = params.get("kosu", [""])[0]
+            at_kodu = params.get("at", [""])[0]
+            race_date = params.get("date", [""])[0]
+            try:
+                if not (kosu.isdigit() and at_kodu.isdigit()):
+                    raise ValueError("Geçersiz koşu veya at kodu")
+                if race_date and not re.match(r'^\d{2}/\d{2}/\d{4}$', race_date):
+                    race_date = ""
+                self.send_json(200, {"ok": True, "data": fetch_race_idman(kosu, at_kodu, race_date)})
+            except Exception as e:
+                self.send_json(500, {"ok": False, "error": str(e)})
             return
 
         if parsed.path == "/api/program":

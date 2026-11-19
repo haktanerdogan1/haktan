@@ -104,3 +104,12 @@ Kullanıcı bir ata tıkladığında arka planda TJK'nın 3 ayrı uç noktasına
 * Önbellek süreli: bülten 5 dk (AGF güncel kalsın diye), hipodrom listesi 10 dk, safkan geçmişi 6 sa. ↻ düğmesi hepsini temizler.
 * Sunucu çok iş parçacıklıdır (`ThreadingHTTPServer`); bir safkanın TJK sayfaları çekilirken diğer istekler beklemez.
 * AGF verisi olmayan koşularda "Cazip Safkan / Sürpriz" kararı verilmez (piyasa bilinmeden değer hesaplanamaz).
+
+### 8. Derece Karnesi, Koşu Sınıfı Karnesi, Handikap Seyri ve İdman
+Bülten kartlarında (koşu açılınca arka planda yüklenir) ve safkan penceresinde:
+* **Derece Karnesi (yarış başına):** Birincilik, İkincilik, Üçüncülük yüzdeleri ile **İlk 3** ve **İlk 5** yüzdeleri — Kariyer, Son 10 koşu, Çim / Kum / Sentetik kırılımı. Kaynak: TJK özet tablosu (1.–5.'lik sayıları); genç atlarda özet tablo yoksa tüm koşulardan hesaplanır. Derecesiz biten koşular da yarış sayısına dahildir.
+* **Koşu Sınıfı Karnesi (`classify_race`):** Tüm kariyer koşuları Grup 1/2/3 → Kısa Vade (KV) → Şartlı 5…1 → Handikap (yüksekten düşüğe) → Maiden → Satış sırasıyla gruplanır; her sınıfta K, 1-2-3, 1.%, İlk 3 %, İlk 5 %, ortalama ve en iyi sıra.
+* **Handikap Puanı Seyri:** Son 12 koşudaki HP çubuk grafiği, güncel / en yüksek / en düşük HP ve son 5 koşudaki değişim (kartta `HP 70 ▲17`). Geçmiş koşu tablosuna HP sütunu eklendi.
+* **Son İdman (Galop • Sprint • Kenter):** TJK bültenindeki "İdm" bağlantısından koşunun idman tablosu (`/api/race_idman`) ve her idmanın detayı çekilir: ara dereceler (2200m…200m), idman türü, **Galop Durumu (Çok Rahat / Rahat / Çalışır)**, idman jokeyi, pist/zemin/hava, kaç gün önce yapıldığı, 200m başına ortalama tempo ve koşu içinde **son 400m sıralaması** ("EN HIZLI SON 400").
+* **Pist durumu:** Çim pistlerdeki penetrometre değeri ayrılır (`Ç:Yumuşak 3.7` → `YM 3.7`); Biraz Yumuşak (BY), Çok Ağır (ÇA) gibi durumlar doğru kodlanır.
+* **Zorluk katsayısı düzeltmesi:** Python'da `"Handikap".upper()` noktasız `HANDIKAP` verdiği için tüm handikap koşuları Maiden seviyesinde (32.0) puanlanıyordu; Türkçe büyük harf (`tr_upper`) ile düzeltildi. `G 3` yazımı da artık Grup 3 olarak tanınır.
