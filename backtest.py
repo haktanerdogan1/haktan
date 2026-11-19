@@ -277,7 +277,7 @@ def collect_day(date_str):
             if not m:
                 continue
             results = parse_results_csv(fetch_disk(safe_csv_url(S.html_lib.unescape(m.group(0))), encoding="utf-8-sig"))
-            prog = S.fetch_city_program(date_str, city_id=city["id"])
+            prog = S.fetch_city_program(date_str, city_id=city["id"], with_jockeys=False)
         except Exception as e:
             log(f"  ! {date_str} {city['name']}: {e}")
             failed.append(city["name"])

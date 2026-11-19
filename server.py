@@ -203,12 +203,12 @@ def parse_time_to_seconds(t_str):
     return None
 
 
-def get_available_cities(date_str):
+def get_available_cities(date_str, with_times=False):
     """
     date_str format: DD/MM/YYYY (e.g. '19/11/2026')
     Returns list of dicts: {id, name, is_domestic, url}
     """
-    cache_key = f"cities_{date_str}"
+    cache_key = f"cities_{date_str}_{int(bool(with_times))}"
     cached = cache_get(cache_key, TTL_CITIES)
     if cached is not None:
         return cached
@@ -246,7 +246,14 @@ def get_available_cities(date_str):
     # Yalnız yerli hipodromlar: yurt dışı koşuları sistemi yormasın diye listelenmez
     cities = [c for c in cities if c["is_domestic"]]
 
-    # Gündüz koşuları önce: her hipodromun ilk koşu saatine göre sırala (sayfa önbellekten paylaşılır)
+    if not with_times:
+        cities.sort(key=lambda c: int(c["id"]))
+        if cities:
+            cache_set(cache_key, cities)
+        return cities
+
+    # Gündüz koşuları önce: her hipodromun ilk koşu saatine göre sırala (sayfa önbellekten paylaşılır).
+    # Yalnız bülten açılırken gerekir; gün seçici bu büyük sayfaları indirmez.
     def first_race(c):
         try:
             m = re.search(r'1\.\s*Koşu\s*(\d{1,2})[\.:](\d{2})', fetch_cached(c["url"], 240))
@@ -2609,13 +2616,13 @@ def slim_jockey_stats(js):
     return out
 
 
-def fetch_city_program(date_str, city_id=None, city_name=None):
+def fetch_city_program(date_str, city_id=None, city_name=None, with_jockeys=True):
     """
     Fetches live TJK program for the selected date & city.
     Downloads both the HTML page (to discover the official CSV URL and jersey icons)
     and the official TJK CSV data file.
     """
-    cities = get_available_cities(date_str)
+    cities = get_available_cities(date_str, with_times=True)
     if not cities:
         raise ValueError(f"{date_str} tarihinde yerli hipodromlarda yarış yok.")
 
@@ -2633,14 +2640,16 @@ def fetch_city_program(date_str, city_id=None, city_name=None):
     if not target_city:
         target_city = cities[0]
 
-    cache_key = f"prog_{date_str}_{target_city['id']}"
+    cache_key = f"prog_{date_str}_{target_city['id']}_{int(bool(with_jockeys))}"
     cached = cache_get(cache_key, TTL_PROGRAM)
     if cached is not None:
         return cached
 
     city_html = fetch_cached(target_city["url"], 240)
     html_extras = extract_horse_extras_from_html(city_html)
-    jockeys_ready = attach_jockey_stats(html_extras, date_str, target_city["id"] if target_city.get("is_domestic") else None)
+    # Geçmiş günlerin arşivlenmesinde jokey istatistiği çekilmez (yüzlerce gereksiz TJK isteği;
+    # 'bu yıl' istatistiği o günden sonraki koşuları da içerdiği için ölçümde kullanılamaz)
+    jockeys_ready = attach_jockey_stats(html_extras, date_str, target_city["id"] if target_city.get("is_domestic") else None) if with_jockeys else True
 
     # Find CSV link inside city_html
     csv_m = re.search(r'href=["\'](https://medya-cdn\.tjk\.org/[^"\']+\.csv)["\']', city_html, re.I)
@@ -2838,8 +2847,13 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
             city_id = params.get("city_id", [None])[0]
             city_name = params.get("city", [None])[0]
             if params.get("refresh", ["0"])[0] == "1":
+                # ↻: yalnız gün içinde değişen veriler (bülten, AGF/ganyan, koşmazlar, idman, sürpriz) tazelenir.
+                # Atların karnesi, akrabalar ve jokey istatistikleri kendi süreleriyle yenilenir;
+                # hepsini silmek TJK'ya yüzlerce isteği baştan tetikliyordu.
+                volatile = ("prog_", "cities_", "surprise_", "idman_", "raw_https://www.tjk.org/TR/YarisSever/Info/")
                 with CACHE_LOCK:
-                    CACHE.clear()
+                    for k in [k for k in CACHE if k.startswith(volatile)]:
+                        CACHE.pop(k, None)
 
             try:
                 data = fetch_city_program(date_str, city_id=city_id, city_name=city_name)
