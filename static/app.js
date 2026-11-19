@@ -51,6 +51,7 @@ let HORSE_MODAL_TOKEN = 0;
 document.addEventListener('DOMContentLoaded', () => {
   LOADING_MARKUP = document.getElementById('loadingOverlay').innerHTML;
   // Alttan açılan pencereler: karartılmış alana dokununca kapanır
+  ['dateTabs', 'cityTabs', 'raceTabs'].forEach(id => enableHorizontalScroll(document.getElementById(id)));
   ['horseModal', 'weightsModal'].forEach(id => {
     const el = document.getElementById(id);
     el.addEventListener('click', e => { if (e.target === el) el.classList.add('hidden'); });
@@ -121,6 +122,46 @@ async function loadProgram(cityId = null, forceRefresh = false, opts = {}) {
   }
 }
 
+// Bilgisayarda yatay şeritler: fare tekerleği yatay kaydırır, tutup sürükleyerek kaydırılır
+function enableHorizontalScroll(el) {
+  if (!el) return;
+  el.addEventListener('wheel', e => {
+    if (el.scrollWidth <= el.clientWidth) return;              // taşma yoksa sayfa normal kaysın
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;       // dokunmatik yüzey zaten yatay kaydırıyor
+    const before = el.scrollLeft;
+    el.scrollLeft += e.deltaY;
+    if (el.scrollLeft !== before) e.preventDefault();          // şerit kaydıysa sayfa kaymasın
+  }, { passive: false });
+  let down = false, startX = 0, startLeft = 0, moved = false;
+  el.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    down = true; moved = false; startX = e.pageX; startLeft = el.scrollLeft;
+  });
+  window.addEventListener('mousemove', e => {
+    if (!down) return;
+    const dx = e.pageX - startX;
+    if (Math.abs(dx) > 5) { moved = true; el.classList.add('dragging'); }
+    if (moved) el.scrollLeft = startLeft - dx;
+  });
+  window.addEventListener('mouseup', () => {
+    if (!down) return;
+    down = false;
+    el.classList.remove('dragging');
+  });
+  // Sürükleme bittiğinde altta kalan düğmeye tıklanmış sayılmasın
+  el.addEventListener('click', e => { if (moved) { e.stopPropagation(); e.preventDefault(); moved = false; } }, true);
+}
+
+// Seçili hipodrom/koşu/gün şeritte görünür alana gelsin
+function scrollActiveIntoView(id) {
+  const el = document.getElementById(id);
+  const active = el && el.querySelector('[data-active="1"]');
+  if (active) {
+    const left = active.offsetLeft - (el.clientWidth - active.offsetWidth) / 2;
+    el.scrollTo({ left: Math.max(0, left), behavior: 'smooth' });
+  }
+}
+
 function refreshProgram(force) {
   if (force) {
     // ↻: sunucu önbelleği temizlenir; tarayıcıdaki karne/idman kopyaları da tazelensin
@@ -146,7 +187,7 @@ function renderDateTabs() {
     const active = d.date === current;
     const dom = d.domestic.length ? d.domestic.join(', ') : 'Yalnız yabancı';
     return `
-      <button onclick="selectDate('${d.date}')" title="${dom}"
+      <button onclick="selectDate('${d.date}')" title="${dom}" data-active="${active ? 1 : 0}"
         class="px-2.5 py-1 rounded-md whitespace-nowrap flex items-center gap-1.5 text-[11px] font-bold ${
           active ? 'bg-[#F6F3EC] text-[#0F291E]' : 'bg-[#091912]/60 text-[#B7C9BE] border border-white/10'
         }">
@@ -154,6 +195,7 @@ function renderDateTabs() {
         <span class="text-[9px] opacity-70">${d.cities} hip.</span>
       </button>`;
   }).join('');
+  scrollActiveIntoView('dateTabs');
 }
 
 function selectDate(date) {
@@ -174,7 +216,7 @@ function renderHeaderAndTabs() {
   cityContainer.innerHTML = p.available_cities.map(c => {
     const active = String(c.id) === String(p.city_id);
     return `
-      <button onclick="loadProgram('${c.id}', false)"
+      <button onclick="loadProgram('${c.id}', false)" data-active="${active ? 1 : 0}"
         class="px-3 py-1 rounded-md text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
           active
             ? 'bg-[#D4AF37] text-[#0F291E] shadow-xs'
@@ -184,6 +226,7 @@ function renderHeaderAndTabs() {
       </button>
     `;
   }).join('');
+  scrollActiveIntoView('cityTabs');
 
   renderRacePills();
 }
@@ -195,7 +238,7 @@ function renderRacePills() {
     const active = idx === STATE.currentRaceIndex;
     const isAltiliStart = !!r.is_altili_start;
     return `
-      <button onclick="selectRace(${idx})"
+      <button onclick="selectRace(${idx})" data-active="${active ? 1 : 0}"
         class="px-2.5 py-1 rounded-md text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1 ${
           active
             ? 'bg-[#F6F3EC] text-[#0F291E] shadow-xs'
@@ -207,6 +250,7 @@ function renderRacePills() {
       </button>
     `;
   }).join('');
+  scrollActiveIntoView('raceTabs');
 }
 
 function selectRace(idx) {

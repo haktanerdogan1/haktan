@@ -50,6 +50,15 @@
     .no-scrollbar::-webkit-scrollbar {
       display: none;
     }
+    /* Bilgisayarda (fare) yatay şeritler için ince pirinç kaydırma çubuğu; telefonda gizli kalır */
+    @media (hover: hover) and (pointer: fine) {
+      .no-scrollbar.hscroll { scrollbar-width: thin; scrollbar-color: rgba(212, 175, 55, 0.55) transparent; padding-bottom: 4px; }
+      .no-scrollbar.hscroll::-webkit-scrollbar { display: block; height: 6px; }
+      .no-scrollbar.hscroll::-webkit-scrollbar-thumb { background: rgba(212, 175, 55, 0.55); border-radius: 3px; }
+      .no-scrollbar.hscroll::-webkit-scrollbar-track { background: transparent; }
+      .hscroll { cursor: grab; }
+      .hscroll.dragging { cursor: grabbing; user-select: none; }
+    }
     .no-scrollbar {
       -ms-overflow-style: none;
       scrollbar-width: none;
@@ -120,12 +129,12 @@
 
       <!-- Hippodrome Selector Pills -->
       <!-- Gün Seçici (Bugün / Yarın / sonraki günler — TJK'nın yayınladığı bültenler) -->
-      <div id="dateTabs" class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1.5"></div>
+      <div id="dateTabs" class="hscroll flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1.5"></div>
 
-      <div id="cityTabs" class="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5"></div>
+      <div id="cityTabs" class="hscroll flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5"></div>
 
       <!-- Race Selector Strip -->
-      <div id="raceTabs" class="flex items-center gap-1.5 overflow-x-auto no-scrollbar mt-2 pt-2 border-t border-white/10"></div>
+      <div id="raceTabs" class="hscroll flex items-center gap-1.5 overflow-x-auto no-scrollbar mt-2 pt-2 border-t border-white/10"></div>
     </header>
 
     <!-- Loading Screen -->
