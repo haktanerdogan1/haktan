@@ -30,6 +30,8 @@ python server.py
 Sunucu `http://localhost:8090` adresinde başlar.
 
 ### ☁️ Ücretsiz Yayınlama: Render
+**Canlı site:** https://haktan-kkjp.onrender.com
+
 Depoda `render.yaml` hazırdır:
 1. [render.com](https://render.com) → GitHub ile giriş → **New → Blueprint** → `haktanerdogan1/haktan` → **Apply**.
 2. Birkaç dakika sonra adres hazır: `https://padok-bulten.onrender.com` (ad doluysa Render farklı bir ek koyar).
