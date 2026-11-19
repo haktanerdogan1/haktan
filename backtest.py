@@ -9,7 +9,7 @@ Her geçmiş yarış günü için:
   3) sonuç CSV'sinden bitiş sırası ve kapanış ganyanı eşleştirilir.
 
 Kullanım:
-  python backtest.py collect --days 60      # veriyi topla (data/backtest_records.jsonl.gz)
+  python backtest.py collect --days 60      # veriyi topla (data/records/YYYY-MM-DD.jsonl.gz)
   python backtest.py analyze                # işaretleri ölç, static/data/surprise_stats.json üret
 
 Yalnızca Python standart kütüphanesi kullanır.
@@ -29,7 +29,8 @@ import server as S
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
-RECORDS_PATH = os.path.join(DATA_DIR, "backtest_records.jsonl.gz")
+RECORDS_DIR = os.path.join(DATA_DIR, "records")          # arşiv: gün başına bir dosya, hiç yeniden yazılmaz
+RECORDS_PATH = os.path.join(DATA_DIR, "backtest_records.jsonl.gz")  # eski tek dosya (taşıma için)
 STATS_PATH = os.path.join(BASE_DIR, "static", "data", "surprise_stats.json")
 RAW_CACHE_DIR = os.environ.get("BACKTEST_CACHE", os.path.join(BASE_DIR, ".backtest_cache"))
 
@@ -316,29 +317,66 @@ def collect_day(date_str):
     return records
 
 
+def day_path(date_str):
+    d = datetime.strptime(date_str, "%d/%m/%Y")
+    return os.path.join(RECORDS_DIR, d.strftime("%Y-%m-%d") + ".jsonl.gz")
+
+
+def write_day(date_str, records):
+    os.makedirs(RECORDS_DIR, exist_ok=True)
+    tmp = day_path(date_str) + ".tmp"
+    with gzip.open(tmp, "wt", encoding="utf-8") as f:
+        for r in records:
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    os.replace(tmp, day_path(date_str))
+
+
+def migrate_single_file():
+    """Eski tek dosyalık arşivi gün başına dosyalara böler."""
+    if not os.path.exists(RECORDS_PATH):
+        return
+    by_day = {}
+    with gzip.open(RECORDS_PATH, "rt", encoding="utf-8") as f:
+        for line in f:
+            r = json.loads(line)
+            by_day.setdefault(r["date"], []).append(r)
+    for d, recs in by_day.items():
+        if not os.path.exists(day_path(d)):
+            write_day(d, recs)
+    os.remove(RECORDS_PATH)
+    log(f"{len(by_day)} gün gün başına dosyalara taşındı")
+
+
+def load_records():
+    migrate_single_file()
+    recs = []
+    if os.path.isdir(RECORDS_DIR):
+        for name in sorted(os.listdir(RECORDS_DIR)):
+            if name.endswith(".jsonl.gz"):
+                with gzip.open(os.path.join(RECORDS_DIR, name), "rt", encoding="utf-8") as f:
+                    recs.extend(json.loads(l) for l in f)
+    return recs
+
+
 def collect(days, end=None):
-    os.makedirs(DATA_DIR, exist_ok=True)
+    """Son `days` günü toplar; arşivde olan günleri atlar (yarış olmayan günler boş dosya olarak işaretlenir)."""
+    migrate_single_file()
     end_date = datetime.strptime(end, "%d/%m/%Y") if end else S.tr_now().replace(tzinfo=None) - timedelta(days=1)
-    existing = {}
-    if os.path.exists(RECORDS_PATH):
-        with gzip.open(RECORDS_PATH, "rt", encoding="utf-8") as f:
-            for line in f:
-                r = json.loads(line)
-                existing.setdefault(r["date"], []).append(r)
+    added = 0
     for i in range(days):
         d = (end_date - timedelta(days=i)).strftime("%d/%m/%Y")
-        if d in existing:
+        if os.path.exists(day_path(d)):
             continue
         try:
-            existing[d] = collect_day(d)
+            recs = collect_day(d)
         except Exception as e:
             log(f"! {d}: {e}")
             continue
-        with gzip.open(RECORDS_PATH, "wt", encoding="utf-8") as f:
-            for recs in existing.values():
-                for r in recs:
-                    f.write(json.dumps(r, ensure_ascii=False) + "\n")
-        log(f"{d} tamam • toplam {sum(len(v) for v in existing.values())} kayıt")
+        write_day(d, recs)
+        added += len(recs)
+        log(f"{d} tamam • {len(recs)} kayıt")
+    log(f"bitti • yeni kayıt {added}")
+    return added
 
 
 # ------------------------------------------------------------------ piyasa ve kalibrasyon
@@ -417,9 +455,7 @@ def roi_block(recs):
 
 
 def analyze():
-    with gzip.open(RECORDS_PATH, "rt", encoding="utf-8") as f:
-        recs = [json.loads(l) for l in f]
-    recs = [r for r in recs if r.get("ganyan")]
+    recs = [r for r in load_records() if r.get("ganyan")]
     for r in recs:
         r["_sig"] = sorted(compute_signals(r))
     dates = sorted({datetime.strptime(r["date"], "%d/%m/%Y") for r in recs})

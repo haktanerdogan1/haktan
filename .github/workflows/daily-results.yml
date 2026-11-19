@@ -1,0 +1,59 @@
+# Her gece dünün TJK sonuçlarını arşive ekler (data/records/), karneyi yeniden hesaplar
+# (static/data/surprise_stats.json), depoya kaydeder ve Render'ı yeniden yayınlatır.
+name: Günlük sonuç arşivi
+
+on:
+  schedule:
+    - cron: "41 1 * * *"   # UTC 01:41 = TR 04:41 (gece yarısından sonraki yabancı koşular dahil her şey bitmiş olur)
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Kaç gün geriye bakılsın (arşivde olan günler atlanır)"
+        default: "4"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-results
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Depoyu al
+        uses: actions/checkout@v4
+
+      - name: Dünün sonuçlarını topla
+        run: python backtest.py collect --days "${{ github.event.inputs.days || '4' }}"
+
+      - name: Karneyi yeniden hesapla
+        run: python backtest.py analyze
+
+      - name: Testleri çalıştır
+        run: python -m unittest discover -s tests
+
+      - name: Arşivi kaydet
+        id: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/records static/data/surprise_stats.json
+          if git diff --cached --quiet; then
+            echo "Yeni veri yok."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "Günlük sonuç arşivi: $(date -u +%d.%m.%Y)"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Siteyi güncelle
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          # GitHub'ın kendi gönderimleri diğer işleri tetiklemez; yayını burada başlatıyoruz.
+          if [ -n "$RENDER_DEPLOY_HOOK" ]; then curl -fsS -X POST "$RENDER_DEPLOY_HOOK" > /dev/null && echo "Render yayını başlatıldı."; fi

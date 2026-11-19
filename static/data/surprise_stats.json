@@ -1,0 +1,994 @@
+{
+ "generated_at": "20/11/2026 00:19",
+ "period": {
+  "from": "20/09/2026",
+  "to": "18/11/2026",
+  "test_from": "30/10/2026",
+  "days": 60
+ },
+ "counts": {
+  "runners": 10996,
+  "races": 1070,
+  "overlooked": 7813
+ },
+ "baseline": {
+  "all_runners": {
+   "n": 10996,
+   "wins": 1067,
+   "win_pct": 9.7,
+   "avg_win_ganyan": 6.37,
+   "roi_pct": -38.2
+  },
+  "overlooked": {
+   "n": 7813,
+   "wins": 364,
+   "win_pct": 4.7,
+   "avg_win_ganyan": 12.18,
+   "roi_pct": -43.2
+  },
+  "overlooked_train": {
+   "n": 5255,
+   "wins": 245,
+   "win_pct": 4.7,
+   "avg_win_ganyan": 12.39,
+   "roi_pct": -42.3
+  },
+  "overlooked_test": {
+   "n": 2558,
+   "wins": 119,
+   "win_pct": 4.7,
+   "avg_win_ganyan": 11.76,
+   "roi_pct": -45.3
+  }
+ },
+ "signals": {
+  "model_value": {
+   "label": "Model şansı halkın 1,5 katı",
+   "all": {
+    "n": 2390,
+    "wins": 96,
+    "win_pct": 4.0,
+    "avg_win_ganyan": 13.08,
+    "roi_pct": -47.5
+   },
+   "train": {
+    "n": 1626,
+    "wins": 72,
+    "win_pct": 4.4,
+    "avg_win_ganyan": 13.66,
+    "roi_pct": -39.5
+   },
+   "test": {
+    "n": 764,
+    "wins": 24,
+    "win_pct": 3.1,
+    "avg_win_ganyan": 11.35,
+    "roi_pct": -64.3
+   }
+  },
+  "hp_light": {
+   "label": "Puanına göre 2 kg+ hafif",
+   "all": {
+    "n": 143,
+    "wins": 5,
+    "win_pct": 3.5,
+    "avg_win_ganyan": 10.96,
+    "roi_pct": -61.7
+   },
+   "train": {
+    "n": 110,
+    "wins": 5,
+    "win_pct": 4.5,
+    "avg_win_ganyan": 10.96,
+    "roi_pct": -50.2
+   },
+   "test": {
+    "n": 33,
+    "wins": 0,
+    "win_pct": 0.0,
+    "avg_win_ganyan": null,
+    "roi_pct": -100.0
+   }
+  },
+  "apprentice": {
+   "label": "Apranti jokey",
+   "all": {
+    "n": 2410,
+    "wins": 78,
+    "win_pct": 3.2,
+    "avg_win_ganyan": 15.6,
+    "roi_pct": -49.5
+   },
+   "train": {
+    "n": 1651,
+    "wins": 53,
+    "win_pct": 3.2,
+    "avg_win_ganyan": 16.74,
+    "roi_pct": -46.3
+   },
+   "test": {
+    "n": 759,
+    "wins": 25,
+    "win_pct": 3.3,
+    "avg_win_ganyan": 13.2,
+    "roi_pct": -56.5
+   }
+  },
+  "class_drop": {
+   "label": "Sınıf düşüşü (son koşusu daha zor)",
+   "all": {
+    "n": 1311,
+    "wins": 65,
+    "win_pct": 5.0,
+    "avg_win_ganyan": 11.49,
+    "roi_pct": -43.0
+   },
+   "train": {
+    "n": 886,
+    "wins": 46,
+    "win_pct": 5.2,
+    "avg_win_ganyan": 11.78,
+    "roi_pct": -38.8
+   },
+   "test": {
+    "n": 425,
+    "wins": 19,
+    "win_pct": 4.5,
+    "avg_win_ganyan": 10.8,
+    "roi_pct": -51.7
+   }
+  },
+  "surface_fit": {
+   "label": "Bugünkü pistte İlk 3 ≥ %40 (3+ koşu)",
+   "all": {
+    "n": 2093,
+    "wins": 119,
+    "win_pct": 5.7,
+    "avg_win_ganyan": 11.51,
+    "roi_pct": -34.6
+   },
+   "train": {
+    "n": 1422,
+    "wins": 82,
+    "win_pct": 5.8,
+    "avg_win_ganyan": 11.73,
+    "roi_pct": -32.4
+   },
+   "test": {
+    "n": 671,
+    "wins": 37,
+    "win_pct": 5.5,
+    "avg_win_ganyan": 11.02,
+    "roi_pct": -39.2
+   }
+  },
+  "distance_fit": {
+   "label": "Bu mesafe grubunda İlk 3 ≥ %40 (3+ koşu)",
+   "all": {
+    "n": 1909,
+    "wins": 111,
+    "win_pct": 5.8,
+    "avg_win_ganyan": 10.66,
+    "roi_pct": -38.0
+   },
+   "train": {
+    "n": 1296,
+    "wins": 78,
+    "win_pct": 6.0,
+    "avg_win_ganyan": 10.97,
+    "roi_pct": -34.0
+   },
+   "test": {
+    "n": 613,
+    "wins": 33,
+    "win_pct": 5.4,
+    "avg_win_ganyan": 9.92,
+    "roi_pct": -46.6
+   }
+  },
+  "season_fit": {
+   "label": "Bu mevsimde İlk 3 diğerlerinden 15+ puan iyi",
+   "all": {
+    "n": 997,
+    "wins": 53,
+    "win_pct": 5.3,
+    "avg_win_ganyan": 10.57,
+    "roi_pct": -43.8
+   },
+   "train": {
+    "n": 641,
+    "wins": 37,
+    "win_pct": 5.8,
+    "avg_win_ganyan": 11.02,
+    "roi_pct": -36.4
+   },
+   "test": {
+    "n": 356,
+    "wins": 16,
+    "win_pct": 4.5,
+    "avg_win_ganyan": 9.54,
+    "roi_pct": -57.1
+   }
+  },
+  "recent_top3": {
+   "label": "Son koşusunda ilk 3",
+   "all": {
+    "n": 1358,
+    "wins": 80,
+    "win_pct": 5.9,
+    "avg_win_ganyan": 9.91,
+    "roi_pct": -41.6
+   },
+   "train": {
+    "n": 900,
+    "wins": 54,
+    "win_pct": 6.0,
+    "avg_win_ganyan": 9.9,
+    "roi_pct": -40.6
+   },
+   "test": {
+    "n": 458,
+    "wins": 26,
+    "win_pct": 5.7,
+    "avg_win_ganyan": 9.95,
+    "roi_pct": -43.5
+   }
+  },
+  "improving": {
+   "label": "Form grafiği yükselişte",
+   "all": {
+    "n": 1629,
+    "wins": 102,
+    "win_pct": 6.3,
+    "avg_win_ganyan": 11.48,
+    "roi_pct": -28.1
+   },
+   "train": {
+    "n": 1044,
+    "wins": 65,
+    "win_pct": 6.2,
+    "avg_win_ganyan": 10.66,
+    "roi_pct": -33.6
+   },
+   "test": {
+    "n": 585,
+    "wins": 37,
+    "win_pct": 6.3,
+    "avg_win_ganyan": 12.92,
+    "roi_pct": -18.3
+   }
+  },
+  "lone_speed": {
+   "label": "Koşunun tek kaçağı",
+   "all": {
+    "n": 138,
+    "wins": 8,
+    "win_pct": 5.8,
+    "avg_win_ganyan": 12.44,
+    "roi_pct": -27.9
+   },
+   "train": {
+    "n": 92,
+    "wins": 5,
+    "win_pct": 5.4,
+    "avg_win_ganyan": 12.76,
+    "roi_pct": -30.7
+   },
+   "test": {
+    "n": 46,
+    "wins": 3,
+    "win_pct": 6.5,
+    "avg_win_ganyan": 11.92,
+    "roi_pct": -22.3
+   }
+  },
+  "first_blinkers": {
+   "label": "İlk kez kapalı gözlük (KG)",
+   "all": {
+    "n": 98,
+    "wins": 1,
+    "win_pct": 1.0,
+    "avg_win_ganyan": 18.05,
+    "roi_pct": -81.6
+   },
+   "train": {
+    "n": 65,
+    "wins": 1,
+    "win_pct": 1.5,
+    "avg_win_ganyan": 18.05,
+    "roi_pct": -72.2
+   },
+   "test": {
+    "n": 33,
+    "wins": 0,
+    "win_pct": 0.0,
+    "avg_win_ganyan": null,
+    "roi_pct": -100.0
+   }
+  },
+  "fresh": {
+   "label": "Dinlenmiş (14–45 gün)",
+   "all": {
+    "n": 3901,
+    "wins": 187,
+    "win_pct": 4.8,
+    "avg_win_ganyan": 12.14,
+    "roi_pct": -41.8
+   },
+   "train": {
+    "n": 2664,
+    "wins": 130,
+    "win_pct": 4.9,
+    "avg_win_ganyan": 12.39,
+    "roi_pct": -39.6
+   },
+   "test": {
+    "n": 1237,
+    "wins": 57,
+    "win_pct": 4.6,
+    "avg_win_ganyan": 11.59,
+    "roi_pct": -46.6
+   }
+  },
+  "long_layoff": {
+   "label": "Uzun ara (120+ gün)",
+   "all": {
+    "n": 243,
+    "wins": 4,
+    "win_pct": 1.6,
+    "avg_win_ganyan": 22.97,
+    "roi_pct": -62.2
+   },
+   "train": {
+    "n": 164,
+    "wins": 4,
+    "win_pct": 2.4,
+    "avg_win_ganyan": 22.97,
+    "roi_pct": -44.0
+   },
+   "test": {
+    "n": 79,
+    "wins": 0,
+    "win_pct": 0.0,
+    "avg_win_ganyan": null,
+    "roi_pct": -100.0
+   }
+  },
+  "season_weak": {
+   "label": "Bu mevsimde zayıf",
+   "all": {
+    "n": 955,
+    "wins": 45,
+    "win_pct": 4.7,
+    "avg_win_ganyan": 12.12,
+    "roi_pct": -42.9
+   },
+   "train": {
+    "n": 567,
+    "wins": 23,
+    "win_pct": 4.1,
+    "avg_win_ganyan": 12.78,
+    "roi_pct": -48.2
+   },
+   "test": {
+    "n": 388,
+    "wins": 22,
+    "win_pct": 5.7,
+    "avg_win_ganyan": 11.42,
+    "roi_pct": -35.2
+   }
+  }
+ },
+ "weights": {
+  "model_value": -0.17,
+  "hp_light": -0.08,
+  "apprentice": -0.93,
+  "class_drop": 0.3,
+  "surface_fit": 0.67,
+  "distance_fit": 0.82,
+  "season_fit": 0.65,
+  "recent_top3": 0.8,
+  "improving": 0.95,
+  "lone_speed": 0.35,
+  "first_blinkers": -1.38,
+  "fresh": 0.11,
+  "long_layoff": -1.22,
+  "season_weak": -0.39
+ },
+ "thresholds": [
+  {
+   "threshold": 0.5,
+   "train": {
+    "n": 2295,
+    "wins": 143,
+    "win_pct": 6.2,
+    "avg_win_ganyan": 10.92,
+    "roi_pct": -32.0
+   },
+   "test": {
+    "n": 1131,
+    "wins": 61,
+    "win_pct": 5.4,
+    "avg_win_ganyan": 10.8,
+    "roi_pct": -41.8
+   }
+  },
+  {
+   "threshold": 1.0,
+   "train": {
+    "n": 1501,
+    "wins": 105,
+    "win_pct": 7.0,
+    "avg_win_ganyan": 10.82,
+    "roi_pct": -24.3
+   },
+   "test": {
+    "n": 744,
+    "wins": 49,
+    "win_pct": 6.6,
+    "avg_win_ganyan": 10.74,
+    "roi_pct": -29.3
+   }
+  },
+  {
+   "threshold": 1.5,
+   "train": {
+    "n": 927,
+    "wins": 64,
+    "win_pct": 6.9,
+    "avg_win_ganyan": 9.94,
+    "roi_pct": -31.3
+   },
+   "test": {
+    "n": 461,
+    "wins": 34,
+    "win_pct": 7.4,
+    "avg_win_ganyan": 10.55,
+    "roi_pct": -22.2
+   }
+  },
+  {
+   "threshold": 2.0,
+   "train": {
+    "n": 506,
+    "wins": 36,
+    "win_pct": 7.1,
+    "avg_win_ganyan": 8.7,
+    "roi_pct": -38.1
+   },
+   "test": {
+    "n": 256,
+    "wins": 19,
+    "win_pct": 7.4,
+    "avg_win_ganyan": 11.19,
+    "roi_pct": -16.9
+   }
+  },
+  {
+   "threshold": 2.5,
+   "train": {
+    "n": 250,
+    "wins": 16,
+    "win_pct": 6.4,
+    "avg_win_ganyan": 9.29,
+    "roi_pct": -40.5
+   },
+   "test": {
+    "n": 126,
+    "wins": 6,
+    "win_pct": 4.8,
+    "avg_win_ganyan": 8.4,
+    "roi_pct": -60.0
+   }
+  },
+  {
+   "threshold": 3.0,
+   "train": {
+    "n": 138,
+    "wins": 8,
+    "win_pct": 5.8,
+    "avg_win_ganyan": 9.32,
+    "roi_pct": -45.9
+   },
+   "test": {
+    "n": 68,
+    "wins": 3,
+    "win_pct": 4.4,
+    "avg_win_ganyan": 7.88,
+    "roi_pct": -65.2
+   }
+  }
+ ],
+ "calibration": [
+  {
+   "bucket": "%0–5",
+   "n": 5268,
+   "model_avg": 1.8,
+   "actual": 4.1
+  },
+  {
+   "bucket": "%5–10",
+   "n": 2070,
+   "model_avg": 7.2,
+   "actual": 8.6
+  },
+  {
+   "bucket": "%10–20",
+   "n": 2021,
+   "model_avg": 14.3,
+   "actual": 14.5
+  },
+  {
+   "bucket": "%20–35",
+   "n": 1100,
+   "model_avg": 26.1,
+   "actual": 21.0
+  },
+  {
+   "bucket": "%35–100",
+   "n": 537,
+   "model_avg": 47.0,
+   "actual": 27.6
+  }
+ ],
+ "recommended_threshold": 1.0,
+ "market": {
+  "model_weight": 0.0,
+  "agf_weight": 0.9,
+  "model_temperature": 0.6,
+  "log_likelihood_test": {
+   "model_only": -2.1956,
+   "model_calibrated": -2.0744,
+   "agf_only": -1.8172,
+   "combined": -1.8195
+  },
+  "races_with_agf": {
+   "train": 703,
+   "test": 355
+  },
+  "ev_rule": [
+   {
+    "threshold": 1.0,
+    "train": {
+     "n": 324,
+     "wins": 32,
+     "win_pct": 9.9,
+     "avg_win_ganyan": 9.37,
+     "roi_pct": -7.4
+    },
+    "test": {
+     "n": 167,
+     "wins": 20,
+     "win_pct": 12.0,
+     "avg_win_ganyan": 7.28,
+     "roi_pct": -12.8
+    }
+   },
+   {
+    "threshold": 1.1,
+    "train": {
+     "n": 163,
+     "wins": 17,
+     "win_pct": 10.4,
+     "avg_win_ganyan": 11.02,
+     "roi_pct": 14.9
+    },
+    "test": {
+     "n": 97,
+     "wins": 12,
+     "win_pct": 12.4,
+     "avg_win_ganyan": 8.34,
+     "roi_pct": 3.2
+    }
+   },
+   {
+    "threshold": 1.2,
+    "train": {
+     "n": 90,
+     "wins": 10,
+     "win_pct": 11.1,
+     "avg_win_ganyan": 11.9,
+     "roi_pct": 32.2
+    },
+    "test": {
+     "n": 46,
+     "wins": 6,
+     "win_pct": 13.0,
+     "avg_win_ganyan": 9.14,
+     "roi_pct": 19.2
+    }
+   },
+   {
+    "threshold": 1.3,
+    "train": {
+     "n": 47,
+     "wins": 4,
+     "win_pct": 8.5,
+     "avg_win_ganyan": 18.93,
+     "roi_pct": 61.1
+    },
+    "test": {
+     "n": 25,
+     "wins": 4,
+     "win_pct": 16.0,
+     "avg_win_ganyan": 10.65,
+     "roi_pct": 70.4
+    }
+   },
+   {
+    "threshold": 1.5,
+    "train": {
+     "n": 17,
+     "wins": 1,
+     "win_pct": 5.9,
+     "avg_win_ganyan": 25.1,
+     "roi_pct": 47.6
+    },
+    "test": {
+     "n": 11,
+     "wins": 2,
+     "win_pct": 18.2,
+     "avg_win_ganyan": 15.55,
+     "roi_pct": 182.7
+    }
+   }
+  ],
+  "ev_threshold": 1.2,
+  "ev_min_prob": 0.05
+ },
+ "big_winners": [
+  {
+   "date": "03/11/2026",
+   "city": "Adana",
+   "race_no": 8,
+   "name": "SOSAN AĞA",
+   "ganyan": 58.55,
+   "agf_rank": 9,
+   "signals": [
+    "fresh",
+    "improving"
+   ],
+   "score": 1.06
+  },
+  {
+   "date": "11/10/2026",
+   "city": "Adana",
+   "race_no": 6,
+   "name": "OTTANTOTTO",
+   "ganyan": 50.45,
+   "agf_rank": 9,
+   "signals": [
+    "apprentice",
+    "fresh"
+   ],
+   "score": -0.82
+  },
+  {
+   "date": "21/10/2026",
+   "city": "Bursa",
+   "race_no": 1,
+   "name": "MICKEY MO",
+   "ganyan": 48.65,
+   "agf_rank": 9,
+   "signals": [
+    "apprentice",
+    "fresh"
+   ],
+   "score": -0.82
+  },
+  {
+   "date": "25/10/2026",
+   "city": "Adana",
+   "race_no": 5,
+   "name": "O BİR KRALİÇE",
+   "ganyan": 46.1,
+   "agf_rank": 11,
+   "signals": [
+    "apprentice",
+    "model_value"
+   ],
+   "score": -1.1
+  },
+  {
+   "date": "30/09/2026",
+   "city": "İstanbul",
+   "race_no": 4,
+   "name": "SAADGIRL",
+   "ganyan": 45.45,
+   "agf_rank": 11,
+   "signals": [
+    "class_drop",
+    "fresh"
+   ],
+   "score": 0.41
+  },
+  {
+   "date": "03/10/2026",
+   "city": "Ankara",
+   "race_no": 5,
+   "name": "TAHSİN SEFA",
+   "ganyan": 40.55,
+   "agf_rank": 12,
+   "signals": [
+    "distance_fit",
+    "fresh",
+    "model_value",
+    "recent_top3",
+    "season_weak",
+    "surface_fit"
+   ],
+   "score": 1.84
+  },
+  {
+   "date": "22/09/2026",
+   "city": "Kocaeli",
+   "race_no": 1,
+   "name": "LETS GO",
+   "ganyan": 39.65,
+   "agf_rank": 5,
+   "signals": [],
+   "score": 0
+  },
+  {
+   "date": "02/10/2026",
+   "city": "İstanbul",
+   "race_no": 2,
+   "name": "ÇAĞRI HAN",
+   "ganyan": 39.15,
+   "agf_rank": 9,
+   "signals": [
+    "model_value"
+   ],
+   "score": -0.17
+  },
+  {
+   "date": "22/09/2026",
+   "city": "Ankara",
+   "race_no": 5,
+   "name": "FENNAN",
+   "ganyan": 38.95,
+   "agf_rank": 10,
+   "signals": [
+    "apprentice",
+    "class_drop",
+    "distance_fit",
+    "fresh",
+    "improving",
+    "surface_fit"
+   ],
+   "score": 1.92
+  },
+  {
+   "date": "05/10/2026",
+   "city": "Bursa",
+   "race_no": 7,
+   "name": "HİFA GÜZELİ",
+   "ganyan": 36.35,
+   "agf_rank": 9,
+   "signals": [
+    "fresh"
+   ],
+   "score": 0.11
+  },
+  {
+   "date": "06/11/2026",
+   "city": "İstanbul",
+   "race_no": 8,
+   "name": "CİHAN KIZ",
+   "ganyan": 32.75,
+   "agf_rank": 11,
+   "signals": [
+    "fresh"
+   ],
+   "score": 0.11
+  },
+  {
+   "date": "16/11/2026",
+   "city": "Şanlıurfa",
+   "race_no": 4,
+   "name": "ADNANHAN",
+   "ganyan": 32.65,
+   "agf_rank": 11,
+   "signals": [
+    "fresh"
+   ],
+   "score": 0.11
+  },
+  {
+   "date": "11/10/2026",
+   "city": "Adana",
+   "race_no": 5,
+   "name": "LAMAZİ GOGO",
+   "ganyan": 31.85,
+   "agf_rank": 10,
+   "signals": [
+    "model_value",
+    "season_weak"
+   ],
+   "score": -0.56
+  },
+  {
+   "date": "21/10/2026",
+   "city": "Bursa",
+   "race_no": 6,
+   "name": "ÖNCÜER",
+   "ganyan": 30.65,
+   "agf_rank": 11,
+   "signals": [
+    "apprentice",
+    "distance_fit",
+    "hp_light",
+    "long_layoff",
+    "season_fit"
+   ],
+   "score": -0.76
+  },
+  {
+   "date": "06/11/2026",
+   "city": "Bursa",
+   "race_no": 2,
+   "name": "KÖYCÜ BEY",
+   "ganyan": 30.6,
+   "agf_rank": 8,
+   "signals": [
+    "apprentice",
+    "surface_fit"
+   ],
+   "score": -0.26
+  },
+  {
+   "date": "09/11/2026",
+   "city": "Bursa",
+   "race_no": 1,
+   "name": "ALTIN KELEBEK",
+   "ganyan": 30.25,
+   "agf_rank": 9,
+   "signals": [
+    "apprentice",
+    "improving"
+   ],
+   "score": 0.02
+  },
+  {
+   "date": "25/10/2026",
+   "city": "Adana",
+   "race_no": 8,
+   "name": "ZÜMRÜTCAN",
+   "ganyan": 30.2,
+   "agf_rank": 10,
+   "signals": [
+    "apprentice",
+    "model_value"
+   ],
+   "score": -1.1
+  },
+  {
+   "date": "27/09/2026",
+   "city": "Adana",
+   "race_no": 8,
+   "name": "VARTO ESİNTİSİ",
+   "ganyan": 29.4,
+   "agf_rank": 11,
+   "signals": [
+    "apprentice",
+    "class_drop",
+    "long_layoff",
+    "model_value"
+   ],
+   "score": -2.02
+  },
+  {
+   "date": "25/09/2026",
+   "city": "İstanbul",
+   "race_no": 8,
+   "name": "TAŞKARA",
+   "ganyan": 29.25,
+   "agf_rank": 7,
+   "signals": [
+    "fresh",
+    "improving"
+   ],
+   "score": 1.06
+  },
+  {
+   "date": "24/09/2026",
+   "city": "Ankara",
+   "race_no": 9,
+   "name": "BABADENİZ",
+   "ganyan": 28.45,
+   "agf_rank": 9,
+   "signals": [
+    "model_value",
+    "surface_fit"
+   ],
+   "score": 0.5
+  },
+  {
+   "date": "29/10/2026",
+   "city": "Ankara",
+   "race_no": 9,
+   "name": "KASIRGA BEY",
+   "ganyan": 28.2,
+   "agf_rank": 10,
+   "signals": [
+    "distance_fit",
+    "surface_fit"
+   ],
+   "score": 1.49
+  },
+  {
+   "date": "22/09/2026",
+   "city": "Kocaeli",
+   "race_no": 4,
+   "name": "BERTUĞHAN",
+   "ganyan": 27.7,
+   "agf_rank": 10,
+   "signals": [
+    "apprentice",
+    "distance_fit",
+    "season_fit",
+    "surface_fit"
+   ],
+   "score": 1.21
+  },
+  {
+   "date": "05/11/2026",
+   "city": "İzmir",
+   "race_no": 10,
+   "name": "OTAY",
+   "ganyan": 27.1,
+   "agf_rank": 10,
+   "signals": [
+    "apprentice",
+    "improving",
+    "model_value"
+   ],
+   "score": -0.15
+  },
+  {
+   "date": "14/10/2026",
+   "city": "İstanbul",
+   "race_no": 6,
+   "name": "GÜLERYÜZ",
+   "ganyan": 26.4,
+   "agf_rank": 11,
+   "signals": [
+    "apprentice",
+    "fresh",
+    "model_value",
+    "surface_fit"
+   ],
+   "score": -0.32
+  },
+  {
+   "date": "27/10/2026",
+   "city": "Adana",
+   "race_no": 4,
+   "name": "SOUTHERN SECRET",
+   "ganyan": 25.95,
+   "agf_rank": 10,
+   "signals": [
+    "apprentice",
+    "fresh",
+    "model_value"
+   ],
+   "score": -0.99
+  }
+ ],
+ "labels": {
+  "model_value": "Model şansı halkın 1,5 katı",
+  "hp_light": "Puanına göre 2 kg+ hafif",
+  "apprentice": "Apranti jokey",
+  "class_drop": "Sınıf düşüşü (son koşusu daha zor)",
+  "surface_fit": "Bugünkü pistte İlk 3 ≥ %40 (3+ koşu)",
+  "distance_fit": "Bu mesafe grubunda İlk 3 ≥ %40 (3+ koşu)",
+  "season_fit": "Bu mevsimde İlk 3 diğerlerinden 15+ puan iyi",
+  "recent_top3": "Son koşusunda ilk 3",
+  "improving": "Form grafiği yükselişte",
+  "lone_speed": "Koşunun tek kaçağı",
+  "first_blinkers": "İlk kez kapalı gözlük (KG)",
+  "fresh": "Dinlenmiş (14–45 gün)",
+  "long_layoff": "Uzun ara (120+ gün)",
+  "season_weak": "Bu mevsimde zayıf"
+ }
+}
