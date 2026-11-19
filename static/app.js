@@ -261,6 +261,7 @@ function renderCurrentRace() {
       <button onclick="switchTab('pace')" class="text-[#0F291E] font-bold underline">Gidişat Şeması →</button>
     </div>
     ${race.ekuri_info ? `<div class="mt-2 text-[11px] text-[#0F291E] bg-[#EFECE4] border border-[#D8D2C5] rounded-lg px-2.5 py-1 font-medium">🔗 ${race.ekuri_info}</div>` : ''}
+    ${(race.scratched || []).length ? `<div class="mt-2 text-[11px] text-[#7A1C1C] bg-[#7A1C1C]/5 border border-[#7A1C1C]/30 rounded-lg px-2.5 py-1 font-semibold">🚫 Koşmaz: ${race.scratched.map(x => `#${x.no} ${x.name}`).join(' • ')} <span class="font-normal text-[#57534E]">(analize dahil edilmedi)</span></div>` : ''}
   `;
 
   // 2. Başhandikapçı & Bülten İlk 4 Sıralaması
@@ -350,6 +351,7 @@ function renderCurrentRace() {
     const son6Pills = (h.form_analysis.items || []).map(item => {
       const sColor = item.surface === 'Ç' ? 'text-[#0F291E] border-[#1B4332]/40 bg-[#1B4332]/10'
                    : item.surface === 'S' ? 'text-[#3F3F46] border-[#71717A]/40 bg-[#F4F4F5]'
+                   : item.surface === '?' ? 'text-[#44403C] border-[#D8D2C5] bg-[#EFECE4]'
                    : 'text-[#8C5A3C] border-[#8C5A3C]/40 bg-[#8C5A3C]/10';
       const winHighlight = item.pos === 1 ? 'ring-1 ring-[#0F291E] font-extrabold' : '';
       return `<span class="px-1.5 py-0.5 rounded border text-[10px] mono ${sColor} ${winHighlight}">${item.display}</span>`;
@@ -444,8 +446,8 @@ function renderCurrentRace() {
           </div>
         </div>
 
-        <!-- Derece Karnesi (1.-5.'lik %) & Son İdman -->
-        <div id="hx-${h.no}" class="mt-2 text-[10px] bg-[#F6F3EC] rounded-lg px-2.5 py-1.5 border border-[#E2DDD2]">${horseExtrasHTML(race, h)}</div>
+        <!-- Derece Karnesi (1.-5.'lik %) & Son İdman (TJK kaydı olmayan yabancı atlarda gösterilmez) -->
+        ${(h.at_id || race.kosu_kodu) ? `<div id="hx-${h.no}" class="mt-2 text-[10px] bg-[#F6F3EC] rounded-lg px-2.5 py-1.5 border border-[#E2DDD2]">${horseExtrasHTML(race, h)}</div>` : ''}
 
         <!-- Komiser / Handikapçı Notu -->
         <div class="mt-2 text-[11px] text-[#44403C] bg-[#FAF8F3] rounded-lg px-2.5 py-1.5 border border-[#E2DDD2] flex items-start gap-1.5">
@@ -478,7 +480,16 @@ function ensureRaceIdman(race) {
   if (STATE.idman[race.kosu_kodu]) return Promise.resolve(STATE.idman[race.kosu_kodu]);
   const date = encodeURIComponent(STATE.program.date || '');
   return fetchJSON(`/api/race_idman?kosu=${race.kosu_kodu}&at=${race.idman_at_kodu}&date=${date}`)
-    .then(d => { STATE.idman[race.kosu_kodu] = d; return d; })
+    .then(d => {
+      // Son 400m sıralaması yalnızca koşacak atlar arasında (koşmaz atlar idman tablosunda kalabilir)
+      const active = new Set(race.horses.map(h => h.no));
+      const timed = (d.rows || []).filter(r => active.has(r.no) && r.son_400).sort((a, b) => a.son_400 - b.son_400);
+      (d.rows || []).forEach(r => { r.son_400_rank = null; });
+      timed.forEach((r, i) => { r.son_400_rank = i + 1; });
+      d.timed_count = timed.length;
+      STATE.idman[race.kosu_kodu] = d;
+      return d;
+    })
     .catch(() => { STATE.idman[race.kosu_kodu] = { rows: [], failed: true }; return STATE.idman[race.kosu_kodu]; });
 }
 
@@ -811,6 +822,15 @@ function generateAltiliTicket() {
   updateAltiliCost();
 }
 
+// TJK'da eküri atlar bahiste tek at sayılır: biri seçilince arkadaşları da kapsanır
+function ekuriCovered(race, selectedSet) {
+  const covered = new Set();
+  (race.ekuri_groups || []).forEach(g => {
+    if (g.some(no => selectedSet.has(no))) g.forEach(no => { if (!selectedSet.has(no)) covered.add(no); });
+  });
+  return covered;
+}
+
 function toggleAltiliHorse(legIdx, horseNo) {
   const set = STATE.altiliSelections[legIdx];
   if (!set) return;
@@ -829,6 +849,7 @@ function renderAltiliLegs(altiliRaces) {
     const selectedSet = STATE.altiliSelections[legIdx] || new Set();
     const isBanko = selectedSet.size === 1;
     const sorted = [...r.horses].sort((a, b) => a.model_rank - b.model_rank);
+    const covered = ekuriCovered(r, selectedSet);
 
     return `
       <div class="${isBanko ? 'club-card-featured' : 'club-card'} rounded-xl p-3.5">
@@ -845,16 +866,20 @@ function renderAltiliLegs(altiliRaces) {
         <div class="flex flex-wrap gap-1.5 mt-2">
           ${sorted.map(h => {
             const active = selectedSet.has(h.no);
+            const viaEkuri = !active && covered.has(h.no);
             return `
-              <button onclick="toggleAltiliHorse(${legIdx}, ${h.no})"
+              <button onclick="toggleAltiliHorse(${legIdx}, ${h.no})" ${viaEkuri ? 'title="Eküri arkadaşı seçili: bu at da kapsanıyor"' : ''}
                 class="px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
                   active
                     ? 'bg-[#0F291E] text-[#F9F6F0] shadow-xs'
-                    : 'bg-[#F6F3EC] text-[#57534E] border border-[#D8D2C5] hover:text-[#18181B]'
+                    : viaEkuri
+                      ? 'bg-[#1B4332]/10 text-[#0F291E] border border-dashed border-[#1B4332]/50'
+                      : 'bg-[#F6F3EC] text-[#57534E] border border-[#D8D2C5] hover:text-[#18181B]'
                 }">
                 <span class="mono font-extrabold text-[#D4AF37]">#${h.no}</span>
                 <span class="truncate max-w-[95px]">${h.name}</span>
                 <span class="text-[10px] opacity-80 mono">%${h.simulation.win_prob}</span>
+                ${viaEkuri ? '<span class="text-[9px] font-extrabold">🔗EKÜRİ</span>' : ''}
               </button>
             `;
           }).join('')}
@@ -877,8 +902,9 @@ function updateAltiliCost() {
     const sel = STATE.altiliSelections[idx] || new Set();
     combinations *= Math.max(1, sel.size);
     let legProbSum = 0;
+    const covered = ekuriCovered(r, sel);
     r.horses.forEach(h => {
-      if (sel.has(h.no)) legProbSum += h.simulation.win_prob;
+      if (sel.has(h.no) || covered.has(h.no)) legProbSum += h.simulation.win_prob;
     });
     hitProb *= Math.min(99.0, legProbSum) / 100.0;
   });
@@ -903,9 +929,9 @@ function updateAltiliCost() {
 }
 
 function openHorseModal(horseNo) {
-  const race = STATE.program.races[STATE.currentRaceIndex];
-  const h = race.horses.find(x => x.no === horseNo);
-  if (!h) return;
+  let race = STATE.program.races[STATE.currentRaceIndex];
+  let h = race && race.horses.find(x => x.no === horseNo);
+  if (!h) return;  // seçili koşuda bu numarada koşan at yok (örn. koşmaz)
 
   const modal = document.getElementById('horseModal');
   const content = document.getElementById('horseModalContent');
@@ -1063,7 +1089,9 @@ function openHorseModal(horseNo) {
   ensureRaceIdman(race).then(paintIdman);
 
   if (!h.at_id) {
-    showHistoryError('Bu safkanın TJK kimliği bültende bulunamadı; geçmiş koşu, soyağacı ve pist karnesi çekilemedi.');
+    showHistoryError(race.kosu_kodu
+      ? 'Bu safkanın TJK kimliği bültende bulunamadı; geçmiş koşu, soyağacı ve pist karnesi çekilemedi.'
+      : 'Yabancı hipodrom: TJK bu safkanın geçmiş koşu, soyağacı ve idman kayıtlarını yayınlamıyor.');
   } else {
     const isArab = (race.age_group || '').toLowerCase().includes('arap') ? '1' : '0';
     fetch(`/api/horse_history?at_id=${encodeURIComponent(h.at_id)}&weight=${encodeURIComponent(h.weight)}&dist=${encodeURIComponent(race.distance_m)}&arab=${isArab}`)

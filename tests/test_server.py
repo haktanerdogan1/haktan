@@ -159,3 +159,56 @@ class TestCache(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+FOREIGN_HEADER = "At No;At İsmi;Yaş;Orijin(Baba);Orijin(Anne);Kilo;Jokey Adı;Sahip Adı;Antrenör Adı;St;AGF;H;Son 6 Yarış"
+
+
+class TestRealWorldFormats(unittest.TestCase):
+    """Kasım 2026 canlı TJK bültenlerinde görülen biçimler."""
+
+    def foreign_csv(self):
+        lines = ["Lingfield Birleşik Krallık;(0. Yarış Günü);19/11/2026"]
+        for r, surf in [(1, "Sentetik"), (2, "TAPETA"), (3, "Çim")]:
+            lines += [f"{r}. Kosu {14 + r}.48;Handikap; 2 Yaşlı İngilizler; kg; 1400m; {surf};;;;Rekor Derece :",
+                      "İkramiye;;;;;Yetiştirici Primi;;;;", "1.)4.972 £;2.)2.333 £;", FOREIGN_HEADER]
+            for n in range(1, 6):
+                lines.append(f"{n};HORSE{r}{n} (GB);2y a d;SIRE (AUS);DAM (IRE);61;D EGAN;OWNER;TRAINER;{n};%{n * 3}.5({n})  %0(0);83;537211;40")
+        return "\n".join(lines)
+
+    def test_colonless_race_headers(self):
+        d = S.parse_tjk_csv(self.foreign_csv())
+        self.assertEqual(d["total_races"], 3)
+        self.assertEqual([len(r["horses"]) for r in d["races"]], [5, 5, 5])
+        self.assertEqual(d["races"][0]["time"], "15:48")
+
+    def test_surface_aliases(self):
+        d = S.parse_tjk_csv(self.foreign_csv())
+        self.assertEqual([r["surface"] for r in d["races"]], ["Sentetik", "Sentetik (Tapeta)", "Çim"])
+
+    def test_digit_only_son6(self):
+        d = S.parse_tjk_csv(self.foreign_csv())
+        h = d["races"][0]["horses"][0]
+        self.assertEqual([it["pos"] for it in h["form_analysis"]["items"]], [5, 3, 7, 2, 1, 1])
+        self.assertEqual(h["form_analysis"]["surface_win_bonus"], 0.0)
+        self.assertEqual(h["agf_pct"], 3.5)
+
+    def test_scratched_horses_excluded(self):
+        csv = make_csv(n_races=1).replace("1;AT11", "1;AT11 (Koşmaz)", 1)
+        d = S.parse_tjk_csv(csv)
+        race = d["races"][0]
+        self.assertEqual([x["no"] for x in race["scratched"]], [1])
+        self.assertNotIn(1, [h["no"] for h in race["horses"]])
+        self.assertAlmostEqual(sum(h["simulation"]["win_prob"] for h in race["horses"]), 100, delta=6)
+
+    def test_multiple_ekuri_groups(self):
+        race = {"bet_info": "", "ekuri_info": "", "is_altili_start": False, "ekuri_groups": [],
+                "horses": [{"no": i, "is_ekuri": False} for i in range(1, 15)]}
+        S.handle_race_footer(race, "[(1)A (CHI),(6)B (CHI),] eküridir.[(2)C (CHI)],(11)D (CHI)],(14)E (CHI)],] eküridir."
+                                   "[(4)F (CHI)],(9)G (CHI)],] eküridir.7'Lİ PLASE;2. 6'LI GANYAN Bu koşudan başlar")
+        self.assertEqual(race["ekuri_groups"], [[1, 6], [2, 11, 14], [4, 9]])
+        self.assertTrue(race["is_altili_start"])
+        self.assertEqual(sorted(h["no"] for h in race["horses"] if h["is_ekuri"]), [1, 2, 4, 6, 9, 11, 14])
+
+    def test_turkey_date(self):
+        self.assertEqual(S.tr_now().utcoffset().total_seconds(), 3 * 3600)

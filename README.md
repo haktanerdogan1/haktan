@@ -113,3 +113,12 @@ Bülten kartlarında (koşu açılınca arka planda yüklenir) ve safkan pencere
 * **Son İdman (Galop • Sprint • Kenter):** TJK bültenindeki "İdm" bağlantısından koşunun idman tablosu (`/api/race_idman`) ve her idmanın detayı çekilir: ara dereceler (2200m…200m), idman türü, **Galop Durumu (Çok Rahat / Rahat / Çalışır)**, idman jokeyi, pist/zemin/hava, kaç gün önce yapıldığı, 200m başına ortalama tempo ve koşu içinde **son 400m sıralaması** ("EN HIZLI SON 400").
 * **Pist durumu:** Çim pistlerdeki penetrometre değeri ayrılır (`Ç:Yumuşak 3.7` → `YM 3.7`); Biraz Yumuşak (BY), Çok Ağır (ÇA) gibi durumlar doğru kodlanır.
 * **Zorluk katsayısı düzeltmesi:** Python'da `"Handikap".upper()` noktasız `HANDIKAP` verdiği için tüm handikap koşuları Maiden seviyesinde (32.0) puanlanıyordu; Türkçe büyük harf (`tr_upper`) ile düzeltildi. `G 3` yazımı da artık Grup 3 olarak tanınır.
+
+### 9. Yabancı Hipodromlar ve Bülten Biçimleri
+* Yabancı bültenlerde koşu başlığı iki noktasızdır (`1. Kosu 14.48;...`); ikisi de okunur.
+* Pist adları standartlaştırılır: `TAPETA`, `Polytrack`, `Fibresand` → Sentetik; `Turf` → Çim; `Dirt` → Kum.
+* Yabancı "Son 6 Yarış" pist harfi olmadan yazılır (`537211`); rakamlar sıra olarak okunur, pist uyumu cezası verilmez.
+* **Koşmaz** işaretli atlar (`AT ADI (Koşmaz)`) analizden, Monte Carlo'dan ve kuponlardan çıkarılır; koşu başlığında listelenir.
+* Bir koşuda birden fazla **eküri grubu** olabilir (`[(1)A,(6)B,] eküridir.[(2)C],(11)D],] eküridir.`); her grup ayrı tutulur. TJK'da eküri atlar bahiste tek at sayıldığı için 6'lı Kurgu'nun **Kapsama Gücü**, seçilen atın eküri arkadaşlarını da hesaba katar.
+* 50'den fazla koşusu olan atlarda TJK sayfası son 50 koşuyu gösterir; eksik yıllar `QueryParameter_Yil` ile ayrıca çekilip kariyer tamamlanır.
+* "Bugün" Türkiye saatine (UTC+3) göre belirlenir; sunucu hangi saat diliminde çalışırsa çalışsın doğru günün bülteni açılır.

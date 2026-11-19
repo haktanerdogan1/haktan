@@ -27,10 +27,19 @@ import urllib.request
 import urllib.error
 from concurrent.futures import ThreadPoolExecutor
 import urllib.parse
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import time
 import threading
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
+
+# Türkiye saati (2016'dan beri yaz saati uygulaması yok: sabit UTC+3).
+# Sunucu hangi saat diliminde çalışırsa çalışsın "bugünkü bülten" Türkiye tarihine göre seçilir.
+TR_TZ = timezone(timedelta(hours=3))
+
+
+def tr_now():
+    return datetime.now(TR_TZ)
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
@@ -254,6 +263,31 @@ def extract_horse_extras_from_html(html):
     return extras
 
 
+SURFACE_ALIASES = [
+    # (anahtar kelime, standart pist) — yabancı hipodromlar pist adını farklı yazar
+    ("SENTETİK", "Sentetik"), ("TAPETA", "Sentetik (Tapeta)"), ("POLYTRACK", "Sentetik (Polytrack)"),
+    ("FIBRESAND", "Sentetik (Fibresand)"), ("ALL WEATHER", "Sentetik"),
+    ("ÇİM", "Çim"), ("TURF", "Çim"), ("KUM", "Kum"), ("DIRT", "Kum"),
+]
+
+
+def normalize_surface(part):
+    """'Kum', 'Çim', 'Sentetik', 'TAPETA', 'Polytrack' ... -> standart pist adı; pist değilse None."""
+    p = (part or "").strip()
+    if not p or len(p) > 40 or "Rekor" in p:
+        return None
+    if any(x in p for x in ("Kum", "Çim", "Sentetik")):
+        return p
+    up = tr_upper(p)
+    for key, name in SURFACE_ALIASES:
+        if re.search(r'\b' + key + r'\b', up):
+            return name
+    return None
+
+
+SCRATCH_RE = re.compile(r'\s*\((?:Koşmaz|KOŞMAZ|koşmaz)\)\s*')
+
+
 def split_horse_name_and_equipment(raw_name):
     """
     In TJK CSV, At İsmi looks like: 'LADY ECRİN KG DB SK' or 'BAŞ YARGIÇ K DB GKR'
@@ -283,14 +317,18 @@ def parse_son6(son6_str, current_surface_code):
             "consistency": 0.5
         }
 
-    pairs = re.findall(r'([KÇS])(\d)', son6_str.upper())
+    pairs = re.findall(r'([KÇS])(\d)', tr_upper(son6_str))
+    if not pairs and re.fullmatch(r'\s*\d{1,6}\s*', son6_str or ""):
+        # Yabancı bültenler pist harfi olmadan yazar: "537211" (en sağdaki en son koşu)
+        pairs = [("?", ch) for ch in son6_str.strip()]
     items = []
     positions = []
     surface_positions = []
 
     for surf, pos_ch in pairs:
         pos = 10 if pos_ch == "0" else int(pos_ch)
-        items.append({"surface": surf, "pos": pos, "display": f"{surf}{pos if pos < 10 else '0'}"})
+        shown = pos if pos < 10 else 0
+        items.append({"surface": surf, "pos": pos, "display": f"{surf}{shown}" if surf != "?" else str(shown)})
         positions.append(pos)
         if surf == current_surface_code:
             surface_positions.append(pos)
@@ -327,6 +365,9 @@ def parse_son6(son6_str, current_surface_code):
         elif avg_surf >= 7.0:
             surf_bonus = -5.0
         surf_match_rate = len(surface_positions) / len(positions)
+    elif all(it["surface"] == "?" for it in items):
+        surf_match_rate = 0.0
+        surf_bonus = 0.0   # Pist bilgisi yok (yabancı bülten): ceza verilmez
     else:
         surf_match_rate = 0.0
         surf_bonus = -2.0  # Unproven on today's surface
@@ -866,7 +907,8 @@ def classify_race(kcins):
         n = int(m.group(1))
         if 1 <= n <= 5:
             return f"sartli{n}", f"Şartlı {n}", 20 + (6 - n)
-        return "sartli_diger", "Şartlı (Diğer)", 26
+        # Arap koşularındaki 'ŞARTLI 19' gibi özel şartlar adıyla ayrı tutulur
+        return f"sartli{n}", f"Şartlı {n}", 26
     m = re.search(r'HANDİKAP\s*(\d+)', c)
     if m:
         n = int(m.group(1))
@@ -983,7 +1025,7 @@ def parse_detailed_stat_tables(stat_html):
 PD_MAP = {
     "Normal": "NO", "Nemli": "NE", "Islak": "IS", "Sulu": "SL", "Çok Yumuşak": "ÇY",
     "Biraz Yumuşak": "BY", "Yumuşak": "YM", "Ağır": "AĞ", "Çok Ağır": "ÇA", "Sert": "ST",
-    "Biraz Sert": "BS", "İyi": "İY",
+    "Biraz Sert": "BS", "Biraz Ağır": "BA", "İyi": "İY",
 }
 
 
@@ -1039,7 +1081,8 @@ def fetch_horse_bankomat_sheet(at_id, today_weight=57.0, target_dist=1200, is_ar
     if cached is not None:
         return cached
 
-    html = fetch_cached(f"https://www.tjk.org/TR/YarisSever/Query/ConnectedPage/AtKosuBilgileri?1=1&QueryParameter_AtId={at_id}", TTL_HISTORY)
+    base_url = f"https://www.tjk.org/TR/YarisSever/Query/ConnectedPage/AtKosuBilgileri?1=1&QueryParameter_AtId={at_id}"
+    html = fetch_cached(base_url, TTL_HISTORY)
 
     pedigree_tree = None
     detailed_stats = {}
@@ -1064,6 +1107,30 @@ def fetch_horse_bankomat_sheet(at_id, today_weight=57.0, target_dist=1200, is_ar
             cols = [clean_cell(c) for c in re.findall(r'<td[^>]*>(.*?)</td>', tr, re.S)]
             if len(cols) >= 8 and cols[1].isdigit():
                 summary_rows.append(cols)
+
+    # TJK varsayılan sayfada en fazla 50 koşu gösterir. Kariyer daha uzunsa yıl yıl tamamla.
+    official_total = next((int(c[1]) for c in summary_rows if tr_upper(c[0]) == "TOPLAM"), 0)
+    if official_total > len(race_rows):
+        years = [m.group(1) for c in summary_rows for m in [re.match(r'(\d{4})\s*Yılı', c[0])] if m]
+
+        def year_rows(y):
+            try:
+                page = fetch_cached(f"{base_url}&QueryParameter_Yil={y}", TTL_HISTORY)
+                return [r for tb in re.findall(r'<tbody.*?</tbody>', page, re.S) for r in parse_horse_race_rows(tb)]
+            except Exception:
+                return []
+
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            per_year = list(pool.map(year_rows, years))
+        merged, seen = [], set()
+        for rows in [race_rows] + per_year:
+            for tds in rows:
+                key = (tds[0], tds[1], tds[2], tds[12])  # tarih, şehir, mesafe, koşu no
+                if key not in seen:
+                    seen.add(key)
+                    merged.append(tds)
+        merged.sort(key=lambda t: datetime.strptime(t[0], "%d.%m.%Y"), reverse=True)
+        race_rows = merged
 
     # --- Koşu satırları (tüm kariyer) ---
     all_races = []
@@ -1224,6 +1291,7 @@ def fetch_horse_bankomat_sheet(at_id, today_weight=57.0, target_dist=1200, is_ar
         "fav_surface_verdict": fav_surface_verdict,
         "detailed_stats": detailed_stats,
         "total_career_races": len(all_races),
+        "official_total": official_total or len(all_races),
     }
     cache_set(cache_key, result)
     return result
@@ -1231,7 +1299,8 @@ def fetch_horse_bankomat_sheet(at_id, today_weight=57.0, target_dist=1200, is_ar
 
 # ------------------------- İDMAN (GALOP / SPRINT / KENTER) -------------------------
 IDMAN_SPLITS = [2200, 2000, 1800, 1600, 1400, 1200, 1000, 800, 600, 400, 200]
-IDMAN_DURUM_ORDER = {"ÇOK RAHAT": 1, "RAHAT": 2, "ÇALIŞIR": 3, "ÇALIŞARAK": 3, "ZORLANARAK": 4}
+IDMAN_DURUM_ORDER = {"ÇOK RAHAT": 1, "RAHAT": 2, "HAFİF ÇALIŞIR": 3, "ÇALIŞIR": 3, "ÇALIŞARAK": 3,
+                     "ÇOK ÇALIŞIR": 4, "ZORLANARAK": 4}
 
 
 def parse_idman_detail(detail_html):
@@ -1337,18 +1406,31 @@ ALTILI_RE = re.compile(r"6\s*['’`´]?\s*L[Iİı]\s*GANYAN", re.I)
 
 
 def handle_race_footer(race, line):
-    """Koşu dipnotu: eküri bilgisi ve bahis türleri (örn. "6'LI GANYAN Bu koşudan başlar")."""
+    """Koşu dipnotu: eküri grupları ve bahis türleri (örn. "6'LI GANYAN Bu koşudan başlar").
+    Bir satırda birden fazla eküri grubu olabilir:
+      "[(1)A,(6)B,] eküridir.[(2)C],(11)D],] eküridir.7'Lİ PLASE;..."
+    """
     race["bet_info"] = (race["bet_info"] + " " + line).strip() if race["bet_info"] else line
     if ALTILI_RE.search(line):
         race["is_altili_start"] = True
-    ek_matches = re.findall(r'\((\d+)\)', line)
-    if "eküridir" in line.lower() and ek_matches:
-        ek_nos = {int(x) for x in ek_matches}
-        cut = line.lower().index("eküridir") + len("eküridir")
-        race["ekuri_info"] = line[:cut].rstrip(" .") + "."
-        for h in race["horses"]:
-            if h["no"] in ek_nos:
-                h["is_ekuri"] = True
+    parts = re.split(r'(?i)ekür[iİı]d[iİı]r\.?', line)
+    if len(parts) < 2:
+        return
+    groups = race.setdefault("ekuri_groups", [])
+    texts = []
+    for seg in parts[:-1]:
+        nos = sorted({int(x) for x in re.findall(r'\((\d+)\)', seg)})
+        if len(nos) >= 2 and nos not in groups:
+            groups.append(nos)
+            texts.append(seg.strip(" .") + " eküridir.")
+    by_no = {h["no"]: h for h in race["horses"]}
+    for gi, nos in enumerate(groups):
+        for no in nos:
+            if no in by_no:
+                by_no[no]["is_ekuri"] = True
+                by_no[no]["ekuri_group"] = gi
+    if texts:
+        race["ekuri_info"] = " ".join(filter(None, [race.get("ekuri_info", "")] + texts)).strip()
 
 
 def build_altili_groups(races):
@@ -1399,7 +1481,8 @@ def parse_tjk_csv(csv_text, html_extras=None):
     while i < len(lines):
         line = lines[i]
         # Detect Race Header: e.g. "1. Kosu :   15.00;SATIŞ 2; 2 Yaşlı İngilizler; 57.00kg; 1400m; Kum;;;;Rekor Derece :1.24.15"
-        m_race = re.match(r'^(\d+)\.\s*Kosu\s*:\s*(.*)$', line, re.I)
+        # Yerli: "1. Kosu :   15.00;..."  Yabancı: "1. Kosu 14.48;..." (iki nokta yok)
+        m_race = re.match(r'^(\d+)\.\s*Ko[sş]u\s*:?\s*(.*)$', line, re.I)
         if m_race:
             if current_race:
                 races.append(current_race)
@@ -1424,8 +1507,9 @@ def parse_tjk_csv(csv_text, html_extras=None):
                 dm = re.search(r'(\d{3,4})\s*m\b', p, re.I)
                 if dm:
                     distance_m = int(dm.group(1))
-                if any(s in p for s in ["Kum", "Çim", "Sentetik"]):
-                    surface = p.strip()
+                norm_surface = normalize_surface(p)
+                if norm_surface:
+                    surface = norm_surface
                 if "Rekor Derece" in p:
                     rm = re.search(r'Rekor Derece\s*:\s*([\d\.:]+)', p)
                     if rm:
@@ -1444,6 +1528,8 @@ def parse_tjk_csv(csv_text, html_extras=None):
                 "bet_info": "",
                 "ekuri_info": "",
                 "is_altili_start": False,
+                "scratched": [],
+                "ekuri_groups": [],
                 "horses": []
             }
             in_horses = False
@@ -1471,7 +1557,9 @@ def parse_tjk_csv(csv_text, html_extras=None):
             if cols and cols[0].isdigit():
                 no = int(cols[0])
                 raw_name = cols[1] if len(cols) > 1 else ""
-                clean_name, eq_list = split_horse_name_and_equipment(raw_name)
+                # "(Koşmaz)" işaretli atlar yarışa katılmaz: analizden ve olasılıklardan çıkarılır
+                is_scratched = bool(SCRATCH_RE.search(raw_name))
+                clean_name, eq_list = split_horse_name_and_equipment(SCRATCH_RE.sub(" ", raw_name).strip())
                 age = cols[2] if len(cols) > 2 else ""
                 sire = cols[3] if len(cols) > 3 else ""
                 dam = cols[4] if len(cols) > 4 else ""
@@ -1543,7 +1631,8 @@ def parse_tjk_csv(csv_text, html_extras=None):
                     "forma_url": extra.get("forma_url"),
                     "at_id": extra.get("at_id"),
                     "idman_kosu_kodu": extra.get("idman_kosu_kodu"),
-                    "is_ekuri": False
+                    "is_ekuri": False,
+                    "is_scratched": is_scratched
                 })
             else:
                 # Atlar bitti; bu ve sonraki satırlar koşu dipnotudur
@@ -1557,6 +1646,11 @@ def parse_tjk_csv(csv_text, html_extras=None):
 
     if current_race:
         races.append(current_race)
+
+    # Koşmayacak atları ayır: model, Monte Carlo ve kuponlar yalnızca koşacak atlarla çalışır
+    for r in races:
+        r["scratched"] = [{"no": h["no"], "name": h["name"]} for h in r["horses"] if h.get("is_scratched")]
+        r["horses"] = [h for h in r["horses"] if not h.get("is_scratched")]
 
     # Koşunun TJK kodu (idman sayfası için): atların idman bağlantılarındaki en sık kod
     for r in races:
@@ -1635,7 +1729,7 @@ def fetch_city_program(date_str, city_id=None, city_name=None):
     program_data["city_name"] = target_city["name"]
     program_data["available_cities"] = cities
     program_data["source_csv_url"] = safe_csv_url
-    program_data["fetched_at"] = datetime.now().strftime("%H:%M:%S")
+    program_data["fetched_at"] = tr_now().strftime("%H:%M:%S")
 
     cache_set(cache_key, program_data)
     return program_data
@@ -1716,7 +1810,7 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
 
         if parsed.path == "/api/program":
             params = urllib.parse.parse_qs(parsed.query)
-            today_str = datetime.now().strftime("%d/%m/%Y")
+            today_str = tr_now().strftime("%d/%m/%Y")
             date_str = params.get("date", [today_str])[0]
             city_id = params.get("city_id", [None])[0]
             city_name = params.get("city", [None])[0]

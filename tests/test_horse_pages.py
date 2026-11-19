@@ -34,6 +34,35 @@ RACES = "<tbody>" + "".join([
 ]) + "</tbody>"
 
 
+class TestLongCareer(unittest.TestCase):
+    """TJK varsayılan sayfada en çok 50 koşu gösterir; kalanlar yıl filtresiyle tamamlanmalı."""
+
+    def test_year_pages_are_merged(self):
+        summary = """<tbody><tr><td>TOPLAM</td><td>4</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>1 t</td></tr>
+<tr><td>2025 Yılı</td><td>2</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>1 t</td></tr>
+<tr><td>2026 Yılı</td><td>2</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0 t</td></tr></tbody>"""
+        r26 = [race_row("05.11.2026", "1400", "K:Normal", "4", "1.29.10", "Handikap 16", "62"),
+               race_row("01.10.2026", "1400", "K:Normal", "6", "1.30.10", "Handikap 16", "62")]
+        r25 = [race_row("05.11.2025", "1400", "K:Normal", "1", "1.29.10", "ŞARTLI 3", "50"),
+               race_row("01.10.2025", "1400", "K:Normal", "7", "1.30.10", "ŞARTLI 3", "48")]
+        pages = {
+            "": "<html>" + summary + "<tbody>" + "".join(r26) + "</tbody></html>",  # yalnızca son koşular
+            "2026": "<tbody>" + "".join(r26) + "</tbody>",
+            "2025": "<tbody>" + "".join(r25) + "</tbody>",
+        }
+        orig = S.fetch_cached
+        S.fetch_cached = lambda url, ttl: pages[url.split("QueryParameter_Yil=")[1] if "Yil=" in url else ""]
+        try:
+            S.CACHE.clear()
+            d = S.fetch_horse_bankomat_sheet("777", 57, 1400, lite=True)
+        finally:
+            S.fetch_cached = orig
+        self.assertEqual(d["total_career_races"], 4)
+        self.assertEqual(sum(b["starts"] for b in d["class_breakdown"]), 4)
+        self.assertEqual(d["races"][0]["tarih"], "05.11.2026")
+        self.assertEqual(d["races"][-1]["tarih"], "01.10.2025")
+
+
 class TestClassify(unittest.TestCase):
     def test_classes(self):
         self.assertEqual(S.classify_race("G 3")[0], "grup3")
@@ -43,6 +72,7 @@ class TestClassify(unittest.TestCase):
         self.assertEqual(S.classify_race("Handikap 15/Dişi")[0], "handikap15")
         self.assertEqual(S.classify_race("Maiden/DHÖW")[0], "maiden")
         self.assertEqual(S.classify_race("SATIŞ 2")[0], "satis")
+        self.assertEqual(S.classify_race("ŞARTLI 19/Dişi")[1], "Şartlı 19")
 
     def test_zorluk_turkish_case(self):
         # 'Handikap'.upper() == 'HANDIKAP' hatası: handikaplar Maiden seviyesine düşmemeli
