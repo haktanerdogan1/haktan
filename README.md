@@ -29,8 +29,16 @@ python server.py
 ```
 Sunucu `http://localhost:8090` adresinde başlar.
 
+### ☁️ Ücretsiz Yayınlama: Render
+Depoda `render.yaml` hazırdır:
+1. [render.com](https://render.com) → GitHub ile giriş → **New → Blueprint** → `haktanerdogan1/haktan` → **Apply**.
+2. Birkaç dakika sonra adres hazır: `https://padok-bulten.onrender.com` (ad doluysa Render farklı bir ek koyar).
+3. `main` dalına yapılan her gönderim otomatik olarak yeniden yayınlanır.
+
+Ücretsiz planda servis 15 dakika kullanılmayınca uyur; ilk açılış yaklaşık 1 dakika sürer, sonra normal hızdadır.
+
 ### ☁️ Railway'de Yayınlama
-Depo Railway'e hazırdır (`railway.json`, `requirements.txt`, `.python-version`, `Procfile`):
+Depo Railway'e de hazırdır (`railway.json`, `requirements.txt`, `Procfile`):
 1. [railway.com](https://railway.com) → **New Project** → **Deploy from GitHub repo** → `haktanerdogan1/haktan`.
 2. Kurulum bitince servisin **Settings → Networking → Generate Domain** ile herkese açık adres alın (`https://….up.railway.app`).
 3. `main` dalına yapılan her gönderim otomatik olarak yeniden yayınlanır.

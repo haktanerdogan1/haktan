@@ -1,0 +1,11 @@
+# Render Blueprint — ücretsiz web servisi (Render panelinde: New → Blueprint → bu depo)
+services:
+  - type: web
+    name: padok-bulten
+    runtime: python
+    plan: free
+    branch: main
+    autoDeploy: true
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -u server.py
+    healthCheckPath: /health
