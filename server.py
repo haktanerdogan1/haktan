@@ -132,21 +132,32 @@ TAKI_DESCRIPTIONS = {
 }
 
 
-def fetch_url(url, encoding="utf-8", timeout=20, retries=1):
-    """TJK bazen yavaş yanıt verir: zaman aşımında bir kez daha dener."""
+# TJK aynı anda çok istek gelince var olan sayfalara bile 404 döner: eşzamanlı isteği sınırla
+TJK_SEMAPHORE = threading.BoundedSemaphore(6)
+TRANSIENT_HTTP = {404, 429, 500, 502, 503, 504}
+
+
+def fetch_url(url, encoding="utf-8", timeout=20, retries=2):
+    """
+    TJK'dan sayfa çeker. Zaman aşımı, bağlantı kopması ve yoğunlukta dönen sahte 404/5xx
+    yanıtlarında artan beklemeyle yeniden dener (gerçekten olmayan sayfa da 3 denemeden sonra 404 verir).
+    """
     last_err = None
     for attempt in range(retries + 1):
         try:
-            req = urllib.request.Request(url, headers=HEADERS)
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                raw = resp.read()
+            with TJK_SEMAPHORE:
+                req = urllib.request.Request(url, headers=HEADERS)
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    raw = resp.read()
             return raw.decode(encoding, "ignore")
-        except urllib.error.HTTPError:
-            raise
+        except urllib.error.HTTPError as e:
+            if e.code not in TRANSIENT_HTTP:
+                raise
+            last_err = e
         except Exception as e:  # zaman aşımı / bağlantı kopması
             last_err = e
-            if attempt < retries:
-                time.sleep(0.8)
+        if attempt < retries:
+            time.sleep(0.8 * (attempt + 1))
     raise last_err
 
 
@@ -546,6 +557,50 @@ def assign_running_styles(horses):
                    "early_speed": round(es, 1), "field_rank": rank + 1})
 
 
+WEIGHT_FLAG_KG = 5.0   # ortancadan bu kadar hafif/ağır olan at işaretlenir
+WEIGHT_ALONE_KG = 3.0  # en hafif (en ağır) at ile ikinci arasındaki fark: "tek başına" uyarısı
+
+
+def compute_weight_margin(horses):
+    """
+    Handikap Terazisi — kilo marjı uyarıları. Örnek: 5 at 60 kg üstü, biri 50 kg ise
+    o at hem ortancadan 10 kg hafif hem de "tek başına hafif" olarak işaretlenir.
+    """
+    ws = sorted(h["weight"] for h in horses if h.get("weight", 0) > 0)
+    for h in horses:
+        h["weight_flag"] = None
+    if len(ws) < 3:
+        return {"median": ws[len(ws) // 2] if ws else None, "spread": 0, "flags": []}
+    mid = len(ws) // 2
+    median = ws[mid] if len(ws) % 2 else (ws[mid - 1] + ws[mid]) / 2.0
+    lightest, heaviest = ws[0], ws[-1]
+    second_light, second_heavy = ws[1], ws[-2]
+    flags = []
+    for h in horses:
+        w = h.get("weight", 0)
+        if w <= 0:
+            continue
+        diff = round(w - median, 1)
+        alone_light = w == lightest and second_light - w >= WEIGHT_ALONE_KG and diff <= -WEIGHT_ALONE_KG
+        alone_heavy = w == heaviest and w - second_heavy >= WEIGHT_ALONE_KG and diff >= WEIGHT_ALONE_KG
+        if diff <= -WEIGHT_FLAG_KG or alone_light:
+            gap = round(second_light - w, 1) if alone_light else None
+            text = (f"⚖️ KİLO AVANTAJI: {w:g} kg ile rakiplerinin ortancasından ({median:g} kg) {abs(diff):g} kg hafif"
+                    + (f"; en yakın rakibinden bile {gap:g} kg hafif — sahada tek başına" if alone_light else "") + ".")
+            flag = {"type": "light", "diff": diff, "alone": alone_light, "gap": gap, "text": text}
+        elif diff >= WEIGHT_FLAG_KG or alone_heavy:
+            gap = round(w - second_heavy, 1) if alone_heavy else None
+            text = (f"⚖️ KİLO YÜKÜ: {w:g} kg ile rakiplerinin ortancasından ({median:g} kg) {diff:g} kg ağır"
+                    + (f"; en yakın rakibinden {gap:g} kg fazla taşıyor" if alone_heavy else "") + ".")
+            flag = {"type": "heavy", "diff": diff, "alone": alone_heavy, "gap": gap, "text": text}
+        else:
+            continue
+        h["weight_flag"] = flag
+        flags.append({"no": h["no"], "name": h["name"], "weight": w, **flag})
+    flags.sort(key=lambda f: f["diff"])
+    return {"median": median, "min": lightest, "max": heaviest, "spread": round(heaviest - lightest, 1), "flags": flags}
+
+
 def analyze_race_quant(race, weights=None):
     """
     Performs the deep quantitative analysis & 10,000-run Monte Carlo simulation on a single race.
@@ -651,6 +706,7 @@ def analyze_race_quant(race, weights=None):
         }
 
     assign_running_styles(horses)
+    race["weight_margin"] = compute_weight_margin(horses)
 
     # Step 2: Pace Scenario Simulation (Tempo Haritası)
     front_runners = [h for h in horses if h["running_style"]["code"] == "E"]
@@ -804,6 +860,9 @@ def analyze_race_quant(race, weights=None):
                 reasons.append("Öndeki sert tempo savaşından faydalanıp son düzlükte güçlü sprintle gelecektir.")
         if h["form_analysis"]["surface_win_bonus"] >= 5.0:
             reasons.append(f"{surface} pistteki son yarışlarında yüksek uyum ve tabela istikrarı gösterdi.")
+        wf = h.get("weight_flag")
+        if wf:
+            reasons.insert(0, wf["text"])
         if h["form_analysis"]["trend"] == "Yükselişte":
             reasons.append("Son koşularında form grafiği belirgin şekilde yukarı yönlü.")
         if m["jockey_rating"] >= 88:
@@ -1451,6 +1510,16 @@ def fetch_horse_bankomat_sheet(at_id, today_weight=57.0, target_dist=1200, is_ar
         "distance_city_times": build_distance_city_times(all_races, only_dist=target_dist if lite else None),
         "surface_races": surface_races,
     }
+    if lite:
+        # Kartlar için yalnız gereken alanlar (koşu başına 10-17 at yüklenir; boyut önemli)
+        result = {
+            "career_stats": career_stats, "hp_history": hp_history,
+            "breakdowns": {"races": result["breakdowns"]["races"], "season": result["breakdowns"]["season"],
+                           "surface": result["breakdowns"]["surface"], "distance": result["breakdowns"]["distance"]},
+            "distance_city_times": result["distance_city_times"],
+            "total_career_races": result["total_career_races"],
+            "surface_summary": {"TOPLAM": surface_summary.get("TOPLAM")},
+        }
     cache_set(cache_key, result)
     return result
 
@@ -1508,35 +1577,46 @@ def parse_query_table(page_html, wanted_name):
     return blk
 
 
-def fetch_horse_relatives(at_id):
-    """Babası (pist kırılımlı), annesi, kısrak babası ve kardeşlerinin TJK istatistikleri."""
-    cache_key = f"relatives_{at_id}"
+def fetch_horse_relatives(at_id, irk=None):
+    """Babası (pist kırılımlı), annesi, kısrak babası ve kardeşlerinin TJK istatistikleri.
+    irk: '1' İngiliz, '2' Arap — aynı adlı Arap ve İngiliz kısrak/aygır karışmasın diye."""
+    irk = irk if irk in ("1", "2") else None
+    cache_key = f"relatives_{at_id}_{irk or '-'}"
     cached = cache_get(cache_key, 24 * 3600)
     if cached is not None:
         return cached
     page = fetch_cached(f"https://www.tjk.org/TR/YarisSever/Query/ConnectedPage/AtKosuBilgileri?1=1&QueryParameter_AtId={at_id}", TTL_HISTORY)
     names = {}
     for key, (_, param) in RELATIVE_PAGES.items():
-        m = re.search(r'QueryParameter_' + param + r'=([^"&\']+)', page)
+        # TJK Türkçe harfleri HTML kodu olarak yazar: 'EDAD&#220;L&#220;LE' -> önce çöz, sonra '&' ile kes
+        m = re.search(r'QueryParameter_' + param + r'=([^"\']+)', page)
         if m:
-            names[key] = urllib.parse.unquote_plus(html_lib.unescape(m.group(1))).strip()
+            value = html_lib.unescape(m.group(1)).split("&")[0]
+            value = urllib.parse.unquote_plus(value).strip()
+            if value:
+                names[key] = value
 
     base = "https://www.tjk.org/TR/YarisSever/Query/Page/"
     jobs = {}
     for key, name in names.items():
         page_name, param = RELATIVE_PAGES[key]
         url = f"{base}{page_name}?QueryParameter_{param}={urllib.parse.quote(name)}"
+        if irk:
+            url += f"&QueryParameter_IrkId={irk}"
         jobs[key] = url
         if key == "baba":
             for sn, pid in SIRE_SURFACES.items():
                 jobs[f"baba_{sn}"] = f"{url}&QueryParameter_PistId={pid}"
     jobs["kardes"] = f"https://www.tjk.org/TR/YarisSever/Query/Kardes/Kardes?Atkodu={at_id}"
 
+    failures = []
+
     def load(item):
         key, url = item
         try:
             return key, fetch_cached(url, 24 * 3600)
         except Exception:
+            failures.append(key)
             return key, None
 
     with ThreadPoolExecutor(max_workers=4) as pool:
@@ -1569,7 +1649,10 @@ def fetch_horse_relatives(at_id):
     tot["winners"] = sum(1 for b in siblings if b["w1"] > 0)
     tot["earnings"] = format_tl(sum(parse_tl(b["earnings"]) for b in siblings))
     result["kardesler"] = {"list": siblings, "total": tot}
-    cache_set(cache_key, result)
+    result["incomplete"] = bool(failures)
+    # Geçici TJK hatasında eksik sonucu 24 saat saklama: bir sonraki açılışta yeniden denensin
+    if not failures:
+        cache_set(cache_key, result)
     return result
 
 
@@ -1604,11 +1687,14 @@ def fetch_offspring_breakdown(kind, name):
             offspring.append({"at_id": ids[0], "name": vals.get("At İsmi", ""), "earnings": vals.get("Kazanç", "")})
     sample = offspring if kind == "anne" else offspring[:OFFSPRING_SAMPLE]
 
+    failed = []
+
     def races_of(o):
         try:
             html_page = fetch_cached(f"https://www.tjk.org/TR/YarisSever/Query/ConnectedPage/AtKosuBilgileri?1=1&QueryParameter_AtId={o['at_id']}", TTL_HISTORY)
             return [race_row_to_dict(t) for tb in re.findall(r'<tbody.*?</tbody>', html_page, re.S) for t in parse_horse_race_rows(tb)]
         except Exception:
+            failed.append(o["name"])
             return []
 
     with ThreadPoolExecutor(max_workers=4) as pool:
@@ -1621,8 +1707,10 @@ def fetch_offspring_breakdown(kind, name):
         "sample_size": len(sample), "is_sample": kind != "anne" and len(offspring) > len(sample),
         "sample_names": [o["name"] for o in sample],
         "breakdowns": build_breakdowns(all_races),
+        "failed": len(failed),
     }
-    cache_set(cache_key, result)
+    if not failed:
+        cache_set(cache_key, result)
     return result
 
 
@@ -1694,12 +1782,15 @@ def fetch_race_idman(kosu_kodu, at_kodu, race_date=""):
     page = fetch_url(f"https://www.tjk.org/TR/YarisSever/Info/idmanpisti/Kosu?KosuKodu={kosu_kodu}&Atkodu={at_kodu}")
     rows = parse_race_idman_table(page)
 
+    detail_failures = []
+
     def load_detail(row):
         if not row["detay_id"]:
             return {}
         try:
             return parse_idman_detail(fetch_cached(f"https://www.tjk.org/TR/YarisSever/Info/idmanpistiDetay?QueryParameter_Id={row['detay_id']}", 24 * 3600))
         except Exception:
+            detail_failures.append(row["detay_id"])
             return {}
 
     with ThreadPoolExecutor(max_workers=4) as pool:
@@ -1727,7 +1818,8 @@ def fetch_race_idman(kosu_kodu, at_kodu, race_date=""):
     for rank, r in enumerate(timed):
         r["son_400_rank"] = rank + 1
     result = {"kosu_kodu": kosu_kodu, "rows": rows, "count": len(rows), "timed_count": len(timed)}
-    cache_set(cache_key, result)
+    if not detail_failures:  # eksik detay varsa önbelleğe alma; sonraki istek tamamlasın
+        cache_set(cache_key, result)
     return result
 
 
@@ -2138,10 +2230,11 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/horse_relatives":
             params = urllib.parse.parse_qs(parsed.query)
             at_id = params.get("at_id", [""])[0]
+            irk = params.get("irk", [""])[0]
             try:
                 if not at_id.isdigit():
                     raise ValueError("Geçersiz safkan kimliği")
-                self.send_json(200, {"ok": True, "data": fetch_horse_relatives(at_id)})
+                self.send_json(200, {"ok": True, "data": fetch_horse_relatives(at_id, irk)})
             except Exception as e:
                 self.send_json(500, {"ok": False, "error": str(e)})
             return

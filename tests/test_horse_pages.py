@@ -54,7 +54,7 @@ class TestLongCareer(unittest.TestCase):
         S.fetch_cached = lambda url, ttl: pages[url.split("QueryParameter_Yil=")[1] if "Yil=" in url else ""]
         try:
             S.CACHE.clear()
-            d = S.fetch_horse_bankomat_sheet("777", 57, 1400, lite=True)
+            d = S.fetch_horse_bankomat_sheet("777", 57, 1400, lite=False)
         finally:
             S.fetch_cached = orig
         self.assertEqual(d["total_career_races"], 4)
@@ -89,7 +89,7 @@ class TestHorseSheet(unittest.TestCase):
         S.fetch_cached = lambda url, ttl: page
         try:
             S.CACHE.clear()
-            return S.fetch_horse_bankomat_sheet("999", today_weight=56, target_dist=1400, lite=True)
+            return S.fetch_horse_bankomat_sheet("999", today_weight=56, target_dist=1400, lite=False)
         finally:
             S.fetch_cached = orig
 
@@ -122,6 +122,21 @@ class TestHorseSheet(unittest.TestCase):
         self.assertLess(order.index("sartli4"), order.index("handikap16"))
         self.assertLess(order.index("handikap16"), order.index("handikap15"))
         self.assertEqual(sum(b["starts"] for b in d["class_breakdown"]), 6)
+
+    def test_lite_payload_has_card_fields(self):
+        orig = S.fetch_cached
+        S.fetch_cached = lambda url, ttl: "<html>" + SUMMARY + RACES + "</html>"
+        try:
+            S.CACHE.clear()
+            lite = S.fetch_horse_bankomat_sheet("999", today_weight=56, target_dist=1400, lite=True)
+        finally:
+            S.fetch_cached = orig
+        # Kartlar, mevsim uyarısı, il karşılaştırması ve Kıyasla sekmesi bu alanları kullanır
+        for key in ("career_stats", "hp_history", "distance_city_times"):
+            self.assertIn(key, lite)
+        self.assertIn("season", lite["breakdowns"])
+        self.assertNotIn("races", lite)  # tam tablo yalnız pencerede
+        self.assertTrue(all(g["msf"] == 1400 for g in lite["distance_city_times"]))
 
     def test_hp_and_track_condition(self):
         d = self.run_sheet("<html>" + SUMMARY + RACES + "</html>")

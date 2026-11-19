@@ -237,3 +237,61 @@ class TestAgfAndCities(unittest.TestCase):
         flags = {c["name"]: c["is_domestic"] for c in cities}
         self.assertEqual(flags, {"İstanbul": True, "Şanlıurfa": True, "Tokyo Japonya": False, "Doha Katar": False})
         self.assertEqual([c["is_domestic"] for c in cities], [True, True, False, False])  # yerliler önce
+
+
+class TestWeightMargin(unittest.TestCase):
+    def horses(self, weights):
+        return [{"no": i + 1, "name": f"AT{i + 1}", "weight": w} for i, w in enumerate(weights)]
+
+    def test_single_light_horse_flagged(self):
+        hs = self.horses([61, 62, 60.5, 61, 63, 50])   # kullanıcının örneği: 5 at 60+ kg, biri 50 kg
+        wm = S.compute_weight_margin(hs)
+        self.assertEqual([f["no"] for f in wm["flags"]], [6])
+        f = wm["flags"][0]
+        self.assertEqual((f["type"], f["alone"]), ("light", True))
+        self.assertIn("tek başına", f["text"])
+        self.assertIsNotNone(hs[5]["weight_flag"])
+        self.assertIsNone(hs[0]["weight_flag"])
+
+    def test_heavy_and_normal_spread(self):
+        wm = S.compute_weight_margin(self.horses([55, 56, 55.5, 54, 62]))
+        self.assertEqual([(f["no"], f["type"]) for f in wm["flags"]], [(5, "heavy")])
+        self.assertEqual(S.compute_weight_margin(self.horses([55, 56, 57, 58, 59]))["flags"], [])
+
+
+class TestTjkResilience(unittest.TestCase):
+    def test_transient_404_is_retried(self):
+        import urllib.error
+        calls = {"n": 0}
+
+        class Resp:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self): return b"ok"
+
+        def fake_urlopen(req, timeout=0):
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, None)
+            return Resp()
+
+        orig, orig_sleep = S.urllib.request.urlopen, S.time.sleep
+        S.urllib.request.urlopen, S.time.sleep = fake_urlopen, (lambda s: None)
+        try:
+            self.assertEqual(S.fetch_url("https://www.tjk.org/x"), "ok")
+            self.assertEqual(calls["n"], 3)
+        finally:
+            S.urllib.request.urlopen, S.time.sleep = orig, orig_sleep
+
+    def test_relative_names_with_html_entities(self):
+        page = ('<a href="/TR/YarisSever/Query/Page/AygirIstatistikleri?QueryParameter_AygirAdi=U&#199;ANBEY">x</a>'
+                '<a href="/TR/YarisSever/Query/Page/KisrakIstatistikleri?QueryParameter_KisrakAdi=EDAD&#220;L&#220;LE&amp;x=1">y</a>'
+                '<a href="/TR/YarisSever/Query/Page/KisrakBabasi?QueryParameter_KisrakBabaAdi=&#214;ZHABER">z</a>')
+        orig = S.fetch_cached
+        S.fetch_cached = lambda url, ttl: page if "AtKosuBilgileri" in url else "<html></html>"
+        try:
+            S.CACHE.clear()
+            rel = S.fetch_horse_relatives("555")
+        finally:
+            S.fetch_cached = orig
+        self.assertEqual(rel["names"], {"baba": "UÇANBEY", "anne": "EDADÜLÜLE", "kisrak_baba": "ÖZHABER"})

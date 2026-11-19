@@ -147,3 +147,13 @@ Bülten kartlarında (koşu açılınca arka planda yüklenir) ve safkan pencere
 * **Pist • Zemin • Mevsim • Mesafe Başarısı (`build_breakdowns`):** Kum (Normal/Nemli/Islak/Sulu), Çim (Normal/Biraz Yumuşak/Yumuşak/Biraz Ağır/Ağır/Çok Ağır…), İlkbahar/Yaz/Sonbahar/Kış ve mesafe grupları; bugünkü pist ve mesafe işaretlenir.
 * **Aynı Mesafe, Farklı İller (`build_distance_city_times`):** Her mesafe ve pistte hipodrom hipodrom en iyi / ortalama derece. Tempo sekmesinde koşudaki tüm atların bugünkü mesafedeki il il dereceleri yan yana.
 * **Akraba İstatistikleri (`/api/horse_relatives`):** Baba (TJK aygır istatistiği + Çim/Kum/Sentetik), Anne, Kısrak Babası ve kardeşler. "Analiz" düğmesiyle (`/api/relative_breakdown`) yavruların koşu kayıtlarından pist/zemin/mevsim/mesafe kırılımı: anne için tüm yavrular; baba ve kısrak babası (kendi tayları) için en fazla 20 taylık örneklem. Sonuçlar 24 saat önbellekte tutulur.
+
+### 11. Başhandikapçı Uyarıları: Kilo Marjı ve Mevsim
+* **Kilo marjı (`compute_weight_margin`):** Koşudaki kilo ortancasından 5 kg ve üzeri hafif/ağır atlar işaretlenir; en hafif (en ağır) at en yakın rakibinden 3 kg+ ayrışıyorsa "tek başına" uyarısı verilir (ör. 5 at 60 kg üstü, biri 50 kg). Kartta `⚖️ HAFİF -7kg • TEK` rozeti ve Başhandikapçı notu; handikap koşularında kiloların puana göre verildiği hatırlatılır.
+* **Mevsim (`seasonFlag`):** Koşunun mevsimi (İlkbahar/Yaz/Sonbahar/Kış), atın diğer mevsimlerdeki başarısıyla kıyaslanır. Bu mevsimde 4+ koşuda hiç kazanamayıp başka mevsimde 2+ galibiyeti olan ya da İlk 3 oranı 20 puan düşük olan atlar **⚠️ MEVSİM ZAAFI**; tersi **🌤️ MEVSİM ATI** olarak işaretlenir.
+* Bülten sekmesinde **⚠️ Başhandikapçı Uyarıları** kartı ikisini koşu bazında listeler.
+
+### 12. TJK Erişim Dayanıklılığı
+* TJK aynı anda çok istek gelince var olan sayfalara da 404 döndürür: sunucu genelinde en fazla 6 eşzamanlı TJK isteği yapılır; 404/429/5xx ve zaman aşımlarında artan beklemeyle 2 kez yeniden denenir.
+* Eksik (hatalı) sonuçlar uzun süre önbellekte tutulmaz; bir sonraki istekte tamamlanır.
+* Aynı adlı Arap ve İngiliz aygır/kısrak karışmaması için akraba sorguları ırk filtresiyle yapılır.

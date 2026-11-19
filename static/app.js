@@ -125,6 +125,7 @@ function refreshProgram(force) {
     // ↻: sunucu önbelleği temizlenir; tarayıcıdaki karne/idman kopyaları da tazelensin
     STATE.extras = {};
     STATE.idman = {};
+    STATE.dates = [];  // gece yarısından sonra "Bugün" yeni güne geçsin
   }
   loadProgram(STATE.currentCityId, force, { keepRace: true });
 }
@@ -424,6 +425,7 @@ function renderCurrentRace() {
                 <h3 class="serif-title text-base font-bold text-[#18181B] truncate leading-tight">${h.name}</h3>
                 ${h.is_ekuri ? '<span class="px-1.5 py-0.2 rounded bg-[#0F291E]/10 text-[#0F291E] text-[9px] font-bold">EKÜRİ</span>' : ''}
                 ${roleBadgeHTML(h.role_badge)}
+                ${weightBadgeHTML(h)}
               </div>
               <div class="text-[11px] text-[#44403C] truncate mt-0.5">
                 <strong class="text-[#18181B]">${h.jockey}</strong> • ${h.weight}kg • Kulvar:${h.start_no} ${h.handicap ? `• HP:${h.handicap}` : ''}
@@ -503,6 +505,7 @@ function renderCurrentRace() {
 
   renderPaceAndSimulationView(race);
   renderDistanceCompare(race);
+  renderRaceWarnings(race);
   loadRaceExtras(race);
 }
 
@@ -652,9 +655,91 @@ function horseExtrasHTML(race, h) {
       ${idmanSplitsText(idm)} ${idmanDurumBadge(idm.galop_durumu)} ${fastest}
     `;
   }
+  const sf = seasonFlag(h);
+  const seasonLine = sf ? `<div class="mt-1 pt-1 border-t border-[#E8E3D8] font-bold ${sf.type === 'weak' ? 'text-[#7A1C1C]' : 'text-[#0F291E]'}">${sf.text}</div>` : '';
   return `
     <div class="flex items-center gap-x-2 gap-y-0.5 flex-wrap">${karne}</div>
     ${idman ? `<div class="flex items-center gap-x-2 gap-y-0.5 flex-wrap mt-1 pt-1 border-t border-[#E8E3D8]">${idman}</div>` : ''}
+    ${seasonLine}
+  `;
+}
+
+// ---------------- MEVSİM ve KİLO UYARILARI ----------------
+const SEASON_BY_MONTH = { 12: 'Kış', 1: 'Kış', 2: 'Kış', 3: 'İlkbahar', 4: 'İlkbahar', 5: 'İlkbahar',
+                          6: 'Yaz', 7: 'Yaz', 8: 'Yaz', 9: 'Sonbahar', 10: 'Sonbahar', 11: 'Sonbahar' };
+const SEASON_LOC = { 'Kış': 'Kışın', 'İlkbahar': 'İlkbaharda', 'Yaz': 'Yazın', 'Sonbahar': 'Sonbaharda' };
+
+function raceSeason() {
+  const m = parseInt(((STATE.program && STATE.program.date) || '').split('/')[1], 10);
+  return SEASON_BY_MONTH[m] || null;
+}
+
+// Atın bu mevsimdeki başarısı diğer mevsimlerden belirgin farklı mı?
+function seasonFlag(h) {
+  const ex = h.at_id ? STATE.extras[h.at_id] : null;
+  const rows = ex && ex.breakdowns && ex.breakdowns.season;
+  const cur = raceSeason();
+  if (!rows || !cur) return null;
+  const c = rows.find(r => r.label === cur);
+  const others = rows.filter(r => r.label !== cur);
+  const oStarts = others.reduce((a, r) => a + r.starts, 0);
+  if (!c || c.starts < 3 || oStarts < 4) return null;
+  const top3 = r => r.w1 + r.w2 + r.w3;
+  const oTop3 = Math.round(others.reduce((a, r) => a + top3(r), 0) / oStarts * 1000) / 10;
+  const best = others.filter(r => r.starts >= 3).sort((a, b) => (b.w1 - a.w1) || (b.top3_pct - a.top3_pct))[0];
+  const winlessHere = c.w1 === 0 && c.starts >= 4 && best && best.w1 >= 2;
+  if (winlessHere || oTop3 - c.top3_pct >= 20) {
+    return { type: 'weak', no: h.no, name: h.name,
+      text: `⚠️ MEVSİM ZAAFI: ${SEASON_LOC[cur]} ${c.starts} koşuda ${c.w1} galibiyet (İlk 3 %${c.top3_pct})` +
+            (best ? ` — ${SEASON_LOC[best.label]} ${best.starts} koşuda ${best.w1} galibiyet (İlk 3 %${best.top3_pct})` : ` — diğer mevsimlerde İlk 3 %${oTop3}`) };
+  }
+  if (c.top3_pct - oTop3 >= 20 && c.w1 >= 1) {
+    return { type: 'strong', no: h.no, name: h.name,
+      text: `🌤️ MEVSİM ATI: ${SEASON_LOC[cur]} ${c.starts} koşuda ${c.w1} galibiyet (İlk 3 %${c.top3_pct}) — diğer mevsimlerde İlk 3 %${oTop3}` };
+  }
+  return null;
+}
+
+function weightBadgeHTML(h) {
+  const f = h.weight_flag;
+  if (!f) return '';
+  const light = f.type === 'light';
+  const cls = light ? 'bg-[#0F291E] text-[#E6C762]' : 'bg-[#7A1C1C] text-white';
+  return `<span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold ${cls}" title="${f.text}">⚖️ ${light ? 'HAFİF' : 'AĞIR'} ${f.diff > 0 ? '+' : ''}${f.diff}kg${f.alone ? ' • TEK' : ''}</span>`;
+}
+
+function renderRaceWarnings(race) {
+  const el = document.getElementById('raceWarnings');
+  if (!el) return;
+  const wm = race.weight_margin || { flags: [] };
+  const season = race.horses.map(seasonFlag).filter(Boolean);
+  const pending = race.horses.filter(h => h.at_id && !STATE.extras[h.at_id]).length;
+  if (!wm.flags.length && !season.length) {
+    el.classList.add('hidden');
+    return;
+  }
+  el.classList.remove('hidden');
+  const isHandikap = /handikap/i.test(race.condition || '');
+  const item = (no, html, tone) => `
+    <div onclick="openHorseModal(${no})" class="cursor-pointer flex items-start gap-2 text-[11px] py-1 border-t border-[#E8E3D8] first:border-t-0">
+      <span class="mono font-extrabold ${tone} w-7 flex-shrink-0">#${no}</span><span class="text-[#18181B] leading-snug">${html}</span>
+    </div>`;
+  el.innerHTML = `
+    <div class="flex items-center justify-between mb-1.5">
+      <span class="serif-title text-sm font-bold text-[#7A1C1C] uppercase">⚠️ Başhandikapçı Uyarıları</span>
+      ${pending ? `<span class="text-[10px] text-[#57534E]">⏳ mevsim karnesi: ${pending} at</span>` : `<span class="text-[10px] text-[#57534E]">${raceSeason() || ''} koşusu</span>`}
+    </div>
+    ${wm.flags.length ? `
+      <div class="mb-1.5">
+        <div class="text-[9px] font-extrabold text-[#8C5A3C] uppercase">Kilo Marjı • ortanca ${wm.median} kg • aralık ${wm.min}–${wm.max} kg (${wm.spread} kg)</div>
+        ${wm.flags.map(f => item(f.no, `<strong>${f.name}</strong> — ${f.text.replace(/^⚖️ /, '')}`, f.type === 'light' ? 'text-[#0F291E]' : 'text-[#7A1C1C]')).join('')}
+        ${isHandikap ? '<div class="text-[9px] text-[#78716C] mt-0.5">Not: Handikap koşusunda kilolar handikap puanına göre verilir; hafif kilo genelde düşük puanı da gösterir.</div>' : ''}
+      </div>` : ''}
+    ${season.length ? `
+      <div>
+        <div class="text-[9px] font-extrabold text-[#8C5A3C] uppercase">Mevsim Başarısı</div>
+        ${season.map(f => item(f.no, `<strong>${f.name}</strong> — ${f.text.replace(/^(⚠️|🌤️) /, '')}`, f.type === 'weak' ? 'text-[#7A1C1C]' : 'text-[#0F291E]')).join('')}
+      </div>` : ''}
   `;
 }
 
@@ -662,7 +747,7 @@ function horseExtrasHTML(race, h) {
 let DIST_CMP_TIMER = null;
 function scheduleDistanceCompare(race) {
   clearTimeout(DIST_CMP_TIMER);
-  DIST_CMP_TIMER = setTimeout(() => { if (isCurrentRace(race)) renderDistanceCompare(race); }, 150);
+  DIST_CMP_TIMER = setTimeout(() => { if (isCurrentRace(race)) { renderDistanceCompare(race); renderRaceWarnings(race); } }, 150);
 }
 
 function raceSurfaceName(race) {
@@ -1246,7 +1331,8 @@ function openHorseModal(horseNo) {
       ? 'Bu safkanın TJK kimliği bültende bulunamadı; geçmiş koşu, soyağacı ve pist karnesi çekilemedi.'
       : 'Yabancı hipodrom: TJK bu safkanın geçmiş koşu, soyağacı ve idman kayıtlarını yayınlamıyor.');
   } else {
-    fetchJSON(`/api/horse_relatives?at_id=${encodeURIComponent(h.at_id)}`)
+    const irk = (race.age_group || '').toLowerCase().includes('arap') ? '2' : ((race.age_group || '').toLowerCase().includes('ingiliz') ? '1' : '');
+    fetchJSON(`/api/horse_relatives?at_id=${encodeURIComponent(h.at_id)}&irk=${irk}`)
       .then(rel => {
         if (token !== HORSE_MODAL_TOKEN) return;
         const el = document.getElementById('relativesSection');
