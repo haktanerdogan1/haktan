@@ -1331,6 +1331,50 @@ def build_breakdowns(races):
     }
 
 
+SURFACE_MIN_STARTS = 3
+
+
+def surface_preferences(races):
+    """
+    Pist tercihi: her pist (Kum / Çim / Sentetik) için Sever / Nötr / Sevmez kararı, İlk 3 ve
+    birincilik oranı, o pistteki en iyi dereceler (mesafe mesafe).
+    Karar atın kendi genel İlk 3 oranına göre verilir (en az 3 koşu):
+      Sever  : pistteki İlk 3 ≥ %35 ve genelden en az 10 puan yüksek
+               (ya da 5+ koşuda İlk 3 ≥ %45: tek pistte koşan atlar için mutlak ölçüt)
+      Sevmez : genelden en az 15 puan düşük ya da 4+ koşuda hiç ilk 3 yok
+    """
+    overall = stats_block(races)
+    out = {"overall_top3": overall["top3_pct"], "overall_starts": overall["starts"]}
+    for sn in ("Kum", "Çim", "Sentetik"):
+        rs = [r for r in races if r["p_name"] == sn]
+        blk = stats_block(rs)
+        top3 = blk["top3_pct"]
+        if not rs:
+            verdict, label = "none", "Hiç koşmamış"
+        elif len(rs) < SURFACE_MIN_STARTS:
+            verdict, label = "few", f"Az koşmuş ({len(rs)})"
+        elif (top3 >= 35 and top3 >= overall["top3_pct"] + 10) or (len(rs) >= 5 and top3 >= 45):
+            verdict, label = "loves", "Sever"
+        elif top3 <= overall["top3_pct"] - 15 or (len(rs) >= 4 and blk["w1"] + blk["w2"] + blk["w3"] == 0):
+            verdict, label = "dislikes", "Sevmez"
+        else:
+            verdict, label = "neutral", "Nötr"
+        by_msf = {}
+        for r in rs:
+            if r["sec"] and r["msf"]:
+                by_msf.setdefault(r["msf"], []).append(r)
+        best = []
+        for msf, rr in by_msf.items():
+            b = min(rr, key=lambda x: x["sec"])
+            best.append({"msf": msf, "best": format_seconds_to_time_str(b["sec"]), "city": b["sehir"],
+                         "date": b["tarih"], "sira": b["sira"] or "-", "pd": b["pd"], "count": len(rr)})
+        best.sort(key=lambda x: (-x["count"], x["msf"]))
+        out[sn] = {"verdict": verdict, "label": label, "starts": blk["starts"], "w1": blk["w1"],
+                   "win_pct": blk["win_pct"], "top3_pct": top3, "top5_pct": blk["top5_pct"],
+                   "best_times": best[:6]}
+    return out
+
+
 def build_distance_city_times(races, only_dist=None):
     """Aynı mesafeyi farklı illerde ne sürede koştuğu: (mesafe, pist) -> il -> en iyi / ortalama derece."""
     out = {}
@@ -1627,6 +1671,7 @@ def fetch_horse_bankomat_sheet(at_id, today_weight=57.0, target_dist=1200, is_ar
         "breakdowns": build_breakdowns(all_races),
         # Kartlar (lite) için yalnız bugünkü mesafe; tam görünümde tüm mesafeler
         "distance_city_times": build_distance_city_times(all_races, only_dist=target_dist if lite else None),
+        "surface_pref": surface_preferences(all_races),
         "surface_races": surface_races,
     }
     if lite:
@@ -1636,6 +1681,9 @@ def fetch_horse_bankomat_sheet(at_id, today_weight=57.0, target_dist=1200, is_ar
             "breakdowns": {"races": result["breakdowns"]["races"], "season": result["breakdowns"]["season"],
                            "surface": result["breakdowns"]["surface"], "distance": result["breakdowns"]["distance"]},
             "distance_city_times": result["distance_city_times"],
+            # Kart etiketleri için yalnız karar ve oranlar (dereceler pencerede)
+            "surface_pref": {k: ({kk: vv for kk, vv in v.items() if kk != "best_times"} if isinstance(v, dict) else v)
+                             for k, v in result["surface_pref"].items()},
             "total_career_races": result["total_career_races"],
             "surface_summary": {"TOPLAM": surface_summary.get("TOPLAM")},
         }

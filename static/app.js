@@ -845,6 +845,32 @@ function idmanSplitsText(row) {
   return (row.splits || []).map(x => `<span class="mono">${x.dist}m ${x.time}</span>`).join(' • ');
 }
 
+// ---------------- PİST TERCİHİ ----------------
+const SURF_VERB = { 'Kum': ['Kumu', '🏜️'], 'Çim': ['Çimi', '🌱'], 'Sentetik': ['Sentetiği', '⚡'] };
+
+function surfacePrefChip(sn, p, isToday) {
+  const [acc, icon] = SURF_VERB[sn];
+  let text, cls;
+  if (p.verdict === 'loves') { text = `${acc} sever`; cls = 'bg-[#0F291E] text-[#E6C762]'; }
+  else if (p.verdict === 'dislikes') { text = `${acc} sevmez`; cls = 'bg-[#7A1C1C] text-white'; }
+  else if (p.verdict === 'neutral') { text = `${sn}: nötr`; cls = 'bg-[#EFECE4] text-[#44403C] border border-[#D8D2C5]'; }
+  else if (p.verdict === 'few') { text = `${sn}: az koşmuş (${p.starts})`; cls = 'bg-[#F7F1E3] text-[#8C5A3C] border border-[#A67C37]/40'; }
+  else { text = `${sn}ta hiç koşmamış`.replace('Kumta', 'Kumda').replace('Çimta', 'Çimde').replace('Sentetikta', 'Sentetikte'); cls = 'bg-[#F7F1E3] text-[#8C5A3C] border border-[#A67C37]/40'; }
+  const stat = p.starts ? ` <span class="opacity-80 mono">${p.starts}K • İlk3 %${p.top3_pct}</span>` : '';
+  return `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${cls} ${isToday ? 'ring-2 ring-[#A67C37]' : ''}" title="${sn} pist: ${p.starts} koşu, birincilik %${p.win_pct}, İlk 3 %${p.top3_pct}">${icon} ${text}${stat}${isToday ? ' • BUGÜN' : ''}</span>`;
+}
+
+function surfacePrefLine(race, ex) {
+  const sp = ex && ex.surface_pref;
+  if (!sp) return '';
+  const today = raceSurfaceName(race);
+  const chips = [];
+  if (sp[today]) chips.push(surfacePrefChip(today, sp[today], true));
+  ['Kum', 'Çim', 'Sentetik'].filter(k => k !== today && sp[k] && (sp[k].verdict === 'loves' || sp[k].verdict === 'dislikes'))
+    .forEach(k => chips.push(surfacePrefChip(k, sp[k], false)));
+  return chips.length ? `<div class="flex items-center gap-1 flex-wrap mt-1 pt-1 border-t border-[#E8E3D8]"><span class="text-[9px] font-extrabold text-[#8C5A3C] uppercase mr-0.5">Pist</span>${chips.join('')}</div>` : '';
+}
+
 function horseExtrasHTML(race, h) {
   const ex = h.at_id ? STATE.extras[h.at_id] : null;
   let karne;
@@ -887,6 +913,7 @@ function horseExtrasHTML(race, h) {
   const seasonLine = sf ? `<div class="mt-1 pt-1 border-t border-[#E8E3D8] font-bold ${sf.type === 'weak' ? 'text-[#7A1C1C]' : 'text-[#0F291E]'}">${sf.text}</div>` : '';
   return `
     <div class="flex items-center gap-x-2 gap-y-0.5 flex-wrap">${karne}</div>
+    ${surfacePrefLine(race, ex)}
     ${idman ? `<div class="flex items-center gap-x-2 gap-y-0.5 flex-wrap mt-1 pt-1 border-t border-[#E8E3D8]">${idman}</div>` : ''}
     ${seasonLine}
   `;
@@ -944,8 +971,13 @@ function renderRaceWarnings(race) {
   const wm = race.weight_margin || { flags: [] };
   const hw = race.hp_weight || { flags: [] };
   const season = race.horses.map(seasonFlag).filter(Boolean);
+  const todaySurf = raceSurfaceName(race);
+  const surfFlags = race.horses.map(h => {
+    const p = h.at_id && STATE.extras[h.at_id] && STATE.extras[h.at_id].surface_pref && STATE.extras[h.at_id].surface_pref[todaySurf];
+    return p && (p.verdict === 'loves' || p.verdict === 'dislikes') ? { no: h.no, name: h.name, p } : null;
+  }).filter(Boolean).sort((a, b) => (a.p.verdict === 'loves' ? 0 : 1) - (b.p.verdict === 'loves' ? 0 : 1));
   const pending = race.horses.filter(h => h.at_id && !STATE.extras[h.at_id]).length;
-  if (!wm.flags.length && !season.length && !hw.flags.length) {
+  if (!wm.flags.length && !season.length && !hw.flags.length && !surfFlags.length) {
     el.classList.add('hidden');
     return;
   }
@@ -970,6 +1002,11 @@ function renderRaceWarnings(race) {
       <div class="mb-1.5">
         <div class="text-[9px] font-extrabold text-[#8C5A3C] uppercase">Handikap Puanına Göre Kilo ${hw.used_fit ? `• bu koşuda 1 kg ≈ ${hw.hp_per_kg} HP (uyum %${Math.round(hw.r2 * 100)})` : '• şartlı koşu: puanı yüksek, kilosu hafif atlar'}</div>
         ${hw.flags.map(f => item(f.no, `<strong>${f.name}</strong> — ${f.text.replace(/^⚖️ /, '')}`, f.type === 'light' ? 'text-[#0F291E]' : 'text-[#7A1C1C]')).join('')}
+      </div>` : ''}
+    ${surfFlags.length ? `
+      <div class="mb-1.5">
+        <div class="text-[9px] font-extrabold text-[#8C5A3C] uppercase">Bugünkü Pist (${todaySurf}) Uyumu</div>
+        ${surfFlags.map(f => item(f.no, `<strong>${f.name}</strong> — ${SURF_VERB[todaySurf][0]} ${f.p.verdict === 'loves' ? 'sever' : 'sevmez'}: ${f.p.starts} koşuda ${f.p.w1} galibiyet, İlk 3 %${f.p.top3_pct}`, f.p.verdict === 'loves' ? 'text-[#0F291E]' : 'text-[#7A1C1C]')).join('')}
       </div>` : ''}
     ${season.length ? `
       <div>
@@ -1474,6 +1511,11 @@ function openHorseModal(horseNo) {
       <div class="text-xs text-[#57534E] py-2 text-center">⏳ Yıllık karne ve kazanç yükleniyor...</div>
     </div>
 
+    <!-- PİST TERCİHİ VE DERECELERİ -->
+    <div id="surfacePrefSection" class="bg-white border border-[#D8D2C5] rounded-xl p-3.5 mb-3.5">
+      <div class="text-xs text-[#57534E] py-2 text-center">⏳ Kum / Çim / Sentetik tercihi ve dereceleri yükleniyor...</div>
+    </div>
+
     <!-- PİST / ZEMİN / MEVSİM / MESAFE KIRILIMI -->
     <div id="breakdownSection" class="bg-white border border-[#D8D2C5] rounded-xl p-3.5 mb-3.5">
       <div class="text-xs text-[#57534E] py-2 text-center">⏳ Pist, zemin, mevsim ve mesafe başarı kırılımı yükleniyor...</div>
@@ -1547,7 +1589,7 @@ function openHorseModal(horseNo) {
   const showHistoryError = (msg) => {
     if (token !== HORSE_MODAL_TOKEN) return;
     const errHTML = `<div class="text-xs text-[#7A1C1C] py-2 text-center">⚠️ ${esc(msg)}</div>`;
-    ['surfaceAffinitySection', 'pedigreeTreeSection', 'bankomatHistoryTable', 'careerKarneSection', 'classKarneSection', 'hpHistorySection', 'yearlySection', 'citySection', 'surfaceRacesSection', 'relativesSection', 'breakdownSection', 'distanceCitySection'].forEach(id => {
+    ['surfaceAffinitySection', 'pedigreeTreeSection', 'bankomatHistoryTable', 'careerKarneSection', 'classKarneSection', 'hpHistorySection', 'yearlySection', 'citySection', 'surfaceRacesSection', 'relativesSection', 'breakdownSection', 'distanceCitySection', 'surfacePrefSection'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.innerHTML = errHTML;
     });
@@ -1621,6 +1663,8 @@ function openHorseModal(horseNo) {
         if (yEl) yEl.innerHTML = yearlyHTML(d);
         const cEl = document.getElementById('citySection');
         if (cEl) cEl.innerHTML = cityHTML(d);
+        const spEl = document.getElementById('surfacePrefSection');
+        if (spEl) spEl.innerHTML = surfacePrefModalHTML(d.surface_pref, race);
         const bEl = document.getElementById('breakdownSection');
         if (bEl) bEl.innerHTML = `
           <div class="mb-2">
@@ -2189,6 +2233,38 @@ function relativesHTML(rel, h, race) {
       ${relativeCard('♀ Anne (Kısrak)', 'text-[#7A1C1C]', rel.anne, { extra: rel.anne ? relativeBreakdownSlot('anne', h.at_id, 'Yavrularının') : '' })}
       ${relativeCard('♂ Kısrak Babası (Annenin Babası)', 'text-[#8C5A3C]', rel.kisrak_baba, { runnersLabel: 'Kızlarının Tayı', extra: rel.kisrak_baba ? relativeBreakdownSlot('kisrak_baba', h.at_id, 'Kendi Taylarının') : '' })}
       ${kardesHTML}
+    </div>
+  `;
+}
+
+function surfacePrefModalHTML(sp, race) {
+  const head = `<h4 class="serif-title text-base font-bold text-[#0F291E] uppercase">🏟️ Pist Tercihi ve Dereceleri</h4>`;
+  if (!sp || !sp.overall_starts) return head + '<div class="text-xs text-[#78716C] mt-1">Henüz koşu kaydı yok.</div>';
+  const today = raceSurfaceName(race);
+  const tone = v => v === 'loves' ? 'border-[#0F291E] bg-[#0F291E]/5' : v === 'dislikes' ? 'border-[#7A1C1C] bg-[#7A1C1C]/5' : 'border-[#E2DDD2] bg-[#FAF8F3]';
+  return `
+    <div class="mb-2">${head}<p class="text-[10px] text-[#57534E]">Karar atın kendi genel İlk 3 oranına (%${sp.overall_top3}, ${sp.overall_starts} koşu) göre verilir; en az 3 koşu gerekir.</p></div>
+    <div class="space-y-2">
+      ${['Kum', 'Çim', 'Sentetik'].map(k => {
+        const p = sp[k];
+        if (!p) return '';
+        return `
+          <div class="rounded-lg p-2.5 border ${tone(p.verdict)} ${k === today ? 'ring-1 ring-[#A67C37]' : ''}">
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              ${surfacePrefChip(k, p, k === today)}
+              ${p.starts ? `<span class="text-[10px] mono text-[#44403C]">${p.starts} koşu • 1. %${p.win_pct} • <strong>İlk 3 %${p.top3_pct}</strong> • İlk 5 %${p.top5_pct}</span>` : ''}
+            </div>
+            ${p.best_times && p.best_times.length ? `
+              <table class="w-full text-[11px] mono mt-1.5">
+                <thead><tr class="text-[8px] text-[#78716C] uppercase font-sans"><th class="text-left">Mesafe</th><th class="text-right">En İyi Derece</th><th class="text-right">Nerede / Ne Zaman / Sıra / P.D</th><th class="text-right">K</th></tr></thead>
+                <tbody>${p.best_times.map(b => `<tr${b.msf === race.distance_m && k === today ? ' class="bg-[#A67C37]/10 font-bold"' : ''}>
+                  <td class="py-0.5">${b.msf}m${b.msf === race.distance_m && k === today ? ' ◀' : ''}</td>
+                  <td class="py-0.5 text-right text-[#7A1C1C] font-bold">${b.best}</td>
+                  <td class="py-0.5 text-right text-[10px] text-[#57534E]">${b.city} • ${b.date} • ${b.sira}. • ${b.pd}</td>
+                  <td class="py-0.5 text-right text-[#57534E]">${b.count}</td></tr>`).join('')}</tbody>
+              </table>` : ''}
+          </div>`;
+      }).join('')}
     </div>
   `;
 }

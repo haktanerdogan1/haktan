@@ -251,3 +251,25 @@ class TestBreakdowns(unittest.TestCase):
         self.assertEqual(S.parse_tl("1.297.200 t"), 1297200)
         self.assertEqual(S.parse_tl("451.271.930,63"), 451271930)
         self.assertEqual(S.format_tl(1420500), "1.420.500 t")
+
+
+class TestSurfacePreference(unittest.TestCase):
+    def mk(self, surf, sira, msf=1400, derece="1.29.00"):
+        letter = {"Kum": "K", "Çim": "Ç", "Sentetik": "S"}[surf]
+        row = race_row("01.10.2026", str(msf), f"{letter}:Normal", str(sira), derece, "Handikap 15", "50")
+        return S.race_row_to_dict(S.parse_horse_race_rows("<tbody>" + row + "</tbody>")[0])
+
+    def test_verdicts(self):
+        races = ([self.mk("Kum", 1), self.mk("Kum", 2), self.mk("Kum", 3), self.mk("Kum", 1), self.mk("Kum", 5)]
+                 + [self.mk("Çim", 8), self.mk("Çim", 9), self.mk("Çim", 7), self.mk("Çim", 6)]
+                 + [self.mk("Sentetik", 2)])
+        sp = S.surface_preferences(races)
+        self.assertEqual(sp["Kum"]["verdict"], "loves")        # 5 koşuda 4 kez ilk 3
+        self.assertEqual(sp["Çim"]["verdict"], "dislikes")     # 4 koşuda hiç ilk 3 yok
+        self.assertEqual(sp["Sentetik"]["verdict"], "few")     # 1 koşu: karar verilmez
+        self.assertEqual(sp["Kum"]["best_times"][0]["msf"], 1400)
+
+    def test_single_surface_horse_can_love_it(self):
+        races = [self.mk("Kum", p) for p in (1, 2, 3, 6, 2)]
+        self.assertEqual(S.surface_preferences(races)["Kum"]["verdict"], "loves")  # mutlak ölçüt
+        self.assertEqual(S.surface_preferences(races)["Çim"]["verdict"], "none")
