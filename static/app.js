@@ -23,13 +23,26 @@ try {
   if (saved && WEIGHT_KEYS.every(k => typeof saved[k] === 'number')) STATE.weights = saved;
 } catch (e) { /* tarayıcı depolaması kapalı olabilir */ }
 
+let LOADING_MARKUP = null;
+let HORSE_MODAL_TOKEN = 0;
+
 document.addEventListener('DOMContentLoaded', () => {
+  LOADING_MARKUP = document.getElementById('loadingOverlay').innerHTML;
+  // Alttan açılan pencereler: karartılmış alana dokununca kapanır
+  ['horseModal', 'weightsModal'].forEach(id => {
+    const el = document.getElementById(id);
+    el.addEventListener('click', e => { if (e.target === el) el.classList.add('hidden'); });
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { closeHorseModal(); closeWeightsModal(); }
+  });
   loadProgram();
 });
 
 async function loadProgram(cityId = null, forceRefresh = false, opts = {}) {
   const loadingEl = document.getElementById('loadingOverlay');
   const mainEl = document.getElementById('mainContent');
+  if (LOADING_MARKUP !== null) loadingEl.innerHTML = LOADING_MARKUP;
   loadingEl.classList.remove('hidden');
   mainEl.classList.add('hidden');
 
@@ -39,7 +52,12 @@ async function loadProgram(cityId = null, forceRefresh = false, opts = {}) {
     if (STATE.weights) url += `&w=${WEIGHT_KEYS.map(k => STATE.weights[k]).join(',')}`;
 
     const res = await fetch(url);
-    const json = await res.json();
+    let json;
+    try {
+      json = await res.json();
+    } catch (e) {
+      throw new Error(`Sunucu yanıtı okunamadı (HTTP ${res.status})`);
+    }
     if (!json.ok) throw new Error(json.error || 'Bülten verisi alınamadı');
 
     const sameCity = String(STATE.currentCityId) === String(json.data.city_id);
@@ -67,7 +85,7 @@ async function loadProgram(cityId = null, forceRefresh = false, opts = {}) {
         <div class="text-2xl mb-2">⚠️</div>
         <h3 class="serif-title text-base font-bold text-[#7A1C1C] mb-1">Bülten Bağlantı Hatası</h3>
         <p class="text-xs text-[#57534E] mb-4">${err.message}</p>
-        <button onclick="loadProgram(null, true)" class="px-4 py-2 rounded-lg bg-[#0F291E] text-[#F9F6F0] text-xs font-bold">Tekrar Dene</button>
+        <button onclick="loadProgram(STATE.currentCityId, true, { keepRace: true })" class="px-4 py-2 rounded-lg bg-[#0F291E] text-[#F9F6F0] text-xs font-bold">Tekrar Dene</button>
       </div>
     `;
   }
@@ -846,15 +864,32 @@ function openHorseModal(horseNo) {
 
   modal.classList.remove('hidden');
 
-  if (h.at_id) {
+  const token = ++HORSE_MODAL_TOKEN;
+  const showHistoryError = (msg) => {
+    if (token !== HORSE_MODAL_TOKEN) return;
+    const errHTML = `<div class="text-xs text-[#7A1C1C] py-2 text-center">⚠️ ${msg}</div>`;
+    ['surfaceAffinitySection', 'pedigreeTreeSection', 'bankomatHistoryTable'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = errHTML;
+    });
+  };
+
+  if (!h.at_id) {
+    showHistoryError('Bu safkanın TJK kimliği bültende bulunamadı; geçmiş koşu, soyağacı ve pist karnesi çekilemedi.');
+  } else {
     const isArab = (race.age_group || '').toLowerCase().includes('arap') ? '1' : '0';
     fetch(`/api/horse_history?at_id=${encodeURIComponent(h.at_id)}&weight=${encodeURIComponent(h.weight)}&dist=${encodeURIComponent(race.distance_m)}&arab=${isArab}`)
       .then(r => r.json())
       .then(json => {
+        // Kullanıcı bu arada başka safkan açtıysa eski yanıtı yazma
+        if (token !== HORSE_MODAL_TOKEN) return;
         const surfEl = document.getElementById('surfaceAffinitySection');
         const pedEl = document.getElementById('pedigreeTreeSection');
         const tblEl = document.getElementById('bankomatHistoryTable');
-        if (!json.ok || !json.data) return;
+        if (!json.ok || !json.data) {
+          showHistoryError(`TJK safkan sayfası alınamadı${json.error ? ': ' + json.error : ''}`);
+          return;
+        }
 
         const d = json.data;
 
@@ -1094,7 +1129,8 @@ function openHorseModal(horseNo) {
             </table>
           </div>
         `;
-      });
+      })
+      .catch(err => showHistoryError(`TJK bağlantı hatası: ${err.message}`));
   }
 }
 
@@ -1164,6 +1200,8 @@ function renderXrayComparison() {
 }
 
 function openWeightsModal() {
+  // Uygulanmamış sürgü değişikliklerini at, geçerli teraziyi göster
+  syncWeightSliders(STATE.program && STATE.program.weights);
   document.getElementById('weightsModal').classList.remove('hidden');
 }
 

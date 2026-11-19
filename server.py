@@ -26,12 +26,40 @@ import html as html_lib
 import urllib.request
 import urllib.parse
 from datetime import datetime
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+import time
+import threading
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 
 CACHE = {}
+CACHE_LOCK = threading.Lock()
+# Önbellek süreleri (saniye): AGF gün içinde değiştiği için bülten kısa tutulur
+TTL_CITIES = 600
+TTL_PROGRAM = 300
+TTL_HISTORY = 6 * 3600
+
+
+def cache_get(key, ttl):
+    with CACHE_LOCK:
+        item = CACHE.get(key)
+        if not item:
+            return None
+        ts, value = item
+        if time.time() - ts > ttl:
+            CACHE.pop(key, None)
+            return None
+        return value
+
+
+def cache_set(key, value):
+    with CACHE_LOCK:
+        CACHE[key] = (time.time(), value)
+        # Bellek sınırı: en eski kayıtları at
+        if len(CACHE) > 600:
+            for k, _ in sorted(CACHE.items(), key=lambda kv: kv[1][0])[:100]:
+                CACHE.pop(k, None)
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -127,8 +155,9 @@ def get_available_cities(date_str):
     Returns list of dicts: {id, name, is_domestic, url}
     """
     cache_key = f"cities_{date_str}"
-    if cache_key in CACHE:
-        return CACHE[cache_key]
+    cached = cache_get(cache_key, TTL_CITIES)
+    if cached is not None:
+        return cached
 
     encoded_date = urllib.parse.quote(date_str, safe="")
     url = f"https://www.tjk.org/TR/YarisSever/Info/Page/GunlukYarisProgrami?QueryParameter_Tarih={encoded_date}&Era=today"
@@ -159,7 +188,8 @@ def get_available_cities(date_str):
 
     # Sort domestic cities first
     cities.sort(key=lambda c: (0 if c["is_domestic"] else 1, int(c["id"])))
-    CACHE[cache_key] = cities
+    if cities:
+        cache_set(cache_key, cities)
     return cities
 
 
@@ -666,10 +696,10 @@ def analyze_race_quant(race, weights=None):
             value_edge = round(win_prob - market_prob, 1)
             market_odds = round(100.0 / max(0.5, market_prob), 2)
         else:
-            # Estimate synthetic public market from handicap & last race
-            market_prob = round(max(1.5, win_prob * 0.9), 1)
-            value_edge = round(win_prob - market_prob, 1)
-            market_odds = round(fair_odds * 1.1, 2)
+            # AGF yoksa piyasa bilinmiyor: cazip/sürpriz kararı verilemez
+            market_prob = None
+            value_edge = 0.0
+            market_odds = None
 
         h["simulation"] = {
             "win_prob": win_prob,
@@ -678,8 +708,9 @@ def analyze_race_quant(race, weights=None):
             "fair_ganyan": fair_odds,
             "market_ganyan": market_odds,
             "value_edge": value_edge,
-            "is_value_bet": value_edge >= 4.0 and win_prob >= 10.0,
-            "is_dark_horse": value_edge >= 3.0 and (h["agf_rank"] >= 4 or h["agf_rank"] == 0) and win_prob >= 11.5
+            "has_market": market_prob is not None,
+            "is_value_bet": market_prob is not None and value_edge >= 4.0 and win_prob >= 10.0,
+            "is_dark_horse": market_prob is not None and value_edge >= 3.0 and (h["agf_rank"] >= 4 or h["agf_rank"] == 0) and win_prob >= 11.5
         }
 
         # Build Explainable AI (XAI) Analyst Notes
@@ -774,13 +805,9 @@ def get_form_grade(score):
 def format_seconds_to_time_str(sec):
     if not sec or sec <= 0:
         return "-"
-    mins = int(sec // 60)
-    rem = sec - (mins * 60)
-    s_int = int(rem)
-    hund = int(round((rem - s_int) * 100))
-    if hund >= 100:
-        s_int += 1
-        hund = 0
+    total_hund = int(round(sec * 100))
+    mins, rem_hund = divmod(total_hund, 6000)
+    s_int, hund = divmod(rem_hund, 100)
     return f"{mins}.{s_int:02d}.{hund:02d}"
 
 
@@ -882,9 +909,10 @@ def fetch_horse_bankomat_sheet(at_id, today_weight=57.0, target_dist=1200, is_ar
     if not at_id:
         return {"races": [], "summary": None, "pedigree": None, "surface_affinity": None}
 
-    cache_key = f"history_v2_{at_id}_{today_weight}"
-    if cache_key in CACHE:
-        return CACHE[cache_key]
+    cache_key = f"history_v3_{at_id}_{today_weight}_{target_dist}_{int(bool(is_arab))}"
+    cached = cache_get(cache_key, TTL_HISTORY)
+    if cached is not None:
+        return cached
 
     url = f"https://www.tjk.org/TR/YarisSever/Query/ConnectedPage/AtKosuBilgileri?1=1&QueryParameter_AtId={at_id}"
     html = fetch_url(url)
@@ -970,8 +998,8 @@ def fetch_horse_bankomat_sheet(at_id, today_weight=57.0, target_dist=1200, is_ar
     }
 
     for tr in trs[:10]:
-        tds = [re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', '', td)).strip() for td in re.findall(r'<td.*?</td>', tr, re.S)]
-        if len(tds) < 15 or not re.match(r'\d{2}\.\d{2}\.\d{4}', tds[0]):
+        tds = [html_lib.unescape(re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', '', td))).strip() for td in re.findall(r'<td.*?</td>', tr, re.S)]
+        if len(tds) < 17 or not re.match(r'\d{2}\.\d{2}\.\d{4}', tds[0]):
             continue
 
         tarih = tds[0]
@@ -1085,7 +1113,7 @@ def fetch_horse_bankomat_sheet(at_id, today_weight=57.0, target_dist=1200, is_ar
         "fav_surface_verdict": fav_surface_verdict,
         "detailed_stats": detailed_stats
     }
-    CACHE[cache_key] = result
+    cache_set(cache_key, result)
     return result
 
 
@@ -1353,8 +1381,9 @@ def fetch_city_program(date_str, city_id=None, city_name=None):
         target_city = cities[0]
 
     cache_key = f"prog_{date_str}_{target_city['id']}"
-    if cache_key in CACHE:
-        return CACHE[cache_key]
+    cached = cache_get(cache_key, TTL_PROGRAM)
+    if cached is not None:
+        return cached
 
     city_html = fetch_url(target_city["url"])
     html_extras = extract_horse_extras_from_html(city_html)
@@ -1384,7 +1413,7 @@ def fetch_city_program(date_str, city_id=None, city_name=None):
     program_data["source_csv_url"] = safe_csv_url
     program_data["fetched_at"] = datetime.now().strftime("%H:%M:%S")
 
-    CACHE[cache_key] = program_data
+    cache_set(cache_key, program_data)
     return program_data
 
 
@@ -1412,10 +1441,15 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/horse_history":
             params = urllib.parse.parse_qs(parsed.query)
             at_id = params.get("at_id", [None])[0]
-            weight = float(params.get("weight", ["57"])[0])
-            dist = int(params.get("dist", ["1400"])[0])
             is_arab = params.get("arab", ["0"])[0] == "1"
             try:
+                if at_id and not at_id.isdigit():
+                    raise ValueError("Geçersiz safkan kimliği")
+                try:
+                    weight = float(params.get("weight", ["57"])[0].replace(",", "."))
+                    dist = int(float(params.get("dist", ["1400"])[0]))
+                except ValueError:
+                    raise ValueError("Geçersiz sıklet veya mesafe parametresi")
                 data = fetch_horse_bankomat_sheet(at_id, today_weight=weight, target_dist=dist, is_arab=is_arab)
                 body = json.dumps({"ok": True, "data": data}, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
@@ -1439,7 +1473,8 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
             city_id = params.get("city_id", [None])[0]
             city_name = params.get("city", [None])[0]
             if params.get("refresh", ["0"])[0] == "1":
-                CACHE.clear()
+                with CACHE_LOCK:
+                    CACHE.clear()
 
             try:
                 data = fetch_city_program(date_str, city_id=city_id, city_name=city_name)
@@ -1473,5 +1508,6 @@ if __name__ == "__main__":
     os.makedirs(STATIC_DIR, exist_ok=True)
     port = 8090
     print(f"TurfQuant Pro Analiz Sunucusu başlatılıyor: http://localhost:{port}")
-    server = HTTPServer(("0.0.0.0", port), TurfQuantHandler)
+    # Çok iş parçacıklı: safkan geçmişi çekilirken (3 TJK isteği) diğer istekler beklemez
+    server = ThreadingHTTPServer(("0.0.0.0", port), TurfQuantHandler)
     server.serve_forever()
