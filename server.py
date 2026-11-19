@@ -19,6 +19,7 @@ import re
 import csv
 import io
 import json
+import gzip
 import math
 import random
 import copy
@@ -244,7 +245,19 @@ def get_available_cities(date_str):
 
     # Yalnız yerli hipodromlar: yurt dışı koşuları sistemi yormasın diye listelenmez
     cities = [c for c in cities if c["is_domestic"]]
-    cities.sort(key=lambda c: int(c["id"]))
+
+    # Gündüz koşuları önce: her hipodromun ilk koşu saatine göre sırala (sayfa önbellekten paylaşılır)
+    def first_race(c):
+        try:
+            m = re.search(r'1\.\s*Koşu\s*(\d{1,2})[\.:](\d{2})', fetch_cached(c["url"], 240))
+            return f"{int(m.group(1)):02d}:{m.group(2)}" if m else None
+        except Exception:
+            return None
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        for c, t in zip(cities, pool.map(first_race, cities)):
+            c["first_race"] = t
+    cities.sort(key=lambda c: (c["first_race"] or "99:99", int(c["id"])))
     if cities:
         cache_set(cache_key, cities)
     return cities
@@ -2569,16 +2582,31 @@ def attach_jockey_stats(extras, date_str, city_id=None, budget_s=3):
     pool = ThreadPoolExecutor(max_workers=4)
     futures = {jid: pool.submit(fetch_jockey_stats, jid, year, city_id, jid in apr) for jid in ids}
     deadline = time.time() + budget_s
+    from concurrent.futures import TimeoutError as FutureTimeout
+    pending = set()
     for jid, fut in futures.items():
         try:
             results[jid] = fut.result(timeout=max(0.1, deadline - time.time()))
+        except FutureTimeout:
+            pending.add(jid)          # arka planda sürüyor
         except Exception:
-            results[jid] = None
+            results[jid] = {}         # TJK'da verisi alınamadı: bülteni bekletmez
+            cache_set(f"jockey_{jid}_{year}_{city_id or '-'}_{int(jid in apr)}", {})
     pool.shutdown(wait=False)  # yetişmeyen istekler arka planda tamamlanıp önbelleğe yazılır
     for e in extras.values():
         if e.get("jokey_id"):
-            e["jockey_stats"] = results.get(e["jokey_id"])
-    return all(results.get(j) for j in ids)
+            e["jockey_stats"] = slim_jockey_stats(results.get(e["jokey_id"]))
+    return not pending
+
+
+def slim_jockey_stats(js):
+    """Bülten yanıtı için: son 10 koşu listesi çıkarılır (jokey penceresi ayrıca ister)."""
+    if not js:
+        return js
+    out = dict(js)
+    if out.get("recent"):
+        out["recent"] = {k: v for k, v in out["recent"].items() if k != "rides"}
+    return out
 
 
 def fetch_city_program(date_str, city_id=None, city_name=None):
@@ -2610,7 +2638,7 @@ def fetch_city_program(date_str, city_id=None, city_name=None):
     if cached is not None:
         return cached
 
-    city_html = fetch_url(target_city["url"])
+    city_html = fetch_cached(target_city["url"], 240)
     html_extras = extract_horse_extras_from_html(city_html)
     jockeys_ready = attach_jockey_stats(html_extras, date_str, target_city["id"] if target_city.get("is_domestic") else None)
 
@@ -2668,13 +2696,22 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         super().end_headers()
 
-    def send_json(self, status, payload):
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
+    def send_body(self, status, body, content_type):
+        """Yanıtı, tarayıcı destekliyorsa gzip ile sıkıştırıp gönderir (bülten ~7 kat küçülür)."""
+        if len(body) > 1024 and "gzip" in (self.headers.get("Accept-Encoding") or ""):
+            body = gzip.compress(body, compresslevel=6)
+            self.send_response(status)
+            self.send_header("Content-Encoding", "gzip")
+        else:
+            self.send_response(status)
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Vary", "Accept-Encoding")
         self.end_headers()
         self.wfile.write(body)
+
+    def send_json(self, status, payload):
+        self.send_body(status, json.dumps(payload, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
@@ -2692,19 +2729,9 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
                 except ValueError:
                     raise ValueError("Geçersiz sıklet veya mesafe parametresi")
                 data = fetch_horse_bankomat_sheet(at_id, today_weight=weight, target_dist=dist, is_arab=is_arab, lite=lite)
-                body = json.dumps({"ok": True, "data": data}, ensure_ascii=False).encode("utf-8")
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
+                self.send_json(200, {"ok": True, "data": data})
             except Exception as e:
-                err_body = json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8")
-                self.send_response(500)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Content-Length", str(len(err_body)))
-                self.end_headers()
-                self.wfile.write(err_body)
+                self.send_json(500, {"ok": False, "error": str(e)})
             return
 
         if parsed.path == "/health":
@@ -2751,6 +2778,18 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
                 if not re.match(r'^\d{2}/\d{2}/\d{4}$', date_str) or not city_id.isdigit():
                     raise ValueError("Geçersiz tarih veya hipodrom")
                 self.send_json(200, {"ok": True, "data": build_surprise_list(date_str, city_id)})
+            except Exception as e:
+                self.send_json(500, {"ok": False, "error": str(e)})
+            return
+
+        if parsed.path == "/api/jockey_recent":
+            params = urllib.parse.parse_qs(parsed.query)
+            jid = params.get("jokey_id", [""])[0]
+            year = params.get("year", [tr_now().strftime("%Y")])[0]
+            try:
+                if not jid.isdigit() or not year.isdigit():
+                    raise ValueError("Geçersiz jokey")
+                self.send_json(200, {"ok": True, "data": fetch_jockey_recent(jid, year)})
             except Exception as e:
                 self.send_json(500, {"ok": False, "error": str(e)})
             return
@@ -2810,23 +2849,24 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
                 else:
                     data = dict(data, weights=dict(DEFAULT_WEIGHTS))
                 data["default_weights"] = dict(DEFAULT_WEIGHTS)
-                body = json.dumps({"ok": True, "data": data}, ensure_ascii=False).encode("utf-8")
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
+                self.send_json(200, {"ok": True, "data": data})
             except Exception as e:
-                err_body = json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False).encode("utf-8")
-                self.send_response(500)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Content-Length", str(len(err_body)))
-                self.end_headers()
-                self.wfile.write(err_body)
+                self.send_json(500, {"ok": False, "error": str(e)})
             return
 
         if parsed.path == "/" or parsed.path == "":
             self.path = "/index.html"
+            parsed = urllib.parse.urlparse(self.path)
+        # Metin dosyaları (html/js/json/css/svg) gzip ile; diğerleri (resimler) olduğu gibi
+        ctype = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
+                 ".json": "application/json; charset=utf-8", ".css": "text/css; charset=utf-8",
+                 ".svg": "image/svg+xml"}.get(os.path.splitext(parsed.path)[1].lower())
+        if ctype:
+            full = os.path.realpath(os.path.join(STATIC_DIR, parsed.path.lstrip("/")))
+            if full.startswith(os.path.realpath(STATIC_DIR) + os.sep) and os.path.isfile(full):
+                with open(full, "rb") as f:
+                    self.send_body(200, f.read(), ctype)
+                return
         return super().do_GET()
 
 

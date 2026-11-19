@@ -992,12 +992,18 @@ function jockeyLineHTML(h, compact) {
     <span class="text-[#57534E]">(${y.starts} koşu)${city}</span>${recent}${strong ? ' <span class="px-1 rounded bg-[#0F291E] text-[#E6C762] text-[9px] font-extrabold">FORMDA JOKEY</span>' : ''}</div>`;
 }
 
-function openJockeyModal(horseNo) {
+function openJockeyModal(horseNo, loaded) {
   const race = STATE.program.races[STATE.currentRaceIndex];
   const h = race && race.horses.find(x => x.no === horseNo);
   const js = h && h.jockey_stats;
   if (!js) return;
-  const rc = js.recent || { rides: [], n: 0, wins: 0, tabela: 0, top3: 0 };
+  const rc = Object.assign({ rides: [], n: 0, wins: 0, tabela: 0, top3: 0 }, js.recent || {}, loaded || {});
+  if (!loaded && h.jokey_id) {
+    // Son 10 koşu listesi bülten yanıtında taşınmaz (boyut): pencere açılınca istenir
+    fetchJSON(`/api/jockey_recent?jokey_id=${h.jokey_id}&year=${encodeURIComponent(js.year_label || '')}`)
+      .then(d => { if (!document.getElementById('jockeyModal').classList.contains('hidden')) openJockeyModal(horseNo, d); })
+      .catch(() => {});
+  }
   const y = js.year || {};
   const pos = r => {
     if (!r.sira) return '<span class="text-[#78716C]">-</span>';
@@ -1041,7 +1047,7 @@ function openJockeyModal(horseNo) {
             </tr>`).join('')}
           </tbody>
         </table>
-      </div>` : '<div class="text-xs text-[#78716C]">Son koşu bilgisi alınamadı.</div>'}
+      </div>` : `<div class="text-xs text-[#78716C] py-2 text-center">${loaded ? 'Son koşu bilgisi alınamadı.' : '⏳ Son 10 koşu getiriliyor...'}</div>`}
   `;
   document.getElementById('jockeyModal').classList.remove('hidden');
 }
