@@ -24,6 +24,23 @@ try {
 } catch (e) { /* tarayıcı depolaması kapalı olabilir */ }
 
 let LOADING_MARKUP = null;
+
+// TJK'dan gelen tüm metinler şablonlara HTML olarak girer. Veriyi yüklendiği anda
+// tek noktada kaçışlıyoruz; böylece hiçbir şablonda unutulma riski kalmaz.
+const HTML_ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+function esc(str) {
+  return String(str).replace(/[&<>"']/g, ch => HTML_ESC[ch]);
+}
+function deepEscape(value) {
+  if (typeof value === 'string') return esc(value);
+  if (Array.isArray(value)) return value.map(deepEscape);
+  if (value && typeof value === 'object') {
+    const out = {};
+    Object.keys(value).forEach(k => { out[esc(k)] = deepEscape(value[k]); });
+    return out;
+  }
+  return value;
+}
 let HORSE_MODAL_TOKEN = 0;
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -37,6 +54,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'Escape') { closeHorseModal(); closeWeightsModal(); }
   });
   loadProgram();
+
+  // PWA: servis çalışanı yalnızca güvenli bağlamda (localhost veya HTTPS) çalışır
+  if ('serviceWorker' in navigator && window.isSecureContext) {
+    navigator.serviceWorker.register('/sw.js').catch(() => { /* PWA desteklenmiyor */ });
+  }
 });
 
 async function loadProgram(cityId = null, forceRefresh = false, opts = {}) {
@@ -61,7 +83,7 @@ async function loadProgram(cityId = null, forceRefresh = false, opts = {}) {
     if (!json.ok) throw new Error(json.error || 'Bülten verisi alınamadı');
 
     const sameCity = String(STATE.currentCityId) === String(json.data.city_id);
-    STATE.program = json.data;
+    STATE.program = deepEscape(json.data);
     STATE.currentCityId = json.data.city_id;
     if (!(opts.keepRace && sameCity) || STATE.currentRaceIndex >= json.data.races.length) {
       STATE.currentRaceIndex = 0;
@@ -84,7 +106,7 @@ async function loadProgram(cityId = null, forceRefresh = false, opts = {}) {
       <div class="p-6 rounded-xl bg-white border border-[#7A1C1C]/40 text-center max-w-xs shadow-md">
         <div class="text-2xl mb-2">⚠️</div>
         <h3 class="serif-title text-base font-bold text-[#7A1C1C] mb-1">Bülten Bağlantı Hatası</h3>
-        <p class="text-xs text-[#57534E] mb-4">${err.message}</p>
+        <p class="text-xs text-[#57534E] mb-4">${esc(err.message)}</p>
         <button onclick="loadProgram(STATE.currentCityId, true, { keepRace: true })" class="px-4 py-2 rounded-lg bg-[#0F291E] text-[#F9F6F0] text-xs font-bold">Tekrar Dene</button>
       </div>
     `;
@@ -97,7 +119,7 @@ function refreshProgram(force) {
 
 function renderHeaderAndTabs() {
   const p = STATE.program;
-  document.getElementById('headerMeta').textContent = `${p.city_name} ${p.meeting_day} • ${p.date} • Saat: ${p.fetched_at}`;
+  document.getElementById('headerMeta').innerHTML = `${p.city_name} ${p.meeting_day} • ${p.date} • Saat: ${p.fetched_at}`;
 
   // City Pills
   const cityContainer = document.getElementById('cityTabs');
@@ -867,7 +889,7 @@ function openHorseModal(horseNo) {
   const token = ++HORSE_MODAL_TOKEN;
   const showHistoryError = (msg) => {
     if (token !== HORSE_MODAL_TOKEN) return;
-    const errHTML = `<div class="text-xs text-[#7A1C1C] py-2 text-center">⚠️ ${msg}</div>`;
+    const errHTML = `<div class="text-xs text-[#7A1C1C] py-2 text-center">⚠️ ${esc(msg)}</div>`;
     ['surfaceAffinitySection', 'pedigreeTreeSection', 'bankomatHistoryTable'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.innerHTML = errHTML;
@@ -891,7 +913,7 @@ function openHorseModal(horseNo) {
           return;
         }
 
-        const d = json.data;
+        const d = deepEscape(json.data);
 
         // A) Surface Affinity (Kum vs Çim vs Sentetik)
         if (surfEl) {

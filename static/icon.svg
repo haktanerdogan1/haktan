@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#0F291E"/>
+  <rect x="22" y="22" width="468" height="468" rx="80" fill="none" stroke="#A67C37" stroke-width="6" opacity="0.55"/>
+  <!-- Nal (horseshoe), uçları aşağı -->
+  <path d="M156 392 L156 250 A100 100 0 0 1 356 250 L356 392" fill="none" stroke="#D4AF37" stroke-width="54" stroke-linecap="butt"/>
+  <path d="M156 392 L156 250 A100 100 0 0 1 356 250 L356 392" fill="none" stroke="#A67C37" stroke-width="54" stroke-dasharray="0" opacity="0.35"/>
+  <g fill="#0F291E">
+    <circle cx="156" cy="360" r="9"/><circle cx="156" cy="300" r="9"/><circle cx="164" cy="240" r="9"/>
+    <circle cx="356" cy="360" r="9"/><circle cx="356" cy="300" r="9"/><circle cx="348" cy="240" r="9"/>
+    <circle cx="200" cy="180" r="9"/><circle cx="312" cy="180" r="9"/>
+  </g>
+  <rect x="124" y="392" width="64" height="26" rx="6" fill="#D4AF37"/>
+  <rect x="324" y="392" width="64" height="26" rx="6" fill="#D4AF37"/>
+  <text x="256" y="300" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="92" font-weight="700" fill="#F6F3EC">P</text>
+</svg>

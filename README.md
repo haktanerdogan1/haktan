@@ -12,10 +12,14 @@ Proje dizini: `C:\Users\hakta\.gemini\antigravity\scratch\turf-quant-pro`
 turf-quant-pro/
 ├── server.py               # Python (Sıfır bağımlılık) Backend API + TJK Canlı Scraper + Analiz Motoru
 ├── README.md               # Proje mimarisi, algoritma formülleri ve devir teslim dokümanı
+├── tests/
+│   └── test_server.py      # İnternetsiz analiz motoru testleri (sentetik TJK CSV)
 └── static/
     ├── index.html          # Mobil PWA arayüz iskeleti (Veliefendi & Royal Ascot Elit Kulüp Teması)
     ├── app.js              # Tüm ön yüz (Frontend) mantığı, interaktif kupon kurucu, modal ve tablolar
-    └── manifest.json       # Telefondan girildiğinde tam ekran mobil uygulama (PWA) olmasını sağlayan manifest
+    ├── sw.js               # Servis çalışanı: çevrimdışı açılış + son bülteni saklama
+    ├── manifest.json       # Telefona kurulabilir uygulama (PWA) tanımı
+    └── icon*.svg/png       # Uygulama ikonları (yarış yeşili zemin, pirinç nal)
 ```
 
 ### 🚀 Nasıl Çalıştırılır?
@@ -24,6 +28,14 @@ Hiçbir harici kütüphane (`pip install` veya `npm install`) gerektirmez. Stand
 python server.py
 ```
 Sunucu `http://localhost:8090` adresinde başlar.
+
+**Testler** (internet gerekmez):
+```bash
+python -m unittest discover -s tests -v
+```
+
+**Telefona kurulum (PWA):** Bilgisayarda `localhost` üzerinden açıldığında tarayıcı menüsünden "Uygulamayı yükle" ile kurulabilir; çevrimdışı açılır ve son çekilen bülteni gösterir. Telefondan aynı ağdaki `http://192.168.x.x:8090` adresiyle girildiğinde uygulama çalışır, ancak tarayıcılar servis çalışanını yalnızca HTTPS'te etkinleştirdiği için çevrimdışı mod ve "yükle" seçeneği orada kapalı kalır.
+
 
 ---
 
@@ -86,3 +98,9 @@ Kullanıcı bir ata tıkladığında arka planda TJK'nın 3 ayrı uç noktasına
 ### 6. Başhandikapçı Terazisi (Tek Doğruluk Kaynağı)
 * Varsayılan ağırlıklar `server.py` içindeki `DEFAULT_WEIGHTS` ile sürgüler birebir aynıdır: Kronometre **25**, Form **24**, Klas **18**, Jokey **14**, Sıklet + KGS **19** (iç oran 10:9).
 * Terazi değiştirildiğinde ön yüz `/api/program?w=25,24,18,14,19` biçiminde sunucuya gönderir; sunucu önbellekteki bülteni bozmadan **tüm analizi** (bileşik puan, tempo düzeltmesi, Monte Carlo İlk 2 / Tabela %, rol rozetleri, kupon ölçekleri) yeniden yapar. Ayar tarayıcıda hatırlanır.
+
+### 7. Güvenlik ve Dayanıklılık
+* TJK'dan gelen tüm metinler ön yüze yüklenirken tek noktada HTML kaçışından geçer (`deepEscape`).
+* Önbellek süreli: bülten 5 dk (AGF güncel kalsın diye), hipodrom listesi 10 dk, safkan geçmişi 6 sa. ↻ düğmesi hepsini temizler.
+* Sunucu çok iş parçacıklıdır (`ThreadingHTTPServer`); bir safkanın TJK sayfaları çekilirken diğer istekler beklemez.
+* AGF verisi olmayan koşularda "Cazip Safkan / Sürpriz" kararı verilmez (piyasa bilinmeden değer hesaplanamaz).
