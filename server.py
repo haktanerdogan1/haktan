@@ -2807,13 +2807,19 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
             try:
                 days = []
                 today = tr_now().date()
-                for i in range(0, 4):
-                    d = today + timedelta(days=i)
-                    ds = d.strftime("%d/%m/%Y")
+                dates = [today + timedelta(days=i) for i in range(0, 4)]
+
+                def cities_of(d):
                     try:
-                        cities = get_available_cities(ds)
+                        return get_available_cities(d.strftime("%d/%m/%Y"))
                     except Exception:
-                        cities = []
+                        return []
+
+                # 4 günün listesi aynı anda istenir (sırayla istemek ABD'deki sunucuda ~8 sn sürüyordu)
+                with ThreadPoolExecutor(max_workers=4) as pool:
+                    per_day = list(pool.map(cities_of, dates))
+                for i, (d, cities) in enumerate(zip(dates, per_day)):
+                    ds = d.strftime("%d/%m/%Y")
                     if cities or i == 0:
                         days.append({"date": ds, "offset": i, "cities": len(cities),
                                      "domestic": [c["name"] for c in cities if c["is_domestic"]],
