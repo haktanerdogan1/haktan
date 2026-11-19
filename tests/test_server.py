@@ -212,3 +212,28 @@ class TestRealWorldFormats(unittest.TestCase):
 
     def test_turkey_date(self):
         self.assertEqual(S.tr_now().utcoffset().total_seconds(), 3 * 3600)
+
+
+class TestAgfAndCities(unittest.TestCase):
+    def test_agf_formats(self):
+        self.assertEqual(S.parse_agf("%14.63(4)")[:2], (14.63, 4))
+        self.assertEqual(S.parse_agf("%15.82(3)  %15.55(3)")[:2], (15.82, 3))
+        # Yalnız 2. Altılı'ya dahil koşu: ilk değer %0(0)
+        self.assertEqual(S.parse_agf("%0(0)  %27.84(1)")[:2], (27.84, 1))
+        self.assertEqual(S.parse_agf("")[:2], (0.0, 0))
+        self.assertEqual(S.parse_agf("%12,5(2)")[:2], (12.5, 2))
+
+    def test_domestic_allowlist(self):
+        page = "".join(
+            f'<a href="/TR/YarisSever/Info/Sehir/GunlukYarisProgrami?SehirId={i}&amp;QueryParameter_Tarih=01%2F01%2F2030&amp;SehirAdi={n}&amp;Era=today">x</a>'
+            for i, n in [(3, "%C4%B0stanbul"), (200, "Tokyo%20Japonya"), (201, "Doha%20Katar"), (9, "%C5%9Eanl%C4%B1urfa")])
+        orig = S.fetch_url
+        S.fetch_url = lambda url, **kw: page
+        try:
+            S.CACHE.clear()
+            cities = S.get_available_cities("01/01/2030")
+        finally:
+            S.fetch_url = orig
+        flags = {c["name"]: c["is_domestic"] for c in cities}
+        self.assertEqual(flags, {"İstanbul": True, "Şanlıurfa": True, "Tokyo Japonya": False, "Doha Katar": False})
+        self.assertEqual([c["is_domestic"] for c in cities], [True, True, False, False])  # yerliler önce

@@ -4,7 +4,7 @@
  * - Canlı TJK verisi (/api/*) her zaman ağdan gelir; ağ yoksa son başarılı bülten gösterilir.
  * - Tailwind ve Google Fonts gibi CDN dosyaları çevrimdışı kullanım için saklanır.
  */
-const VERSION = 'padok-v1';
+const VERSION = 'padok-v2';
 const SHELL = ['/', '/index.html', '/app.js', '/manifest.json', '/icon.svg', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', event => {
@@ -24,16 +24,20 @@ self.addEventListener('fetch', event => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
 
-  // Canlı veri: önce ağ, olmazsa son kayıt (yalnızca bülten; safkan geçmişi de saklanır)
+  // Canlı veri: her zaman ağdan. Çevrimdışı kullanım için yalnızca bülten saklanır
+  // (safkan karnesi/idman yanıtlarını saklamak tarayıcı önbelleğini sınırsız büyütürdü).
   if (url.origin === location.origin && url.pathname.startsWith('/api/')) {
+    const keep = url.pathname === '/api/program';
+    // Önbellek anahtarı: refresh parametresi olmadan (↻ ile çekilen bülten de aynı kaydı günceller)
+    const key = new URL(url); key.searchParams.delete('refresh');
     event.respondWith(
       fetch(req).then(res => {
-        if (res.ok) {
+        if (res.ok && keep) {
           const copy = res.clone();
-          caches.open(VERSION).then(c => c.put(req, copy));
+          caches.open(VERSION).then(c => c.put(key.toString(), copy));
         }
         return res;
-      }).catch(() => caches.match(req).then(hit => hit || new Response(
+      }).catch(() => caches.match(keep ? key.toString() : req).then(hit => hit || new Response(
         JSON.stringify({ ok: false, error: 'Çevrimdışısınız ve bu bülten daha önce kaydedilmedi.' }),
         { status: 503, headers: { 'Content-Type': 'application/json; charset=utf-8' } }
       )))

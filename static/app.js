@@ -117,7 +117,12 @@ async function loadProgram(cityId = null, forceRefresh = false, opts = {}) {
 }
 
 function refreshProgram(force) {
-  loadProgram(STATE.currentCityId, force);
+  if (force) {
+    // ↻: sunucu önbelleği temizlenir; tarayıcıdaki karne/idman kopyaları da tazelensin
+    STATE.extras = {};
+    STATE.idman = {};
+  }
+  loadProgram(STATE.currentCityId, force, { keepRace: true });
 }
 
 function renderHeaderAndTabs() {
@@ -499,17 +504,21 @@ function idmanForHorse(race, h) {
   return (d.rows || []).find(r => r.no === h.no) || null;  // null = idmanı yok
 }
 
+// Ekrandaki koşu hâlâ bu koşu mu? (indeks yetmez: hipodrom değişince yeni programda da 0. koşu olur)
+function isCurrentRace(race) {
+  return STATE.program && STATE.program.races[STATE.currentRaceIndex] === race;
+}
+
 function loadRaceExtras(race) {
-  const raceIdx = STATE.currentRaceIndex;
   ensureRaceIdman(race).then(() => {
-    if (STATE.currentRaceIndex !== raceIdx) return;
+    if (!isCurrentRace(race)) return;
     race.horses.forEach(h => paintHorseExtras(race, h));
   });
   const queue = race.horses.filter(h => h.at_id && !STATE.extras[h.at_id]);
   race.horses.filter(h => !h.at_id || STATE.extras[h.at_id]).forEach(h => paintHorseExtras(race, h));
   let active = 0;
   const next = () => {
-    if (STATE.currentRaceIndex !== raceIdx) return;  // başka koşuya geçildi
+    if (!isCurrentRace(race)) return;  // başka koşuya / hipodroma geçildi
     while (active < 3 && queue.length) {
       const h = queue.shift();
       active++;
@@ -519,7 +528,7 @@ function loadRaceExtras(race) {
         .catch(() => { STATE.extras[h.at_id] = { failed: true }; })
         .finally(() => {
           active--;
-          if (STATE.currentRaceIndex === raceIdx) paintHorseExtras(race, h);
+          if (isCurrentRace(race)) paintHorseExtras(race, h);
           next();
         });
     }
@@ -1109,7 +1118,7 @@ function openHorseModal(horseNo) {
 
         const d = deepEscape(json.data);
         STATE.extras[h.at_id] = d;
-        paintHorseExtras(race, h);
+        if (isCurrentRace(race)) paintHorseExtras(race, h);
         const ck = document.getElementById('careerKarneSection');
         if (ck) ck.innerHTML = careerKarneHTML(d);
         const cl = document.getElementById('classKarneSection');

@@ -210,7 +210,10 @@ def get_available_cities(date_str):
 
     cities = []
     seen = set()
-    foreign_keywords = ["ABD", "Fransa", "Krallık", "Afrika", "Avustralya", "Kanada", "Şili", "İrlanda", "Arjantin", "Hong Kong", "Dubai", "Malezya"]
+    # Yerli hipodromlar sabit bir listedir; geri kalan her şey yabancıdır
+    # (yabancı ülke adlarını tek tek saymak yeni ülkelerde yanılır: Japonya, Katar, Brezilya...)
+    domestic_names = {"ADANA", "ANKARA", "ANTALYA", "BURSA", "DİYARBAKIR", "ELAZIĞ", "İSTANBUL",
+                      "İZMİR", "KOCAELİ", "ŞANLIURFA"}
 
     for href, sehir_id, sehir_adi_enc in matches:
         if sehir_id in seen:
@@ -219,7 +222,7 @@ def get_available_cities(date_str):
         name = urllib.parse.unquote(html_lib.unescape(sehir_adi_enc)).strip()
         if name.lower() == "karma":
             continue
-        is_domestic = not any(fk.lower() in name.lower() for fk in foreign_keywords)
+        is_domestic = tr_upper(name) in domestic_names
         clean_href = "https://www.tjk.org" + html_lib.unescape(href)
         cities.append({
             "id": sehir_id,
@@ -1405,6 +1408,21 @@ def fetch_race_idman(kosu_kodu, at_kodu, race_date=""):
 ALTILI_RE = re.compile(r"6\s*['’`´]?\s*L[Iİı]\s*GANYAN", re.I)
 
 
+def parse_agf(raw):
+    """
+    AGF hücresi: '%14.63(4)' ya da iki altılılı günlerde '%15.82(3)  %15.55(3)' (1. ve 2. Altılı).
+    Yalnız 2. Altılı'ya dahil koşularda ilk değer '%0(0)' olur; bu durumda ikinci değer kullanılır.
+    Dönen: (yüzde, sıra, [(yüzde, sıra), ...])
+    """
+    values = [(float(p.replace(",", ".")), int(r)) for p, r in re.findall(r'%\s*([\d\.,]+)\s*\((\d+)\)', raw or "")]
+    if not values:
+        pm = re.search(r'([\d]+(?:[\.,]\d+)?)', raw or "")
+        return (float(pm.group(1).replace(",", ".")) if pm else 0.0), 0, []
+    nonzero = [v for v in values if v[0] > 0]
+    pct, rank = nonzero[0] if nonzero else values[0]
+    return pct, rank, values
+
+
 def handle_race_footer(race, line):
     """Koşu dipnotu: eküri grupları ve bahis türleri (örn. "6'LI GANYAN Bu koşudan başlar").
     Bir satırda birden fazla eküri grubu olabilir:
@@ -1579,15 +1597,7 @@ def parse_tjk_csv(csv_text, html_extras=None):
                 start_no = int(st_m.group(1)) if st_m else no
 
                 agf_raw = cols[10] if len(cols) > 10 else ""
-                agf_pct = 0.0
-                agf_rank = 0
-                if agf_raw:
-                    pm = re.search(r'%?([\d\.,]+)', agf_raw)
-                    rm = re.search(r'\((\d+)\)', agf_raw)
-                    if pm:
-                        agf_pct = float(pm.group(1).replace(",", "."))
-                    if rm:
-                        agf_rank = int(rm.group(1))
+                agf_pct, agf_rank, agf_values = parse_agf(agf_raw)
 
                 hp_str = cols[11] if len(cols) > 11 else "0"
                 handicap = int(hp_str) if hp_str.isdigit() else 0
@@ -1622,6 +1632,7 @@ def parse_tjk_csv(csv_text, html_extras=None):
                     "agf_raw": agf_raw,
                     "agf_pct": agf_pct,
                     "agf_rank": agf_rank,
+                    "agf_values": agf_values,
                     "handicap": handicap,
                     "son6": son6,
                     "kgs": kgs,
@@ -1713,7 +1724,7 @@ def fetch_city_program(date_str, city_id=None, city_name=None):
         d_parts = date_str.split("/")
         yyyy_mm_dd = f"{d_parts[2]}-{d_parts[1]}-{d_parts[0]}"
         dd_mm_yyyy = f"{d_parts[0]}.{d_parts[1]}.{d_parts[2]}"
-        c_name = target_city["name"]
+        c_name = target_city["name"].replace(" ", "")  # TJK dosya adında boşluk yok: LingfieldBirleşikKrallık
         csv_url = f"https://medya-cdn.tjk.org/raporftp/TJKPDF/{d_parts[2]}/{yyyy_mm_dd}/CSV/GunlukYarisProgrami/{dd_mm_yyyy}-{c_name}-GunlukYarisProgrami-TR.csv"
     else:
         csv_url = html_lib.unescape(csv_m.group(1))
@@ -1852,4 +1863,10 @@ if __name__ == "__main__":
     print(f"TurfQuant Pro Analiz Sunucusu başlatılıyor: http://localhost:{port}")
     # Çok iş parçacıklı: safkan geçmişi çekilirken (3 TJK isteği) diğer istekler beklemez
     server = ThreadingHTTPServer(("0.0.0.0", port), TurfQuantHandler)
-    server.serve_forever()
+    server.daemon_threads = True  # Ctrl+C'de yarım kalan TJK isteklerini beklemeden kapan
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nSunucu kapatıldı.")
+    finally:
+        server.server_close()
