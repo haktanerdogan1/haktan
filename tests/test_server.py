@@ -234,9 +234,8 @@ class TestAgfAndCities(unittest.TestCase):
             cities = S.get_available_cities("01/01/2030")
         finally:
             S.fetch_url = orig
-        flags = {c["name"]: c["is_domestic"] for c in cities}
-        self.assertEqual(flags, {"İstanbul": True, "Şanlıurfa": True, "Tokyo Japonya": False, "Doha Katar": False})
-        self.assertEqual([c["is_domestic"] for c in cities], [True, True, False, False])  # yerliler önce
+        # Yurt dışı hipodromlar sistemi yormamak için listelenmez
+        self.assertEqual([c["name"] for c in cities], ["İstanbul", "Şanlıurfa"])
 
 
 class TestWeightMargin(unittest.TestCase):
@@ -353,3 +352,19 @@ class TestJockeyStats(unittest.TestCase):
     def test_big_sample_kept(self):
         js = self.stats(800, 160, 120, 100)    # %20 birincilik, 800 koşu
         self.assertGreater(js["win_adj"], 19)
+
+
+class TestApprentice(unittest.TestCase):
+    def test_classes_and_eligibility(self):
+        self.assertEqual(S.apprentice_info("Maiden/DHÖW", 0)["class"], "Y0")
+        self.assertEqual(S.apprentice_info("Handikap 16", 120)["class"], "Y2")
+        self.assertTrue(S.apprentice_info("Handikap 16", 120)["eligible"])
+        self.assertFalse(S.apprentice_info("SATIŞ 2", 5)["eligible"])
+        self.assertFalse(S.apprentice_info("ŞARTLI 1", 5)["eligible"])
+        self.assertFalse(S.apprentice_info("KV-7", 5)["eligible"])
+        self.assertFalse(S.apprentice_info("Handikap 22", 5)["eligible"])
+
+    def test_y_race_table(self):
+        self.assertEqual(S.apprentice_info("ŞARTLI 4/Y2", 0)["y_allowance_kg"], 3)
+        self.assertEqual(S.apprentice_info("ŞARTLI 4/Y2", 40)["y_allowance_kg"], 1)
+        self.assertEqual(S.apprentice_info("ŞARTLI 3/Y3", 100)["y_allowance_kg"], 1)

@@ -242,8 +242,9 @@ def get_available_cities(date_str):
             "url": clean_href
         })
 
-    # Sort domestic cities first
-    cities.sort(key=lambda c: (0 if c["is_domestic"] else 1, int(c["id"])))
+    # Yalnız yerli hipodromlar: yurt dışı koşuları sistemi yormasın diye listelenmez
+    cities = [c for c in cities if c["is_domestic"]]
+    cities.sort(key=lambda c: int(c["id"]))
     if cities:
         cache_set(cache_key, cities)
     return cities
@@ -264,6 +265,8 @@ def extract_horse_extras_from_html(html):
         kb_m = re.search(r'QueryParameter_KisrakBabaAdi=[^"\'>]+["\'][^>]*>\s*([^<]+)', row)
         idm_m = re.search(r'idmanpisti/Kosu\?KosuKodu=(\d+)', row)
         jk_m = re.search(r'QueryParameter_JokeyId=(\d+)', row)
+        jk_cell = re.search(r'gunluk-GunlukYarisProgrami-JokeAdi[^>]*>(.*?)</td>', row, re.S)
+        is_apranti = bool(jk_cell and "Apranti" in clean_cell(jk_cell.group(1)))
         gny_m = re.search(r'gunluk-GunlukYarisProgrami-Gny[^>]*>(.*?)</td>', row, re.S)
         gny_txt = clean_cell(gny_m.group(1)) if gny_m else ""
         gny_num = re.match(r'^(\d+(?:,\d+)?)$', gny_txt)
@@ -278,6 +281,7 @@ def extract_horse_extras_from_html(html):
                 "damsire": damsire,
                 "idman_kosu_kodu": idm_m.group(1) if idm_m else None,
                 "jokey_id": jk_m.group(1) if jk_m else None,
+                "apranti": is_apranti,
                 # Bahis açıkken TJK'nın gösterdiği güncel ganyan oranı (yarıştan sonra kapanış oranı)
                 "ganyan_live": float(gny_num.group(1).replace(",", ".")) if gny_num else None,
             }
@@ -718,6 +722,11 @@ def analyze_race_quant(race, weights=None):
     valid_weights = [h["weight"] for h in horses if h["weight"] > 0]
     avg_weight = sum(valid_weights) / len(valid_weights) if valid_weights else 57.0
 
+    # Apranti (jokey yamağı) bilgisi
+    for h in horses:
+        if h.get("jockey", "").upper().endswith(" AP"):
+            h["apprentice"] = apprentice_info(race.get("condition", ""), (h.get("jockey_stats") or {}).get("career_wins"))
+
     # Step 0: Puana göre kilo (Handikap Terazisi) — model kilo puanında da kullanılır
     race["hp_weight"] = compute_hp_weight(horses, race.get("condition", ""))
 
@@ -994,9 +1003,9 @@ def analyze_race_quant(race, weights=None):
             reasons.insert(0, hwf["text"])
         if h["form_analysis"]["trend"] == "Yükselişte":
             reasons.append("Son koşularında form grafiği belirgin şekilde yukarı yönlü.")
-        jy = (h.get("jockey_stats") or {}).get("year")
-        if jy and jy.get("starts", 0) >= 30 and jy["win_pct"] >= 18:
-            reasons.append(f"Jokeyi {h['jockey']} bu yıl {jy['starts']} koşuda %{jy['win_pct']} birincilik, %{jy['top3_pct']} ilk 3 yapıyor.")
+        jr = (h.get("jockey_stats") or {}).get("recent")
+        if jr and jr.get("form"):
+            reasons.append(f"Formda jokey: {h['jockey']} son {jr['n']} koşusunda {jr['wins']} galibiyet, {jr['tabela']} tabela yaptı.")
         elif m["jockey_rating"] >= 88:
             reasons.append(f"Usta jokeyi ({h['jockey']}) ve ahırın son 20 yarış ivmesi (s20: {h['s20']}) güven veriyor.")
         if m["weight_rating"] >= 80:
@@ -2435,10 +2444,81 @@ JOCKEY_PRIOR_STARTS = 40   # az koşulu jokeyin oranı bu kadar koşuluk ortalam
 JOCKEY_AVG_WIN, JOCKEY_AVG_TOP3 = 10.0, 30.0
 
 
-def fetch_jockey_stats(jokey_id, year, city_id=None):
+JOCKEY_FORM_RIDES, JOCKEY_FORM_MIN_WINS, JOCKEY_FORM_MIN_TABELA = 10, 1, 5
+
+
+# TJK 2026 Genel Hükümler 4/ı ve 7/c: yamak sınıfları ve sıklet indirimi uygulanan koşular
+YAMAK_CLASSES = [("Y0", 0, 0), ("Y1", 1, 79), ("Y2", 80, 159), ("Y3", 160, 209)]
+Y_RACE_ALLOWANCE = {  # yalnız yamakların bindiği Y koşularında: koşu türü -> sınıf -> kg
+    "Y-3": {"Y2": 1, "Y1": 2, "Y0": 4}, "Y-2": {"Y1": 1, "Y0": 3}, "Y-1": {"Y0": 2},
+}
+
+
+def apprentice_info(condition, career_wins):
+    """
+    Apranti (jokey yamağı) bilgisi: yamak sınıfı ve bu koşunun indirimli olup olmadığı.
+    İndirim uygulanan koşular: Maiden, Şartlı 2-5 ve 19, Handikap 13-17 ve 21 (Satış, Açık, Şartlı 1,
+    vadeli koşularda yok). Bültende yazan kilo indirim düşülmüş kilodur.
+    """
+    cls = None
+    if career_wins is not None:
+        cls = next((name for name, lo, hi in YAMAK_CLASSES if lo <= career_wins <= hi), None)
+    key, _, _ = classify_race(condition)
+    c = tr_upper(condition)
+    m = re.search(r'ŞARTLI\s*(\d+)', c)
+    hm = re.search(r'HANDİKAP\s*(\d+)', c)
+    eligible = (key == "maiden" or (m and int(m.group(1)) in (2, 3, 4, 5, 19))
+                or (hm and int(hm.group(1)) in (13, 14, 15, 16, 17, 21)))
+    if key in ("satis", "kv") or "AÇIK" in c or (m and int(m.group(1)) == 1):
+        eligible = False
+    yrace = re.search(r'\bY\s*-?\s*([123])\b', c)
+    y_kg = None
+    if yrace and cls:
+        y_kg = Y_RACE_ALLOWANCE.get(f"Y-{yrace.group(1)}", {}).get(cls)
+    return {"class": cls, "career_wins": career_wins, "eligible": bool(eligible or y_kg),
+            "y_race": f"Y-{yrace.group(1)}" if yrace else None, "y_allowance_kg": y_kg}
+
+
+def fetch_jockey_recent(jokey_id, year):
+    """
+    Jokeyin son koşuları (TJK AtKosuBilgileri?QueryParameter_JokeyId=...).
+    'Formda jokey': son 10 koşuda en az 1 galibiyet ve en az 5 tabela (ilk 5, galibiyet dahil).
+    """
+    rides = []
+    for y in (int(year), int(year) - 1):
+        url = (f"https://www.tjk.org/TR/YarisSever/Query/ConnectedPage/AtKosuBilgileri?QueryParameter_JokeyId={jokey_id}"
+               f"&QueryParameter_SehirId=-1&QueryParameter_YIL={y}")
+        page = fetch_cached(url, 6 * 3600)
+        for tb in re.findall(r'<tbody.*?</tbody>', page, re.S):
+            for tr in re.findall(r'<tr[^>]*>(.*?)</tr>', tb, re.S):
+                c = [clean_cell(x) for x in re.findall(r'<td[^>]*>(.*?)</td>', tr, re.S)]
+                if len(c) < 14 or not re.match(r'\d{2}\.\d{2}\.\d{4}', c[0]):
+                    continue
+                if not c[5].strip() or "koşmaz" in (c[5] + c[6]).lower():
+                    continue  # henüz koşulmamış ya da koşmaz: binişten sayılmaz
+                kno = re.match(r'\d+', c[12])
+                rides.append({
+                    "tarih": c[0], "at": c[1], "sehir": c[2], "msf": c[3], "pist": c[4],
+                    "sira": int(c[5]) if c[5].isdigit() and int(c[5]) > 0 else None,
+                    "derece": c[6], "gny": c[10], "kosu_no": int(kno.group(0)) if kno else 0, "kcins": c[13],
+                })
+        if len(rides) >= JOCKEY_FORM_RIDES:
+            break
+    rides.sort(key=lambda r: (datetime.strptime(r["tarih"], "%d.%m.%Y"), r["kosu_no"]), reverse=True)
+    last = rides[:JOCKEY_FORM_RIDES]
+    wins = sum(1 for r in last if r["sira"] == 1)
+    tabela = sum(1 for r in last if r["sira"] and r["sira"] <= 5)
+    top3 = sum(1 for r in last if r["sira"] and r["sira"] <= 3)
+    return {
+        "rides": last, "n": len(last), "wins": wins, "top3": top3, "tabela": tabela,
+        "form": len(last) >= JOCKEY_FORM_RIDES and wins >= JOCKEY_FORM_MIN_WINS and tabela >= JOCKEY_FORM_MIN_TABELA,
+    }
+
+
+def fetch_jockey_stats(jokey_id, year, city_id=None, apranti=False):
     """TJK JokeyIstatistikleri: bu yıl (tüm hipodromlar) ve bu yıl bu hipodromda koşu/1.-5./yüzdeler."""
-    cache_key = f"jockey_{jokey_id}_{year}_{city_id or '-'}"
-    cached = cache_get(cache_key, 24 * 3600)
+    cache_key = f"jockey_{jokey_id}_{year}_{city_id or '-'}_{int(bool(apranti))}"
+    cached = cache_get(cache_key, 6 * 3600)  # son koşular gün içinde değişir
     if cached is not None:
         return cached
     base = f"https://www.tjk.org/TR/YarisSever/Query/Page/JokeyIstatistikleri?1=1&QueryParameter_JokeyId={jokey_id}&QueryParameter_YIL={year}"
@@ -2457,6 +2537,19 @@ def fetch_jockey_stats(jokey_id, year, city_id=None):
         out["win_adj"] = round((y["w1"] + JOCKEY_PRIOR_STARTS * JOCKEY_AVG_WIN / 100) / (n + JOCKEY_PRIOR_STARTS) * 100, 1)
         out["top3_adj"] = round((y["w1"] + y["w2"] + y["w3"] + JOCKEY_PRIOR_STARTS * JOCKEY_AVG_TOP3 / 100) / (n + JOCKEY_PRIOR_STARTS) * 100, 1)
     out["year_label"] = str(year)
+    if apranti:
+        # Yamak sınıfı toplam galibiyete göre belirlenir: tüm yılların istatistiği
+        try:
+            career = parse_query_table(fetch_cached(
+                f"https://www.tjk.org/TR/YarisSever/Query/Page/JokeyIstatistikleri?1=1&QueryParameter_JokeyId={jokey_id}&QueryParameter_YIL=-1", 24 * 3600), "")
+            out["career_wins"] = career["w1"] if career else None
+            out["career_starts"] = career["starts"] if career else None
+        except Exception:
+            out["career_wins"] = None
+    try:
+        out["recent"] = fetch_jockey_recent(jokey_id, year)
+    except Exception:
+        out["recent"] = None
     cache_set(cache_key, out)
     return out
 
@@ -2471,9 +2564,10 @@ def attach_jockey_stats(extras, date_str, city_id=None, budget_s=3):
     ids = sorted({e["jokey_id"] for e in extras.values() if e.get("jokey_id")})
     if not ids:
         return True
+    apr = {e["jokey_id"] for e in extras.values() if e.get("jokey_id") and e.get("apranti")}
     results = {}
     pool = ThreadPoolExecutor(max_workers=4)
-    futures = {jid: pool.submit(fetch_jockey_stats, jid, year, city_id) for jid in ids}
+    futures = {jid: pool.submit(fetch_jockey_stats, jid, year, city_id, jid in apr) for jid in ids}
     deadline = time.time() + budget_s
     for jid, fut in futures.items():
         try:
@@ -2495,7 +2589,7 @@ def fetch_city_program(date_str, city_id=None, city_name=None):
     """
     cities = get_available_cities(date_str)
     if not cities:
-        raise ValueError(f"{date_str} tarihi için TJK bülteni bulunamadı.")
+        raise ValueError(f"{date_str} tarihinde yerli hipodromlarda yarış yok.")
 
     target_city = None
     if city_id:

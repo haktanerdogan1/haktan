@@ -52,12 +52,12 @@ document.addEventListener('DOMContentLoaded', () => {
   LOADING_MARKUP = document.getElementById('loadingOverlay').innerHTML;
   // Alttan açılan pencereler: karartılmış alana dokununca kapanır
   ['dateTabs', 'cityTabs', 'raceTabs'].forEach(id => enableHorizontalScroll(document.getElementById(id)));
-  ['horseModal', 'weightsModal'].forEach(id => {
+  ['horseModal', 'weightsModal', 'jockeyModal'].forEach(id => {
     const el = document.getElementById(id);
     el.addEventListener('click', e => { if (e.target === el) el.classList.add('hidden'); });
   });
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { closeHorseModal(); closeWeightsModal(); }
+    if (e.key === 'Escape') { closeJockeyModal(); closeHorseModal(); closeWeightsModal(); }
   });
   loadProgram();
 
@@ -956,22 +956,98 @@ function seasonFlag(h) {
   return null;
 }
 
+// ---------------- APRANTİ (JOKEY YAMAĞI) ----------------
+function apprenticeHTML(h) {
+  const a = h.apprentice;
+  if (!a) return '';
+  const cls = a.class ? `${a.class}${a.career_wins != null ? ` • ${a.career_wins} galibiyet` : ''}` : 'sınıf hesaplanıyor';
+  let note;
+  if (a.y_allowance_kg) note = `${a.y_race} koşusu: ${a.y_allowance_kg} kg indirim`;
+  else if (a.eligible) note = 'bu koşuda apranti indirimi var';
+  else note = 'bu koşu türünde apranti indirimi yok';
+  return `<div class="text-[10px] mt-0.5 flex items-center gap-1 flex-wrap" title="Jokey yamağı (apranti). Yamak sınıfı toplam galibiyete göre: Y0 hiç kazanmamış, Y1 1–79, Y2 80–159, Y3 160–209. Bültendeki kilo indirim düşülmüş kilodur.">
+    <span class="px-1.5 py-0.5 rounded bg-[#8C5A3C] text-white text-[9px] font-extrabold">APRANTİ</span>
+    <span class="font-bold text-[#8C5A3C]">${cls}</span>
+    <span class="${a.eligible ? 'text-[#0F291E] font-semibold' : 'text-[#78716C]'}">• ${note}</span>
+  </div>`;
+}
+
 // ---------------- JOKEY ORTALAMALARI ----------------
 function jockeyLineHTML(h, compact) {
   const js = h.jockey_stats;
   const y = js && js.year;
   if (!y || !y.starts) {
-    return (STATE.program && STATE.program.jockeys_pending && h.jokey_id)
-      ? `<div class="text-[10px] text-[#78716C] mt-0.5">🏇 Jokey istatistiği hazırlanıyor… (↻ ile güncelleyin)</div>` : '';
+    return apprenticeHTML(h) + ((STATE.program && STATE.program.jockeys_pending && h.jokey_id)
+      ? `<div class="text-[10px] text-[#78716C] mt-0.5">🏇 Jokey istatistiği hazırlanıyor… (↻ ile güncelleyin)</div>` : '');
   }
   const c = js.city;
-  const strong = y.starts >= 30 && y.win_pct >= 15;
-  const weak = y.starts >= 30 && y.win_pct < 6;
+  const rc = js.recent;
+  const strong = !!(rc && rc.form);   // son 10 koşuda en az 1 galibiyet ve 5 tabela
+  const weak = rc && rc.n >= 10 && rc.wins === 0 && rc.tabela <= 2;
   const tone = strong ? 'text-[#0F291E] font-extrabold' : weak ? 'text-[#7A1C1C] font-bold' : 'text-[#44403C] font-bold';
   const city = c && c.starts ? ` • ${STATE.program.city_name}'de <span class="mono">%${c.win_pct}</span> <span class="opacity-70">(${c.starts}K)</span>` : '';
-  return `<div class="text-[10px] mt-0.5 ${compact ? '' : 'leading-snug'}" title="${js.year_label} yılı TJK jokey istatistiği. Küçük örneklem düzeltmeli birincilik: %${js.win_adj}">
+  const recent = rc && rc.n ? ` • <span class="${strong ? 'text-[#0F291E] font-extrabold' : 'text-[#44403C] font-bold'} underline decoration-dotted">Son ${rc.n}: ${rc.wins} galibiyet, ${rc.tabela} tabela</span>` : '';
+  return apprenticeHTML(h) + `<div onclick="event.stopPropagation(); openJockeyModal(${h.no})" class="cursor-pointer text-[10px] mt-0.5 ${compact ? '' : 'leading-snug'}" title="Jokeyin son koşularını görmek için dokunun">
     🏇 <span class="${tone}">Jokey ${js.year_label}: <span class="mono">%${y.win_pct}</span> 1. • İlk3 <span class="mono">%${y.top3_pct}</span></span>
-    <span class="text-[#57534E]">(${y.starts} koşu)${city}</span>${strong ? ' <span class="px-1 rounded bg-[#0F291E] text-[#E6C762] text-[9px] font-extrabold">FORMDA JOKEY</span>' : ''}</div>`;
+    <span class="text-[#57534E]">(${y.starts} koşu)${city}</span>${recent}${strong ? ' <span class="px-1 rounded bg-[#0F291E] text-[#E6C762] text-[9px] font-extrabold">FORMDA JOKEY</span>' : ''}</div>`;
+}
+
+function openJockeyModal(horseNo) {
+  const race = STATE.program.races[STATE.currentRaceIndex];
+  const h = race && race.horses.find(x => x.no === horseNo);
+  const js = h && h.jockey_stats;
+  if (!js) return;
+  const rc = js.recent || { rides: [], n: 0, wins: 0, tabela: 0, top3: 0 };
+  const y = js.year || {};
+  const pos = r => {
+    if (!r.sira) return '<span class="text-[#78716C]">-</span>';
+    const cls = r.sira === 1 ? 'bg-[#0F291E] text-[#E6C762]' : r.sira <= 3 ? 'bg-[#A67C37] text-white' : r.sira <= 5 ? 'bg-[#EFECE4] text-[#18181B] border border-[#D8D2C5]' : 'text-[#78716C]';
+    return `<span class="inline-block min-w-[22px] text-center px-1 rounded font-extrabold ${cls}">${r.sira}</span>`;
+  };
+  document.getElementById('jockeyModalContent').innerHTML = `
+    <div class="flex items-start justify-between gap-2 mb-2">
+      <div>
+        <h3 class="serif-title text-lg font-bold text-[#0F291E]">🏇 ${h.jockey}</h3>
+        <p class="text-[11px] text-[#57534E]">#${h.no} ${h.name} • ${js.year_label}: ${y.starts || 0} koşu, %${y.win_pct ?? 0} birincilik, %${y.top3_pct ?? 0} ilk 3</p>
+        ${apprenticeHTML(h)}
+      </div>
+      <button onclick="closeJockeyModal()" class="w-8 h-8 rounded-full bg-[#E8E3D8] text-[#18181B] font-bold">✕</button>
+    </div>
+    <div class="grid grid-cols-3 gap-2 mb-3 text-center">
+      <div class="${rc.form ? 'bg-[#0F291E] text-[#F9F6F0]' : 'bg-white border border-[#D8D2C5]'} rounded-lg p-2">
+        <div class="text-[9px] font-bold ${rc.form ? 'text-[#D4AF37]' : 'text-[#57534E]'}">SON ${rc.n} KOŞU</div>
+        <div class="text-sm font-extrabold">${rc.form ? 'FORMDA' : 'Formda değil'}</div>
+      </div>
+      <div class="bg-white border border-[#D8D2C5] rounded-lg p-2"><div class="text-[9px] text-[#57534E] font-bold">GALİBİYET</div><div class="text-base font-extrabold mono text-[#0F291E]">${rc.wins}</div></div>
+      <div class="bg-white border border-[#D8D2C5] rounded-lg p-2"><div class="text-[9px] text-[#57534E] font-bold">TABELA (İLK 5)</div><div class="text-base font-extrabold mono text-[#8C5A3C]">${rc.tabela}</div></div>
+    </div>
+    <p class="text-[10px] text-[#57534E] mb-2">Formda jokey: son 10 koşuda en az 1 galibiyet ve en az 5 tabela (galibiyet dahil ilk 5).</p>
+    ${rc.rides.length ? `
+      <div class="overflow-x-auto -mx-1">
+        <table class="w-full text-[11px] whitespace-nowrap">
+          <thead><tr class="text-[9px] text-[#57534E] border-b border-[#D8D2C5] uppercase">
+            <th class="pb-1 px-1 text-left">Tarih</th><th class="pb-1 px-1 text-left">At</th><th class="pb-1 px-1 text-left">Şehir</th>
+            <th class="pb-1 px-1 text-right">Msf/Pist</th><th class="pb-1 px-1 text-center">Sıra</th><th class="pb-1 px-1 text-right">Gny</th><th class="pb-1 px-1 text-left">Koşu</th>
+          </tr></thead>
+          <tbody class="divide-y divide-[#E8E3D8]">
+            ${rc.rides.map(r => `<tr>
+              <td class="py-1 px-1 mono">${r.tarih.slice(0, 5)}</td>
+              <td class="py-1 px-1 font-bold text-[#18181B]">${r.at}</td>
+              <td class="py-1 px-1">${r.sehir}</td>
+              <td class="py-1 px-1 text-right mono text-[10px]">${r.msf} ${r.pist.split(':')[0]}</td>
+              <td class="py-1 px-1 text-center mono">${pos(r)}</td>
+              <td class="py-1 px-1 text-right mono">${r.gny || '-'}</td>
+              <td class="py-1 px-1 text-[10px] text-[#57534E]">${r.kosu_no}. ${r.kcins}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>` : '<div class="text-xs text-[#78716C]">Son koşu bilgisi alınamadı.</div>'}
+  `;
+  document.getElementById('jockeyModal').classList.remove('hidden');
+}
+
+function closeJockeyModal() {
+  document.getElementById('jockeyModal').classList.add('hidden');
 }
 
 function jockeyModalHTML(h) {
