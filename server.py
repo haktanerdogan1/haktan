@@ -956,8 +956,10 @@ def analyze_race_quant(race, weights=None):
             "ganyan_live": gl,
             "ev": round(p_mkt / 100.0 * gl, 2) if (p_mkt and gl) else None,
             "win_prob": win_prob,
+            # Kalibre kazanma şansı simülasyonun ham İlk 2/İlk 3 değerini geçebilir:
+            # mantık sırası korunur (kazanır ≤ ilk 2 ≤ tabela)
             "top2_prob": max(win_prob, top2_prob),
-            "top3_prob": max(top2_prob, top3_prob),
+            "top3_prob": max(win_prob, top2_prob, top3_prob),
             "fair_ganyan": fair_odds,
             "market_ganyan": market_odds,
             "value_edge": value_edge,

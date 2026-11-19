@@ -318,3 +318,13 @@ class TestHpWeight(unittest.TestCase):
         self.assertFalse(info["used_fit"])
         self.assertEqual([f["no"] for f in info["flags"]], [1])
         self.assertFalse(hs[0]["hp_weight"]["model_uses"])
+
+
+class TestProbabilityOrder(unittest.TestCase):
+    def test_win_le_top2_le_top3_after_calibration(self):
+        d = S.parse_tjk_csv(make_csv(n_races=6, n_horses=14, seed=11))
+        for r in d["races"]:
+            for h in r["horses"]:
+                sm = h["simulation"]
+                self.assertLessEqual(sm["win_prob"], sm["top2_prob"] + 1e-9)
+                self.assertLessEqual(sm["top2_prob"], sm["top3_prob"] + 1e-9)
