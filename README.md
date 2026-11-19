@@ -151,7 +151,9 @@ Bülten kartlarında (koşu açılınca arka planda yüklenir) ve safkan pencere
 ### 11. Başhandikapçı Uyarıları: Kilo Marjı ve Mevsim
 * **Kilo marjı (`compute_weight_margin`):** Koşudaki kilo ortancasından 5 kg ve üzeri hafif/ağır atlar işaretlenir; en hafif (en ağır) at en yakın rakibinden 3 kg+ ayrışıyorsa "tek başına" uyarısı verilir (ör. 5 at 60 kg üstü, biri 50 kg). Kartta `⚖️ HAFİF -7kg • TEK` rozeti ve Başhandikapçı notu; handikap koşularında kiloların puana göre verildiği hatırlatılır.
 * **Mevsim (`seasonFlag`):** Koşunun mevsimi (İlkbahar/Yaz/Sonbahar/Kış), atın diğer mevsimlerdeki başarısıyla kıyaslanır. Bu mevsimde 4+ koşuda hiç kazanamayıp başka mevsimde 2+ galibiyeti olan ya da İlk 3 oranı 20 puan düşük olan atlar **⚠️ MEVSİM ZAAFI**; tersi **🌤️ MEVSİM ATI** olarak işaretlenir.
-* Bülten sekmesinde **⚠️ Başhandikapçı Uyarıları** kartı ikisini koşu bazında listeler.
+* **Handikap puanına göre kilo (`compute_hp_weight`):** Handikap koşularında koşunun kendi HP→kilo doğrusu çıkarılır (gerçek bültenlerde 1 kg ≈ 2.6–5.7 HP, uyum %58–93). Puanının gerektirdiğinden 2 kg+ hafif taşıyan at (çoğunlukla apranti indirimi) **📐 PUANA GÖRE AVANTAJ**, fazla taşıyan (ör. alt kilo sınırı) **PUANA GÖRE YÜK** olarak işaretlenir. Şartlı/KV koşularında kilolar şarta göre verildiği için puanı en yüksek iki attan biri ortancadan 2 kg+ hafifse uyarılır. Her ata **Kilo Ayarlı HP (K.A.)** = HP + (ortanca kilo − kilo) × HP/kg hesaplanır (Kıyasla sekmesinde de var).
+* Model: handikap koşularında kilo puanı ham kilo yerine puana göre kilo farkıyla hesaplanır (düşük puanlı atın sırf hafif olduğu için ödüllendirilmesi önlenir).
+* Bülten sekmesinde **⚠️ Başhandikapçı Uyarıları** kartı hepsini koşu bazında listeler.
 
 ### 12. TJK Erişim Dayanıklılığı
 * TJK aynı anda çok istek gelince var olan sayfalara da 404 döndürür: sunucu genelinde en fazla 6 eşzamanlı TJK isteği yapılır; 404/429/5xx ve zaman aşımlarında artan beklemeyle 2 kez yeniden denenir.

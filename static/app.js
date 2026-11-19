@@ -427,8 +427,8 @@ function renderCurrentRace() {
                 ${roleBadgeHTML(h.role_badge)}
                 ${weightBadgeHTML(h)}
               </div>
-              <div class="text-[11px] text-[#44403C] truncate mt-0.5">
-                <strong class="text-[#18181B]">${h.jockey}</strong> • ${h.weight}kg • Kulvar:${h.start_no} ${h.handicap ? `• HP:${h.handicap}` : ''}
+              <div class="text-[11px] text-[#44403C] leading-snug mt-0.5">
+                <strong class="text-[#18181B]">${h.jockey}</strong> • ${h.weight}kg • Kulvar:${h.start_no} ${h.handicap ? `• HP:${h.handicap}` : ''}${h.hp_weight ? ` <span class="text-[#8C5A3C] font-bold" title="Kilo Ayarlı HP: HP + (ortanca kilo − kilo) × ${(race.hp_weight || {}).hp_per_kg || 3} HP/kg">(K.A. ${h.hp_weight.eff_hp})</span>` : ''}
               </div>
               <div class="text-[10px] text-[#57534E] truncate">
                 ${h.age} • <strong class="text-[#44403C]">${h.sire}</strong> - ${h.dam}${h.damsire ? ` / <span class="text-[#7A1C1C] font-semibold">${h.damsire}</span>` : ''}
@@ -650,7 +650,7 @@ function horseExtrasHTML(race, h) {
     const fastest = idm.son_400_rank === 1 ? '<span class="px-1.5 py-0.5 rounded bg-[#7A1C1C] text-white text-[9px] font-bold">EN HIZLI SON 400</span>' : '';
     idman = `
       <span class="text-[9px] font-extrabold text-[#0F291E] uppercase">İdman</span>
-      <span class="font-bold text-[#18181B]">${idm.tarih ? idm.tarih.slice(0, 5) : ''}${ago}</span>
+      <span class="font-bold text-[#18181B]">${idm.tarih ? idm.tarih.split('.').slice(0, 2).map(x => x.padStart(2, '0')).join('.') : ''}${ago}</span>
       <span class="font-bold text-[#8C5A3C]">${idm.tur || ''}</span>
       ${idmanSplitsText(idm)} ${idmanDurumBadge(idm.galop_durumu)} ${fastest}
     `;
@@ -701,20 +701,23 @@ function seasonFlag(h) {
 }
 
 function weightBadgeHTML(h) {
+  const hf = h.hp_weight && h.hp_weight.flag;
+  const hpBadge = hf ? `<span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold ${hf.type === 'light' ? 'bg-[#A67C37] text-white' : 'bg-[#7A1C1C]/15 text-[#7A1C1C] border border-[#7A1C1C]/30'}" title="${hf.text}">📐 PUANA GÖRE ${hf.kg > 0 ? '+' : ''}${hf.kg}kg</span>` : '';
   const f = h.weight_flag;
-  if (!f) return '';
+  if (!f) return hpBadge;
   const light = f.type === 'light';
   const cls = light ? 'bg-[#0F291E] text-[#E6C762]' : 'bg-[#7A1C1C] text-white';
-  return `<span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold ${cls}" title="${f.text}">⚖️ ${light ? 'HAFİF' : 'AĞIR'} ${f.diff > 0 ? '+' : ''}${f.diff}kg${f.alone ? ' • TEK' : ''}</span>`;
+  return `<span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold ${cls}" title="${f.text}">⚖️ ${light ? 'HAFİF' : 'AĞIR'} ${f.diff > 0 ? '+' : ''}${f.diff}kg${f.alone ? ' • TEK' : ''}</span>${hpBadge}`;
 }
 
 function renderRaceWarnings(race) {
   const el = document.getElementById('raceWarnings');
   if (!el) return;
   const wm = race.weight_margin || { flags: [] };
+  const hw = race.hp_weight || { flags: [] };
   const season = race.horses.map(seasonFlag).filter(Boolean);
   const pending = race.horses.filter(h => h.at_id && !STATE.extras[h.at_id]).length;
-  if (!wm.flags.length && !season.length) {
+  if (!wm.flags.length && !season.length && !hw.flags.length) {
     el.classList.add('hidden');
     return;
   }
@@ -734,6 +737,11 @@ function renderRaceWarnings(race) {
         <div class="text-[9px] font-extrabold text-[#8C5A3C] uppercase">Kilo Marjı • ortanca ${wm.median} kg • aralık ${wm.min}–${wm.max} kg (${wm.spread} kg)</div>
         ${wm.flags.map(f => item(f.no, `<strong>${f.name}</strong> — ${f.text.replace(/^⚖️ /, '')}`, f.type === 'light' ? 'text-[#0F291E]' : 'text-[#7A1C1C]')).join('')}
         ${isHandikap ? '<div class="text-[9px] text-[#78716C] mt-0.5">Not: Handikap koşusunda kilolar handikap puanına göre verilir; hafif kilo genelde düşük puanı da gösterir.</div>' : ''}
+      </div>` : ''}
+    ${hw.flags.length ? `
+      <div class="mb-1.5">
+        <div class="text-[9px] font-extrabold text-[#8C5A3C] uppercase">Handikap Puanına Göre Kilo ${hw.used_fit ? `• bu koşuda 1 kg ≈ ${hw.hp_per_kg} HP (uyum %${Math.round(hw.r2 * 100)})` : '• şartlı koşu: puanı yüksek, kilosu hafif atlar'}</div>
+        ${hw.flags.map(f => item(f.no, `<strong>${f.name}</strong> — ${f.text.replace(/^⚖️ /, '')}`, f.type === 'light' ? 'text-[#0F291E]' : 'text-[#7A1C1C]')).join('')}
       </div>` : ''}
     ${season.length ? `
       <div>
@@ -2142,6 +2150,7 @@ function renderXrayComparison() {
     { label: 'Sıklet (Kilo) Avantajı', a: hA.metrics.weight_rating, b: hB.metrics.weight_rating },
     { label: 'KGS Dinlenme & Tazelik', a: hA.metrics.fitness_rating, b: hB.metrics.fitness_rating }
   ];
+  if (hA.hp_weight && hB.hp_weight) rows.push({ label: 'Kilo Ayarlı Handikap Puanı', a: hA.hp_weight.eff_hp, b: hB.hp_weight.eff_hp });
   const cA = (STATE.extras[hA.at_id] || {}).career_stats, cB = (STATE.extras[hB.at_id] || {}).career_stats;
   if (cA && cB && cA.starts && cB.starts) {
     rows.push(

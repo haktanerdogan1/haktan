@@ -557,6 +557,77 @@ def assign_running_styles(horses):
                    "early_speed": round(es, 1), "field_rank": rank + 1})
 
 
+HP_PER_KG_DEFAULT = 3.0     # handikap koşularındaki gözlenen ortalama (≈ 2.6–5.7 HP / kg)
+HP_RESIDUAL_FLAG_KG = 2.0   # puanına göre bu kadar hafif/ağır taşıyan at işaretlenir
+
+
+def _linear_fit(xs, ys):
+    n = len(xs)
+    mx, my = sum(xs) / n, sum(ys) / n
+    sxx = sum((x - mx) ** 2 for x in xs)
+    if sxx == 0:
+        return None
+    b = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sxx
+    a = my - b * mx
+    syy = sum((y - my) ** 2 for y in ys)
+    r2 = 1 - sum((y - (a + b * x)) ** 2 for x, y in zip(xs, ys)) / syy if syy > 0 else 0.0
+    return a, b, r2
+
+
+def compute_hp_weight(horses, condition):
+    """
+    Handikap puanına göre kilo avantajı.
+    - Handikap koşusu: koşunun kendi HP→kilo doğrusu (en küçük kareler) çıkarılır; doğrudan sapma
+      'puanına göre X kg hafif/ağır' demektir (apranti indirimi, alt kilo sınırı, puan değişimi...).
+    - Diğer koşular: kilolar şarta göre verilir; puanı en yüksek atlardan biri ortancadan hafifse uyarılır.
+    - Herkes için 'Kilo Ayarlı HP' = HP + (ortanca kilo - kilo) × HP/kg.
+    """
+    for h in horses:
+        h["hp_weight"] = None
+    rated = [h for h in horses if h.get("handicap", 0) > 0 and h.get("weight", 0) > 0]
+    is_handikap = "HANDİKAP" in tr_upper(condition)
+    info = {"is_handikap": is_handikap, "used_fit": False, "hp_per_kg": HP_PER_KG_DEFAULT, "flags": []}
+    if len(rated) < 3:
+        return info
+    ws = sorted(h["weight"] for h in rated)
+    mid = len(ws) // 2
+    median_w = ws[mid] if len(ws) % 2 else (ws[mid - 1] + ws[mid]) / 2.0
+    fit = _linear_fit([h["handicap"] for h in rated], [h["weight"] for h in rated]) if len(rated) >= 5 else None
+    use_fit = bool(is_handikap and fit and fit[1] > 0.05 and fit[2] >= 0.5)
+    if use_fit:
+        info.update({"used_fit": True, "slope": round(fit[1], 3), "r2": round(fit[2], 2),
+                     "hp_per_kg": round(1.0 / fit[1], 1)})
+    k = info["hp_per_kg"] if use_fit else HP_PER_KG_DEFAULT
+    by_hp = sorted(rated, key=lambda h: -h["handicap"])
+    top_hp = {h["no"] for h in by_hp[:2]}
+    for h in rated:
+        eff = round(h["handicap"] + (median_w - h["weight"]) * k, 1)
+        rec = {"eff_hp": eff, "residual": None, "expected": None, "model_uses": False, "flag": None}
+        is_ap = h.get("jockey", "").upper().endswith(" AP")
+        if use_fit:
+            a, b, _ = fit
+            expected = a + b * h["handicap"]
+            resid = round(h["weight"] - expected, 1)
+            rec.update({"expected": round(expected, 1), "residual": resid, "model_uses": True})
+            if resid <= -HP_RESIDUAL_FLAG_KG:
+                why = " (apranti indirimi)" if is_ap else ""
+                rec["flag"] = {"type": "light", "kg": resid,
+                               "text": f"⚖️ PUANA GÖRE AVANTAJ: HP {h['handicap']} için beklenen ≈{expected:.1f} kg, {h['weight']:g} kg taşıyor — puanına göre {abs(resid):g} kg hafif{why}."}
+            elif resid >= HP_RESIDUAL_FLAG_KG:
+                why = " (alt kilo sınırında: puanı bu kilonun altında)" if h["weight"] == ws[0] else ""
+                rec["flag"] = {"type": "heavy", "kg": resid,
+                               "text": f"⚖️ PUANA GÖRE YÜK: HP {h['handicap']} için beklenen ≈{expected:.1f} kg, {h['weight']:g} kg taşıyor — puanına göre {resid:g} kg ağır{why}."}
+        elif h["no"] in top_hp and h["weight"] <= median_w - 2:
+            rec["flag"] = {"type": "light", "kg": round(h["weight"] - median_w, 1),
+                           "text": f"⚖️ PUAN-KİLO AVANTAJI: Sahanın en yüksek puanlılarından (HP {h['handicap']}) ama ortancadan {median_w - h['weight']:g} kg hafif ({h['weight']:g} kg)."}
+        h["hp_weight"] = rec
+        if rec["flag"]:
+            info["flags"].append({"no": h["no"], "name": h["name"], "hp": h["handicap"], "weight": h["weight"], **rec["flag"]})
+    info["flags"].sort(key=lambda f: f["kg"])
+    info["median_weight"] = median_w
+    return info
+
+
 WEIGHT_FLAG_KG = 5.0   # ortancadan bu kadar hafif/ağır olan at işaretlenir
 WEIGHT_ALONE_KG = 3.0  # en hafif (en ağır) at ile ikinci arasındaki fark: "tek başına" uyarısı
 
@@ -627,6 +698,9 @@ def analyze_race_quant(race, weights=None):
     valid_weights = [h["weight"] for h in horses if h["weight"] > 0]
     avg_weight = sum(valid_weights) / len(valid_weights) if valid_weights else 57.0
 
+    # Step 0: Puana göre kilo (Handikap Terazisi) — model kilo puanında da kullanılır
+    race["hp_weight"] = compute_hp_weight(horses, race.get("condition", ""))
+
     # Step 1: Enrich each horse with individual sub-scores
     field_ctx = build_field_context(horses)
     for h in horses:
@@ -658,7 +732,10 @@ def analyze_race_quant(race, weights=None):
         jockey_score = min(99.0, jockey_base + s20_bonus * 0.6)
 
         # 4. Weight (Sıklet) & Distance Impact
-        weight_diff = h["weight"] - avg_weight
+        # Handikapta kilo puana göre verilir: ham kilo yerine "puanına göre fazla/eksik kilo" kullanılır
+        # (aksi halde düşük puanlı at hafif olduğu için ödüllendirilir — çifte sayım)
+        hw = h.get("hp_weight") or {}
+        weight_diff = hw["residual"] if hw.get("model_uses") else h["weight"] - avg_weight
         dist_factor = (distance / 1400.0) ** 1.35  # Longer distance magnifies weight penalty
         weight_adj = -weight_diff * 1.65 * dist_factor
         weight_score = max(30.0, min(98.0, 75.0 + weight_adj * 2.2))
@@ -863,6 +940,9 @@ def analyze_race_quant(race, weights=None):
         wf = h.get("weight_flag")
         if wf:
             reasons.insert(0, wf["text"])
+        hwf = (h.get("hp_weight") or {}).get("flag")
+        if hwf:
+            reasons.insert(0, hwf["text"])
         if h["form_analysis"]["trend"] == "Yükselişte":
             reasons.append("Son koşularında form grafiği belirgin şekilde yukarı yönlü.")
         if m["jockey_rating"] >= 88:

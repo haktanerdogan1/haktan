@@ -295,3 +295,26 @@ class TestTjkResilience(unittest.TestCase):
         finally:
             S.fetch_cached = orig
         self.assertEqual(rel["names"], {"baba": "UÇANBEY", "anne": "EDADÜLÜLE", "kisrak_baba": "ÖZHABER"})
+
+
+class TestHpWeight(unittest.TestCase):
+    def test_handicap_residual(self):
+        # HP 40..80 -> kilo 50..62 doğrusu; 5 numara apranti ile 3 kg hafif
+        hs = [{"no": i + 1, "name": f"AT{i + 1}", "handicap": hp, "weight": 50 + (hp - 40) * 0.3, "jockey": "A.B"}
+              for i, hp in enumerate([40, 50, 60, 70, 80, 55])]
+        hs[5]["weight"] -= 3.0
+        hs[5]["jockey"] = "X.Y AP"
+        info = S.compute_hp_weight(hs, "Handikap 16")
+        self.assertTrue(info["used_fit"])
+        self.assertEqual([f["no"] for f in info["flags"]], [6])
+        self.assertIn("apranti", info["flags"][0]["text"])
+        self.assertTrue(hs[5]["hp_weight"]["model_uses"])
+        self.assertLess(hs[5]["hp_weight"]["residual"], -2)
+
+    def test_conditions_race_top_rated_light(self):
+        hs = [{"no": i + 1, "name": f"AT{i + 1}", "handicap": hp, "weight": w, "jockey": "A.B"}
+              for i, (hp, w) in enumerate([(93, 55), (70, 60), (60, 59), (55, 59), (50, 58)])]
+        info = S.compute_hp_weight(hs, "ŞARTLI 4")
+        self.assertFalse(info["used_fit"])
+        self.assertEqual([f["no"] for f in info["flags"]], [1])
+        self.assertFalse(hs[0]["hp_weight"]["model_uses"])
