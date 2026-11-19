@@ -1,0 +1,1160 @@
+/**
+ * VELİEFENDİ & PADOK — Elit Yarış ve Derece Bülteni İstemcisi
+ * Klasik Kulüp / Yarış Gazetesi Estetiği (Sıcak Fildişi, Yarış Yeşili, Bordo ve Kehribar)
+ */
+
+let STATE = {
+  program: null,
+  currentCityId: null,
+  currentRaceIndex: 0,
+  activeTab: 'race',
+  sortMode: 'quant', // 'quant' | 'agf' | 'no'
+  altiliSelections: {},
+  weights: { speed: 25, form: 25, class: 20, jockey: 15, weight: 15 }
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadProgram();
+});
+
+async function loadProgram(cityId = null, forceRefresh = false) {
+  const loadingEl = document.getElementById('loadingOverlay');
+  const mainEl = document.getElementById('mainContent');
+  loadingEl.classList.remove('hidden');
+  mainEl.classList.add('hidden');
+
+  try {
+    let url = `/api/program?refresh=${forceRefresh ? '1' : '0'}`;
+    if (cityId) url += `&city_id=${encodeURIComponent(cityId)}`;
+
+    const res = await fetch(url);
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'Bülten verisi alınamadı');
+
+    STATE.program = json.data;
+    STATE.currentCityId = json.data.city_id;
+    STATE.currentRaceIndex = 0;
+
+    renderHeaderAndTabs();
+    renderCurrentRace();
+    renderValueRadar();
+    generateAltiliTicket();
+    populateXraySelectors();
+
+    loadingEl.classList.add('hidden');
+    mainEl.classList.remove('hidden');
+  } catch (err) {
+    loadingEl.innerHTML = `
+      <div class="p-6 rounded-xl bg-white border border-[#7A1C1C]/40 text-center max-w-xs shadow-md">
+        <div class="text-2xl mb-2">⚠️</div>
+        <h3 class="serif-title text-base font-bold text-[#7A1C1C] mb-1">Bülten Bağlantı Hatası</h3>
+        <p class="text-xs text-[#57534E] mb-4">${err.message}</p>
+        <button onclick="loadProgram(null, true)" class="px-4 py-2 rounded-lg bg-[#0F291E] text-[#F9F6F0] text-xs font-bold">Tekrar Dene</button>
+      </div>
+    `;
+  }
+}
+
+function refreshProgram(force) {
+  loadProgram(STATE.currentCityId, force);
+}
+
+function renderHeaderAndTabs() {
+  const p = STATE.program;
+  document.getElementById('headerMeta').textContent = `${p.city_name} ${p.meeting_day} • ${p.date} • Saat: ${p.fetched_at}`;
+
+  // City Pills
+  const cityContainer = document.getElementById('cityTabs');
+  cityContainer.innerHTML = p.available_cities.map(c => {
+    const active = String(c.id) === String(p.city_id);
+    return `
+      <button onclick="loadProgram('${c.id}', false)"
+        class="px-3 py-1 rounded-md text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+          active
+            ? 'bg-[#D4AF37] text-[#0F291E] shadow-xs'
+            : 'bg-[#1B4332]/80 text-[#E7DFC6] hover:bg-[#23533F] border border-white/10'
+        }">
+        <span>${c.name}</span>
+      </button>
+    `;
+  }).join('');
+
+  renderRacePills();
+}
+
+function renderRacePills() {
+  const p = STATE.program;
+  const raceContainer = document.getElementById('raceTabs');
+  raceContainer.innerHTML = p.races.map((r, idx) => {
+    const active = idx === STATE.currentRaceIndex;
+    const isAltiliStart = (r.bet_info || '').includes("6'LI GANYAN");
+    return `
+      <button onclick="selectRace(${idx})"
+        class="px-2.5 py-1 rounded-md text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1 ${
+          active
+            ? 'bg-[#F6F3EC] text-[#0F291E] shadow-xs'
+            : 'bg-[#091912]/60 text-[#B7C9BE] hover:text-white border border-white/10'
+        }">
+        <span>${r.race_no}. Koşu</span>
+        <span class="text-[10px] opacity-80 mono">${r.time}</span>
+        ${isAltiliStart ? '<span class="ml-0.5 px-1 py-0.2 bg-[#7A1C1C] text-white rounded text-[9px]">6\'LI</span>' : ''}
+      </button>
+    `;
+  }).join('');
+}
+
+function selectRace(idx) {
+  STATE.currentRaceIndex = idx;
+  renderRacePills();
+  renderCurrentRace();
+  populateXraySelectors();
+}
+
+function switchTab(tabName) {
+  STATE.activeTab = tabName;
+  const tabs = ['race', 'pace', 'value', 'altili', 'xray'];
+  tabs.forEach(t => {
+    const viewEl = document.getElementById(`view-${t}`);
+    const navEl = document.getElementById(`nav-${t}`);
+    if (t === tabName) {
+      viewEl.classList.remove('hidden');
+      navEl.className = 'flex flex-col items-center py-1 px-2.5 rounded-lg text-[#0F291E] bg-[#0F291E]/10 font-bold';
+    } else {
+      viewEl.classList.add('hidden');
+      navEl.className = 'flex flex-col items-center py-1 px-2.5 rounded-lg text-[#57534E] hover:text-[#0F291E]';
+    }
+  });
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function setSortMode(mode) {
+  STATE.sortMode = mode;
+  ['quant', 'agf', 'no'].forEach(m => {
+    const btn = document.getElementById(`sort-${m}`);
+    if (m === mode) {
+      btn.className = 'px-2.5 py-1 rounded-md bg-[#0F291E] text-[#F9F6F0] font-bold text-[11px]';
+    } else {
+      btn.className = 'px-2.5 py-1 rounded-md bg-[#E8E3D8] text-[#44403C] font-semibold text-[11px]';
+    }
+  });
+  renderCurrentRace();
+}
+
+function surfaceBadge(surface) {
+  if (surface.includes('Çim')) {
+    return '<span class="px-2 py-0.5 rounded bg-[#1B4332] text-[#F9F6F0] text-[10px] font-bold tracking-wide">ÇİM PİST</span>';
+  }
+  if (surface.includes('Sentetik')) {
+    return '<span class="px-2 py-0.5 rounded bg-[#3F3F46] text-[#F9F6F0] text-[10px] font-bold tracking-wide">SENTETİK PİST</span>';
+  }
+  return '<span class="px-2 py-0.5 rounded bg-[#8C5A3C] text-[#F9F6F0] text-[10px] font-bold tracking-wide">KUM PİST</span>';
+}
+
+function roleBadgeHTML(badge) {
+  const map = {
+    banko: { cls: 'bg-[#0F291E] text-[#E6C762] border border-[#A67C37]', text: 'BAŞ FAVORİ / TEK' },
+    favori: { cls: 'bg-[#1B4332]/15 text-[#0F291E] border border-[#1B4332]/30 font-bold', text: 'ÖN PLANDA' },
+    value: { cls: 'bg-[#7A1C1C] text-white font-bold', text: 'CAZİP SÜRPRİZ' },
+    plase: { cls: 'bg-[#EFECE4] text-[#44403C] border border-[#D6D0C2] font-semibold', text: 'CİDDİ RAKİP' },
+    bomba: { cls: 'bg-[#F7F1E3] text-[#8C5A3C] border border-[#D4AF37]/40 font-semibold', text: 'GENİŞ KUPON' },
+    out: { cls: 'bg-[#F5F5F4] text-[#78716C]', text: 'GERİ PLANDA' }
+  };
+  const item = map[badge.type] || map.out;
+  return `<span class="px-2 py-0.5 rounded text-[10px] tracking-wide font-bold ${item.cls}">${item.text}</span>`;
+}
+
+function cleanXaiNote(note) {
+  return (note || '')
+    .replace('VALUE BET: Model kazanma ihtimalini', 'CAZİP ORAN: Bülten hesabımız kazanma ihtimalini')
+    .replace('AI Model:', 'Bülten:');
+}
+
+function renderCurrentRace() {
+  const race = STATE.program.races[STATE.currentRaceIndex];
+  if (!race) return;
+
+  const firstPrize = race.prizes && race.prizes.length ? race.prizes[0].replace('1.)', '') : '';
+  document.getElementById('raceHeaderCard').innerHTML = `
+    <div class="flex items-start justify-between gap-2 pb-2.5 border-b border-[#E2DDD2]">
+      <div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <h2 class="serif-title text-xl font-bold text-[#0F291E]">${race.race_no}. KOŞU • SAAT ${race.time}</h2>
+          ${surfaceBadge(race.surface)}
+          <span class="px-2 py-0.5 rounded bg-[#EFECE4] text-[#18181B] border border-[#D8D2C5] text-[11px] font-bold mono">${race.distance_m}m</span>
+        </div>
+        ${race.cup_name ? `<div class="serif-title text-sm font-bold text-[#7A1C1C] mt-0.5">🏆 ${race.cup_name}</div>` : ''}
+        <p class="text-xs text-[#57534E] font-medium mt-0.5">${race.condition} • ${race.age_group}</p>
+      </div>
+      <div class="text-right">
+        <div class="text-[10px] text-[#57534E] uppercase font-bold">Birincilik İkramiyesi</div>
+        <div class="text-xs font-extrabold text-[#0F291E] mono">${firstPrize || '-'}</div>
+        ${race.record_time ? `<div class="text-[10px] text-[#57534E] mono mt-0.5">Pist Rekoru: ${race.record_time}</div>` : ''}
+      </div>
+    </div>
+
+    <div class="mt-2 flex items-center justify-between text-[11px]">
+      <div class="flex items-center gap-1.5 text-[#44403C]">
+        <span>⏱️ <strong>Koşu Gidişatı:</strong></span>
+        <span class="text-[#7A1C1C] font-bold">${race.pace_scenario.type}</span>
+      </div>
+      <button onclick="switchTab('pace')" class="text-[#0F291E] font-bold underline">Gidişat Şeması →</button>
+    </div>
+    ${race.ekuri_info ? `<div class="mt-2 text-[11px] text-[#0F291E] bg-[#EFECE4] border border-[#D8D2C5] rounded-lg px-2.5 py-1 font-medium">🔗 ${race.ekuri_info}</div>` : ''}
+  `;
+
+  // 2. Başhandikapçı & Bülten İlk 4 Sıralaması
+  const sortedByRank = [...race.horses].sort((a, b) => a.model_rank - b.model_rank);
+  const top4 = sortedByRank.slice(0, 4);
+  const darkHorse = sortedByRank.find(h => h.simulation.is_value_bet || h.simulation.is_dark_horse);
+
+  document.getElementById('aiPicksBanner').innerHTML = `
+    <div class="flex items-center justify-between mb-2">
+      <div class="serif-title text-sm font-bold text-[#0F291E] uppercase tracking-wider">
+        🏛️ BÜLTEN &amp; DERECE SIRALAMASI (ÖNE ÇIKANLAR)
+      </div>
+      <span class="text-[10px] text-[#57534E] font-semibold">Sıklet &amp; Kronometre Hesabı</span>
+    </div>
+    <div class="grid grid-cols-4 gap-1.5">
+      ${top4.map((h, i) => `
+        <div onclick="openHorseModal(${h.no})" class="cursor-pointer bg-[#F6F3EC] hover:bg-[#EFECE4] border ${i === 0 ? 'border-[#0F291E] ring-1 ring-[#0F291E]/20' : 'border-[#D8D2C5]'} rounded-lg p-2 text-center transition">
+          <div class="text-[9px] font-extrabold uppercase ${i === 0 ? 'text-[#0F291E]' : 'text-[#57534E]'}">${i === 0 ? 'BAŞ FAVORİ' : (i + 1) + '. ADAY'}</div>
+          <div class="text-sm font-extrabold text-[#18181B] mono mt-0.5">#${h.no}</div>
+          <div class="text-[10px] font-bold text-[#18181B] truncate">${h.name}</div>
+          <div class="text-[11px] font-extrabold text-[#0F291E] mono mt-0.5">%${h.simulation.win_prob}</div>
+        </div>
+      `).join('')}
+    </div>
+    ${darkHorse ? `
+      <div onclick="openHorseModal(${darkHorse.no})" class="cursor-pointer mt-2 pt-2 border-t border-[#E2DDD2] flex items-center justify-between text-xs">
+        <div class="flex items-center gap-1.5">
+          <span class="px-1.5 py-0.5 rounded bg-[#7A1C1C] text-white font-bold text-[9px] uppercase">CAZİP SAFKAN</span>
+          <span class="font-bold text-[#18181B]">#${darkHorse.no} ${darkHorse.name}</span>
+        </div>
+        <span class="mono text-[#7A1C1C] font-bold text-[11px]">Bülten: %${darkHorse.simulation.win_prob} • AGF: %${darkHorse.agf_pct}</span>
+      </div>
+    ` : ''}
+  `;
+
+  // 2.5 Kupon Ölçeği Şablonu (Küçük / Orta / Geniş)
+  const tiers = race.coupon_tiers || { kucuk: [], orta: [], genis: [] };
+  const tierEl = document.getElementById('bankomatTierCard');
+  if (tierEl) {
+    const fmtTier = (arr, badgeCls) => arr.length
+      ? arr.map(x => `<span onclick="openHorseModal(${x.no})" class="cursor-pointer inline-flex items-center gap-1 px-2 py-0.5 rounded ${badgeCls} text-[11px] font-bold mono">#${x.no} ${x.name} <span class="opacity-80">(${x.grade})</span></span>`).join(' ')
+      : '<span class="text-[10px] text-[#78716C]">-</span>';
+
+    tierEl.innerHTML = `
+      <div class="flex items-center justify-between mb-2">
+        <span class="serif-title text-sm font-bold text-[#0F291E] uppercase">
+          📋 KUPON ÖLÇEĞİ ŞABLONU (DERECE BÜLTENİ)
+        </span>
+        <span class="text-[10px] text-[#57534E] font-medium">Safkana Tıkla ➔ Soyağacı &amp; Geçmiş</span>
+      </div>
+      <div class="grid grid-cols-3 gap-2 text-xs">
+        <div class="bg-[#F6F3EC] border border-[#0F291E]/30 rounded-lg p-2">
+          <div class="text-[9px] font-extrabold text-[#0F291E] uppercase mb-1">KÜÇÜK ÖLÇEKLİ</div>
+          <div class="flex flex-wrap gap-1">${fmtTier(tiers.kucuk, 'bg-[#0F291E] text-[#F9F6F0]')}</div>
+        </div>
+        <div class="bg-[#F6F3EC] border border-[#A67C37]/40 rounded-lg p-2">
+          <div class="text-[9px] font-extrabold text-[#8C5A3C] uppercase mb-1">ORTA ÖLÇEKLİ</div>
+          <div class="flex flex-wrap gap-1">${fmtTier(tiers.orta, 'bg-[#EFECE4] text-[#18181B] border border-[#C8C1B2]')}</div>
+        </div>
+        <div class="bg-[#F6F3EC] border border-[#7A1C1C]/30 rounded-lg p-2">
+          <div class="text-[9px] font-extrabold text-[#7A1C1C] uppercase mb-1">GENİŞ KUPONLAR</div>
+          <div class="flex flex-wrap gap-1">${fmtTier(tiers.genis, 'bg-[#7A1C1C]/10 text-[#7A1C1C] border border-[#7A1C1C]/30')}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  // 3. Sort Horses
+  let displayHorses = [...race.horses];
+  if (STATE.sortMode === 'quant') {
+    displayHorses.sort((a, b) => a.model_rank - b.model_rank);
+  } else if (STATE.sortMode === 'agf') {
+    displayHorses.sort((a, b) => (b.agf_pct - a.agf_pct) || (a.model_rank - b.model_rank));
+  } else {
+    displayHorses.sort((a, b) => a.no - b.no);
+  }
+
+  document.getElementById('raceHorseCount').textContent = `${displayHorses.length} Safkan Kayıtlı`;
+
+  // 4. Render Horse Cards
+  const container = document.getElementById('horseListContainer');
+  container.innerHTML = displayHorses.map(h => {
+    const isTop = h.model_rank === 1;
+    const isVal = h.simulation.is_value_bet || h.simulation.is_dark_horse;
+    const cardCls = isTop ? 'club-card-featured' : (isVal ? 'club-card-cazip' : 'club-card');
+
+    const son6Pills = (h.form_analysis.items || []).map(item => {
+      const sColor = item.surface === 'Ç' ? 'text-[#0F291E] border-[#1B4332]/40 bg-[#1B4332]/10'
+                   : item.surface === 'S' ? 'text-[#3F3F46] border-[#71717A]/40 bg-[#F4F4F5]'
+                   : 'text-[#8C5A3C] border-[#8C5A3C]/40 bg-[#8C5A3C]/10';
+      const winHighlight = item.pos === 1 ? 'ring-1 ring-[#0F291E] font-extrabold' : '';
+      return `<span class="px-1.5 py-0.5 rounded border text-[10px] mono ${sColor} ${winHighlight}">${item.display}</span>`;
+    }).join('');
+
+    const styleColors = {
+      E: 'text-[#7A1C1C] bg-[#7A1C1C]/10 border-[#7A1C1C]/30',
+      P: 'text-[#0F291E] bg-[#0F291E]/10 border-[#0F291E]/30',
+      S: 'text-[#8C5A3C] bg-[#8C5A3C]/10 border-[#8C5A3C]/30'
+    };
+
+    return `
+      <div onclick="openHorseModal(${h.no})" class="${cardCls} rounded-xl p-3.5 cursor-pointer transition-all hover:translate-y-[-1px]">
+        <!-- Top Row -->
+        <div class="flex items-start justify-between gap-2">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <div class="relative flex-shrink-0">
+              ${h.forma_url
+                ? `<img src="${h.forma_url}" alt="Forma" class="w-11 h-11 rounded-lg object-contain bg-[#F6F3EC] p-0.5 border border-[#D8D2C5]" onerror="this.style.display='none'" />`
+                : `<div class="w-11 h-11 rounded-lg bg-[#0F291E] text-[#F9F6F0] flex items-center justify-center font-extrabold text-sm">${h.no}</div>`
+              }
+              <span class="absolute -top-1.5 -left-1.5 w-5 h-5 rounded-full bg-[#0F291E] text-[#F9F6F0] border border-[#D4AF37] text-[11px] font-extrabold flex items-center justify-center mono">${h.no}</span>
+            </div>
+
+            <div class="min-w-0">
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <h3 class="serif-title text-base font-bold text-[#18181B] truncate leading-tight">${h.name}</h3>
+                ${h.is_ekuri ? '<span class="px-1.5 py-0.2 rounded bg-[#0F291E]/10 text-[#0F291E] text-[9px] font-bold">EKÜRİ</span>' : ''}
+                ${roleBadgeHTML(h.role_badge)}
+              </div>
+              <div class="text-[11px] text-[#44403C] truncate mt-0.5">
+                <strong class="text-[#18181B]">${h.jockey}</strong> • ${h.weight}kg • Kulvar:${h.start_no} ${h.handicap ? `• HP:${h.handicap}` : ''}
+              </div>
+              <div class="text-[10px] text-[#57534E] truncate">
+                ${h.age} • <strong class="text-[#44403C]">${h.sire}</strong> - ${h.dam}${h.damsire ? ` / <span class="text-[#7A1C1C] font-semibold">${h.damsire}</span>` : ''}
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Score & Grade -->
+          <div class="text-right flex-shrink-0">
+            <div class="inline-flex items-center gap-1">
+              <span class="px-1.5 py-0.5 rounded bg-[#F7F1E3] border border-[#A67C37] text-xs font-extrabold text-[#8C5A3C] mono" title="Form Derecesi">${h.form_grade || 'B'}</span>
+              <div class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#0F291E] text-[#F9F6F0]">
+                <span class="text-[9px] text-[#D4AF37] font-bold uppercase">PUAN</span>
+                <span class="text-sm font-extrabold mono">${h.quant_score}</span>
+              </div>
+            </div>
+            <div class="text-xs font-extrabold text-[#18181B] mono mt-1">
+              Şans: <span class="text-[#0F291E]">%${h.simulation.win_prob}</span>
+            </div>
+            ${h.agf_pct > 0 ? `
+              <div class="text-[10px] mono ${h.simulation.value_edge >= 3.5 ? 'text-[#7A1C1C] font-bold' : 'text-[#57534E]'}">
+                AGF: %${h.agf_pct} (${h.agf_rank}.)
+              </div>
+            ` : `<div class="text-[10px] text-[#57534E] mono">Ederi: ${h.simulation.fair_ganyan}</div>`}
+          </div>
+        </div>
+
+        <!-- Middle Row: 5 Classic Bülten Columns -->
+        <div class="grid grid-cols-5 gap-1.5 mt-2.5 pt-2.5 border-t border-[#E8E3D8] text-center">
+          <div class="bg-[#F6F3EC] rounded p-1.5 border border-[#E2DDD2]">
+            <div class="text-[9px] text-[#57534E] font-bold">PERFORMANS</div>
+            <div class="text-xs font-extrabold text-[#0F291E] mono">${h.bankomat_summary ? h.bankomat_summary.performans : h.metrics.speed_figure}</div>
+          </div>
+          <div class="bg-[#F6F3EC] rounded p-1.5 border border-[#E2DDD2]">
+            <div class="text-[9px] text-[#57534E] font-bold">KİLOYA GÖRE</div>
+            <div class="text-xs font-extrabold text-[#18181B] mono">${h.bankomat_summary ? h.bankomat_summary.kiloya_gore : h.metrics.weight_rating}</div>
+          </div>
+          <div class="bg-[#F6F3EC] rounded p-1.5 border border-[#E2DDD2]">
+            <div class="text-[9px] text-[#57534E] font-bold">ZORLUK</div>
+            <div class="text-xs font-extrabold text-[#44403C] mono">${h.bankomat_summary ? h.bankomat_summary.zorluk : h.metrics.class_rating}</div>
+          </div>
+          <div class="bg-[#F6F3EC] rounded p-1.5 border border-[#E2DDD2]">
+            <div class="text-[9px] text-[#57534E] font-bold">ORT. POZ %</div>
+            <div class="text-xs font-extrabold text-[#0F291E] mono">%${h.bankomat_summary ? h.bankomat_summary.ortalama_poz : h.simulation.top3_prob}</div>
+          </div>
+          <div class="bg-[#F6F3EC] rounded p-1.5 border border-[#E2DDD2]">
+            <div class="text-[9px] text-[#57534E] font-bold">EN İYİ D.</div>
+            <div class="text-[11px] font-extrabold text-[#7A1C1C] mono">${h.best_time || '-'}</div>
+          </div>
+        </div>
+
+        <!-- Bottom Row: Son 6 & Takılar -->
+        <div class="mt-2.5 flex items-center justify-between gap-2 flex-wrap">
+          <div class="flex items-center gap-1 flex-wrap">
+            ${son6Pills || '<span class="text-[10px] text-[#78716C]">İlk Koşu / Kayıt Yok</span>'}
+          </div>
+          <div class="flex items-center gap-1">
+            <span class="px-1.5 py-0.5 rounded border text-[10px] font-bold ${styleColors[h.running_style.code]}">${h.running_style.label}</span>
+            ${h.equipment.map(eq => `<span class="px-1.5 py-0.5 rounded bg-[#EFECE4] text-[#18181B] border border-[#D8D2C5] text-[10px] font-bold mono">${eq}</span>`).join('')}
+          </div>
+        </div>
+
+        <!-- Komiser / Handikapçı Notu -->
+        <div class="mt-2 text-[11px] text-[#44403C] bg-[#FAF8F3] rounded-lg px-2.5 py-1.5 border border-[#E2DDD2] flex items-start gap-1.5">
+          <span class="text-[#8C5A3C] font-bold">✒️</span>
+          <span class="leading-snug font-medium">${cleanXaiNote(h.xai_notes[0])}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  renderPaceAndSimulationView(race);
+}
+
+function renderPaceAndSimulationView(race) {
+  const ps = race.pace_scenario;
+  document.getElementById('paceScenarioCard').innerHTML = `
+    <div class="flex items-center justify-between mb-2">
+      <span class="serif-title text-base font-bold text-[#0F291E] uppercase">⏱️ KOŞU GİDİŞATI &amp; TEMPO ANALİZİ</span>
+      <span class="px-2 py-0.5 rounded bg-[#7A1C1C]/10 text-[#7A1C1C] border border-[#7A1C1C]/30 text-[11px] font-bold">${ps.type}</span>
+    </div>
+    <p class="text-xs text-[#44403C] leading-relaxed mb-3 font-medium">${ps.description}</p>
+    <div class="grid grid-cols-3 gap-2 text-center">
+      <div class="p-2 rounded-lg bg-[#FAF8F3] border border-[#7A1C1C]/30">
+        <div class="text-xs font-extrabold text-[#7A1C1C] mono">${ps.counts.E} Safkan</div>
+        <div class="text-[10px] text-[#57534E] font-semibold">Kaçak / Önde (E)</div>
+      </div>
+      <div class="p-2 rounded-lg bg-[#FAF8F3] border border-[#0F291E]/30">
+        <div class="text-xs font-extrabold text-[#0F291E] mono">${ps.counts.P} Safkan</div>
+        <div class="text-[10px] text-[#57534E] font-semibold">Takipçi (P)</div>
+      </div>
+      <div class="p-2 rounded-lg bg-[#FAF8F3] border border-[#8C5A3C]/40">
+        <div class="text-xs font-extrabold text-[#8C5A3C] mono">${ps.counts.S} Safkan</div>
+        <div class="text-[10px] text-[#57534E] font-semibold">Son Düzlükçü (S)</div>
+      </div>
+    </div>
+  `;
+
+  const sortedByEarly = [...race.horses].sort((a, b) => b.pace_positions.m400 - a.pace_positions.m400);
+  document.getElementById('visualPaceMap').innerHTML = `
+    <div class="flex items-center justify-between mb-2">
+      <h3 class="serif-title text-base font-bold text-[#0F291E] uppercase">🏁 İlk 600m Piste Yayılış Şeması</h3>
+      <span class="text-[10px] text-[#57534E] font-semibold">Sağ Taraf = Bariyer Liderliği</span>
+    </div>
+    <div class="space-y-2.5 mt-3">
+      ${sortedByEarly.map(h => {
+        const dotColor = h.running_style.code === 'E' ? 'bg-[#7A1C1C]' : (h.running_style.code === 'P' ? 'bg-[#0F291E]' : 'bg-[#8C5A3C]');
+        return `
+          <div class="space-y-1">
+            <div class="flex justify-between text-[11px]">
+              <span class="font-bold text-[#18181B]">#${h.no} ${h.name} <span class="text-[10px] text-[#57534E]">(${h.running_style.code} • St:${h.start_no})</span></span>
+              <span class="mono text-[10px] text-[#0F291E] font-bold">Bülten Puanı: ${h.quant_score}</span>
+            </div>
+            <div class="relative h-5 bg-[#F6F3EC] rounded-full border border-[#D8D2C5] overflow-hidden flex items-center px-2">
+              <div style="left: ${h.pace_positions.m400}%" class="absolute -translate-x-1/2 flex items-center gap-1">
+                <span class="w-3 h-3 rounded-full ${dotColor} ring-2 ring-white"></span>
+                <span class="text-[9px] font-bold text-[#18181B] mono">${h.no}</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+
+  const sortedBySim = [...race.horses].sort((a, b) => b.simulation.win_prob - a.simulation.win_prob);
+  document.getElementById('monteCarloTable').innerHTML = `
+    <h3 class="serif-title text-base font-bold text-[#0F291E] uppercase mb-1">📊 İhtimal &amp; Eder Ganyan Tablosu</h3>
+    <p class="text-[11px] text-[#57534E] mb-3">Derece istikrarı ve sıklet dağılımına göre hesaplanan birincilik, ikili ve tabela yüzdeleri:</p>
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-xs">
+        <thead>
+          <tr class="text-[10px] text-[#57534E] border-b border-[#D8D2C5] uppercase">
+            <th class="pb-2">Safkan</th>
+            <th class="pb-2 text-right">Kazanır %</th>
+            <th class="pb-2 text-right">İlk 2 %</th>
+            <th class="pb-2 text-right">Tabela %</th>
+            <th class="pb-2 text-right">Eder Gny</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-[#E8E3D8]">
+          ${sortedBySim.map(h => `
+            <tr onclick="openHorseModal(${h.no})" class="hover:bg-[#F6F3EC] cursor-pointer">
+              <td class="py-2 font-bold text-[#18181B]">#${h.no} ${h.name}</td>
+              <td class="py-2 text-right font-extrabold text-[#0F291E] mono">%${h.simulation.win_prob}</td>
+              <td class="py-2 text-right text-[#44403C] mono font-semibold">%${h.simulation.top2_prob}</td>
+              <td class="py-2 text-right text-[#8C5A3C] mono font-semibold">%${h.simulation.top3_prob}</td>
+              <td class="py-2 text-right text-[#7A1C1C] mono font-bold">${h.simulation.fair_ganyan}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderValueRadar() {
+  const p = STATE.program;
+  const valuePicks = [];
+
+  p.races.forEach((r, rIdx) => {
+    r.horses.forEach(h => {
+      if (h.simulation.is_value_bet || h.simulation.is_dark_horse || h.simulation.value_edge >= 3.2) {
+        valuePicks.push({ race: r, raceIndex: rIdx, horse: h });
+      }
+    });
+  });
+
+  valuePicks.sort((a, b) => b.horse.simulation.value_edge - a.horse.simulation.value_edge);
+  document.getElementById('valueBadgeCount').textContent = valuePicks.length;
+
+  const container = document.getElementById('valueRadarContainer');
+  if (!valuePicks.length) {
+    container.innerHTML = `<div class="club-card rounded-xl p-6 text-center text-xs text-[#57534E]">Bu programda AGF oranına göre belirgin fark taşıyan cazip sürpriz bulunamadı.</div>`;
+    return;
+  }
+
+  container.innerHTML = valuePicks.map(item => {
+    const { race, raceIndex, horse } = item;
+    return `
+      <div onclick="selectRace(${raceIndex}); switchTab('race'); openHorseModal(${horse.no});"
+        class="club-card-cazip rounded-xl p-3.5 cursor-pointer transition hover:translate-y-[-1px]">
+        <div class="flex items-center justify-between text-[11px] text-[#8C5A3C] font-bold mb-1">
+          <span>${race.race_no}. KOŞU (${race.time}) • ${race.distance_m}m ${race.surface}</span>
+          <span class="px-2 py-0.5 rounded bg-[#7A1C1C] text-white font-bold text-[10px]">+${horse.simulation.value_edge}% ŞANS FARKI</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="serif-title text-base font-bold text-[#18181B]">#${horse.no} ${horse.name}</h3>
+            <p class="text-[11px] text-[#57534E]">${horse.jockey} • ${horse.weight}kg • Stil: ${horse.running_style.label}</p>
+          </div>
+          <div class="text-right mono">
+            <div class="text-xs font-extrabold text-[#0F291E]">Bülten Şansı: %${horse.simulation.win_prob}</div>
+            <div class="text-[11px] text-[#57534E]">Halk AGF: %${horse.agf_pct || '-'}</div>
+          </div>
+        </div>
+        <div class="mt-2 pt-2 border-t border-[#E8E3D8] text-[11px] text-[#44403C]">
+          ✒️ ${cleanXaiNote(horse.xai_notes[0])}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function generateAltiliTicket() {
+  const p = STATE.program;
+  if (!p || !p.races.length) return;
+
+  const altiliRaces = p.races.length >= 6 ? p.races.slice(p.races.length - 6) : p.races;
+  const strategy = document.getElementById('altiliStrategy').value;
+
+  const legOrder = altiliRaces.map((r, idx) => ({
+    idx,
+    race: r,
+    confidence: r.banko_confidence,
+    topProb: [...r.horses].sort((a, b) => a.model_rank - b.model_rank)[0]?.simulation.win_prob || 0
+  })).sort((a, b) => (b.topProb + b.confidence) - (a.topProb + a.confidence));
+
+  const countsPerLeg = {};
+  legOrder.forEach((leg, rankIdx) => {
+    if (strategy === 'economic') {
+      countsPerLeg[leg.idx] = rankIdx <= 1 ? 1 : (rankIdx <= 3 ? 2 : 3);
+    } else if (strategy === 'balanced') {
+      countsPerLeg[leg.idx] = rankIdx === 0 ? 1 : (rankIdx <= 2 ? 2 : (rankIdx <= 4 ? 4 : 5));
+    } else {
+      countsPerLeg[leg.idx] = rankIdx === 0 ? 1 : (rankIdx === 1 ? 3 : 5);
+    }
+  });
+
+  STATE.altiliSelections = {};
+  altiliRaces.forEach((r, idx) => {
+    const sorted = [...r.horses].sort((a, b) => a.model_rank - b.model_rank);
+    const takeCount = Math.min(sorted.length, countsPerLeg[idx] || 3);
+    const chosen = new Set(sorted.slice(0, takeCount).map(h => h.no));
+
+    if (strategy !== 'economic' && takeCount >= 3) {
+      sorted.forEach(h => {
+        if ((h.simulation.is_value_bet || h.simulation.is_dark_horse) && chosen.size < 6) {
+          chosen.add(h.no);
+        }
+      });
+    }
+    STATE.altiliSelections[idx] = chosen;
+  });
+
+  renderAltiliLegs(altiliRaces);
+  updateAltiliCost();
+}
+
+function toggleAltiliHorse(legIdx, horseNo) {
+  const set = STATE.altiliSelections[legIdx];
+  if (!set) return;
+  if (set.has(horseNo)) {
+    if (set.size > 1) set.delete(horseNo);
+  } else {
+    set.add(horseNo);
+  }
+  const p = STATE.program;
+  const altiliRaces = p.races.length >= 6 ? p.races.slice(p.races.length - 6) : p.races;
+  renderAltiliLegs(altiliRaces);
+  updateAltiliCost();
+}
+
+function renderAltiliLegs(altiliRaces) {
+  const container = document.getElementById('altiliLegsContainer');
+  container.innerHTML = altiliRaces.map((r, legIdx) => {
+    const selectedSet = STATE.altiliSelections[legIdx] || new Set();
+    const isBanko = selectedSet.size === 1;
+    const sorted = [...r.horses].sort((a, b) => a.model_rank - b.model_rank);
+
+    return `
+      <div class="${isBanko ? 'club-card-featured' : 'club-card'} rounded-xl p-3.5">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded bg-[#0F291E] text-[#E6C762] font-bold text-xs">${legIdx + 1}. AYAK</span>
+            <span class="text-xs font-bold text-[#18181B]">${r.race_no}. Koşu (${r.time}) • ${r.distance_m}m ${r.surface}</span>
+          </div>
+          <span class="text-[11px] font-extrabold mono ${isBanko ? 'text-[#0F291E]' : 'text-[#8C5A3C]'}">
+            ${isBanko ? '🔒 TEK (BANKO)' : `${selectedSet.size} Safkan`}
+          </span>
+        </div>
+
+        <div class="flex flex-wrap gap-1.5 mt-2">
+          ${sorted.map(h => {
+            const active = selectedSet.has(h.no);
+            return `
+              <button onclick="toggleAltiliHorse(${legIdx}, ${h.no})"
+                class="px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                  active
+                    ? 'bg-[#0F291E] text-[#F9F6F0] shadow-xs'
+                    : 'bg-[#F6F3EC] text-[#57534E] border border-[#D8D2C5] hover:text-[#18181B]'
+                }">
+                <span class="mono font-extrabold text-[#D4AF37]">#${h.no}</span>
+                <span class="truncate max-w-[95px]">${h.name}</span>
+                <span class="text-[10px] opacity-80 mono">%${h.simulation.win_prob}</span>
+              </button>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function updateAltiliCost() {
+  const p = STATE.program;
+  if (!p) return;
+  const altiliRaces = p.races.length >= 6 ? p.races.slice(p.races.length - 6) : p.races;
+  const unitCost = parseFloat(document.getElementById('altiliUnitCost').value) || 1.25;
+
+  let combinations = 1;
+  let hitProb = 1.0;
+
+  altiliRaces.forEach((r, idx) => {
+    const sel = STATE.altiliSelections[idx] || new Set();
+    combinations *= Math.max(1, sel.size);
+    let legProbSum = 0;
+    r.horses.forEach(h => {
+      if (sel.has(h.no)) legProbSum += h.simulation.win_prob;
+    });
+    hitProb *= Math.min(99.0, legProbSum) / 100.0;
+  });
+
+  const totalCost = (combinations * unitCost).toFixed(2);
+  const totalProbPct = (hitProb * 100).toFixed(1);
+
+  document.getElementById('altiliStatsBar').innerHTML = `
+    <div>
+      <div class="text-[10px] text-[#B7C9BE] uppercase">Kombinasyon</div>
+      <div class="text-sm font-extrabold text-white mono">${combinations}</div>
+    </div>
+    <div>
+      <div class="text-[10px] text-[#B7C9BE] uppercase">Kupon Tutarı</div>
+      <div class="text-sm font-extrabold text-[#E6C762] mono">${totalCost} ₺</div>
+    </div>
+    <div>
+      <div class="text-[10px] text-[#B7C9BE] uppercase">Kapsama Gücü</div>
+      <div class="text-sm font-extrabold text-white mono">%${totalProbPct}</div>
+    </div>
+  `;
+}
+
+function openHorseModal(horseNo) {
+  const race = STATE.program.races[STATE.currentRaceIndex];
+  const h = race.horses.find(x => x.no === horseNo);
+  if (!h) return;
+
+  const modal = document.getElementById('horseModal');
+  const content = document.getElementById('horseModalContent');
+  const takiLegend = STATE.program.taki_legend || {};
+
+  const metricBar = (label, val, color = 'bg-[#0F291E]') => `
+    <div>
+      <div class="flex justify-between text-xs mb-1">
+        <span class="text-[#44403C] font-semibold">${label}</span>
+        <span class="mono font-bold text-[#18181B]">${val} / 100</span>
+      </div>
+      <div class="h-2 bg-[#E8E3D8] rounded-full overflow-hidden">
+        <div class="h-full ${color} rounded-full" style="width: ${Math.min(100, val)}%"></div>
+      </div>
+    </div>
+  `;
+
+  content.innerHTML = `
+    <div class="flex items-start justify-between gap-3 mb-3 pb-2.5 border-b border-[#D8D2C5]">
+      <div class="flex items-center gap-3">
+        ${h.forma_url ? `<img src="${h.forma_url}" class="w-12 h-12 rounded-xl bg-white p-1 border border-[#D8D2C5]" />` : ''}
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded bg-[#0F291E] text-[#E6C762] font-extrabold text-xs mono">#${h.no}</span>
+            <h2 class="serif-title text-xl font-bold text-[#0F291E]">${h.name}</h2>
+          </div>
+          <p class="text-xs text-[#57534E] mt-0.5">${h.age} • Baba: <strong class="text-[#18181B]">${h.sire}</strong> • Anne: <strong class="text-[#18181B]">${h.dam}</strong></p>
+        </div>
+      </div>
+      <button onclick="closeHorseModal()" class="w-8 h-8 rounded-full bg-[#E8E3D8] text-[#18181B] font-bold">✕</button>
+    </div>
+
+    <!-- Key Summary Boxes -->
+    <div class="grid grid-cols-4 gap-2 mb-3.5 text-center">
+      <div class="bg-[#0F291E] text-[#F9F6F0] rounded-lg p-2">
+        <div class="text-[9px] text-[#D4AF37] font-bold">BÜLTEN PUANI</div>
+        <div class="text-base font-extrabold mono">${h.quant_score}</div>
+      </div>
+      <div class="bg-white border border-[#D8D2C5] rounded-lg p-2">
+        <div class="text-[9px] text-[#57534E] font-bold">KAZANMA %</div>
+        <div class="text-base font-extrabold text-[#0F291E] mono">%${h.simulation.win_prob}</div>
+      </div>
+      <div class="bg-white border border-[#D8D2C5] rounded-lg p-2">
+        <div class="text-[9px] text-[#57534E] font-bold">İLK 3 (TABELA)</div>
+        <div class="text-base font-extrabold text-[#8C5A3C] mono">%${h.simulation.top3_prob}</div>
+      </div>
+      <div class="bg-white border border-[#D8D2C5] rounded-lg p-2">
+        <div class="text-[9px] text-[#57534E] font-bold">EDER GANYAN</div>
+        <div class="text-base font-extrabold text-[#7A1C1C] mono">${h.simulation.fair_ganyan}</div>
+      </div>
+    </div>
+
+    <!-- Künye Bilgileri -->
+    <div class="bg-white rounded-xl p-3 border border-[#D8D2C5] mb-3.5 grid grid-cols-2 gap-2 text-xs">
+      <div><span class="text-[#57534E]">Jokey:</span> <strong class="text-[#18181B]">${h.jockey}</strong></div>
+      <div><span class="text-[#57534E]">Sıklet / Kulvar:</span> <strong class="text-[#18181B]">${h.weight} kg / St: ${h.start_no}</strong></div>
+      <div><span class="text-[#57534E]">Antrenör:</span> <strong class="text-[#18181B]">${h.trainer}</strong></div>
+      <div><span class="text-[#57534E]">Sahip:</span> <strong class="text-[#18181B]">${h.owner}</strong></div>
+      <div><span class="text-[#57534E]">KGS (Dinlenme):</span> <strong class="text-[#0F291E]">${h.metrics.kgs_status}</strong></div>
+      <div><span class="text-[#57534E]">En İyi Derece:</span> <strong class="text-[#7A1C1C] mono">${h.best_time || 'İlk / Kayıtsız'}</strong></div>
+    </div>
+
+    <!-- Komiser / Başhandikapçı Değerlendirmesi -->
+    <div class="bg-[#F7F1E3] border border-[#A67C37]/50 rounded-xl p-3 mb-3.5">
+      <h4 class="serif-title text-sm font-bold text-[#0F291E] uppercase mb-1">✒️ Başhandikapçı &amp; Bülten Notu</h4>
+      <ul class="space-y-1 text-xs text-[#18181B] list-disc pl-4 font-medium">
+        ${h.xai_notes.map(n => `<li>${cleanXaiNote(n)}</li>`).join('')}
+      </ul>
+    </div>
+
+    <!-- 1. PİST SEVGİSİ (KUM vs ÇİM vs SENTETİK) & MESAFE KARNESİ -->
+    <div id="surfaceAffinitySection" class="bg-white border border-[#D8D2C5] rounded-xl p-3.5 mb-3.5">
+      <div class="text-xs text-[#57534E] py-2 text-center">⏳ Çim / Kum / Sentetik pist karnesi ve mesafe istatistikleri yükleniyor...</div>
+    </div>
+
+    <!-- 2. 3 KUŞAK SOYAĞACI (PEDİGRİ: BABA, ANNE, KISRAK BABASI VE ATALARI) -->
+    <div id="pedigreeTreeSection" class="bg-white border border-[#D8D2C5] rounded-xl p-3.5 mb-3.5">
+      <div class="text-xs text-[#57534E] py-2 text-center">⏳ 3 Kuşak Soyağacı (Pedigri) tablosu yükleniyor...</div>
+    </div>
+
+    <!-- 3. ÖZEL PERFORMANS VE DERECE BÜLTENİ TABLOSU -->
+    <div class="bg-white border border-[#D8D2C5] rounded-xl p-3.5 mb-3.5">
+      <div class="mb-2">
+        <h4 class="serif-title text-base font-bold text-[#0F291E] uppercase">📑 Özel Performans ve Derece Bülteni (Geçmiş Koşular)</h4>
+        <p class="text-[10px] text-[#57534E]">Pist Durumu (P.D), Koşu Zorluğu, Harf Formu (A-E), Bugünkü Kiloya (${h.weight}kg) Göre Performans ve 1200m Normalize Derece</p>
+      </div>
+      <div id="bankomatHistoryTable" class="text-xs text-[#57534E] py-3 text-center">
+        ⏳ Safkanın geçmiş koşu dereceleri derleniyor...
+      </div>
+    </div>
+
+    <!-- 6-Dimension Bar Breakdown -->
+    <div class="bg-white border border-[#D8D2C5] rounded-xl p-3.5 space-y-2">
+      <h4 class="serif-title text-sm font-bold text-[#0F291E] uppercase">📊 Handikap Terazi Dağılımı</h4>
+      ${metricBar('Kronometre & Derece Puanı', h.metrics.speed_figure, 'bg-[#0F291E]')}
+      ${metricBar('Son 6 Koşu Form & Pist Uyumu', h.metrics.form_rating, 'bg-[#1B4332]')}
+      ${metricBar('Handikap & Grup Klası', h.metrics.class_rating, 'bg-[#8C5A3C]')}
+      ${metricBar('Jokey & Eküri İstikrarı (s20)', h.metrics.jockey_rating, 'bg-[#A67C37]')}
+      ${metricBar('Sıklet (Kilo) & Mesafe Uyumu', h.metrics.weight_rating, 'bg-[#7A1C1C]')}
+    </div>
+  `;
+
+  modal.classList.remove('hidden');
+
+  if (h.at_id) {
+    const isArab = (race.age_group || '').toLowerCase().includes('arap') ? '1' : '0';
+    fetch(`/api/horse_history?at_id=${encodeURIComponent(h.at_id)}&weight=${encodeURIComponent(h.weight)}&dist=${encodeURIComponent(race.distance_m)}&arab=${isArab}`)
+      .then(r => r.json())
+      .then(json => {
+        const surfEl = document.getElementById('surfaceAffinitySection');
+        const pedEl = document.getElementById('pedigreeTreeSection');
+        const tblEl = document.getElementById('bankomatHistoryTable');
+        if (!json.ok || !json.data) return;
+
+        const d = json.data;
+
+        // A) Surface Affinity (Kum vs Çim vs Sentetik)
+        if (surfEl) {
+          const ss = d.surface_summary || {};
+          const surfaces = [
+            { key: 'Çim', icon: '🌱', barCls: 'bg-[#1B4332]', badgeCls: 'text-[#0F291E] bg-[#1B4332]/10 border-[#1B4332]/30' },
+            { key: 'Kum', icon: '🏜️', barCls: 'bg-[#8C5A3C]', badgeCls: 'text-[#8C5A3C] bg-[#8C5A3C]/10 border-[#8C5A3C]/30' },
+            { key: 'Sentetik', icon: '⚡', barCls: 'bg-[#3F3F46]', badgeCls: 'text-[#3F3F46] bg-[#E4E4E7] border-[#A1A1AA]' }
+          ];
+          const tot = ss['TOPLAM'] || { starts: 0, w1: 0, w2: 0, w3: 0, w4: 0, earnings: '0 t' };
+
+          const ds = d.detailed_stats || {};
+          const pistDurumRows = ds['Pist'] || [];
+          const mesafeKey = Object.keys(ds).find(k => k.startsWith('Mesafe')) || '';
+          const mesafeRows = ds[mesafeKey] || [];
+
+          surfEl.innerHTML = `
+            <div class="flex items-center justify-between mb-2">
+              <h4 class="serif-title text-base font-bold text-[#0F291E] uppercase">🏟️ Pist Yatkınlığı (Çim • Kum • Sentetik)</h4>
+              <span class="text-[10px] text-[#57534E] font-bold mono">Toplam: ${tot.starts} Koşu (${tot.w1} Birincilik)</span>
+            </div>
+            <div class="mb-3 px-3 py-2 rounded-lg bg-[#0F291E] text-[#F9F6F0] text-xs font-bold flex items-center gap-2">
+              <span class="text-[#D4AF37]">🏆</span>
+              <span>${d.fav_surface_verdict || ''}</span>
+            </div>
+
+            <div class="space-y-2 mb-3">
+              ${surfaces.map(sf => {
+                const st = ss[sf.key] || { starts: 0, w1: 0, w2: 0, w3: 0, w4: 0, win_pct: 0, podium_pct: 0, tabela_pct: 0, affinity_score: 0, earnings: '0 t' };
+                return `
+                  <div class="bg-[#FAF8F3] rounded-lg p-2.5 border border-[#E2DDD2]">
+                    <div class="flex items-center justify-between text-xs mb-1">
+                      <div class="flex items-center gap-1.5">
+                        <span>${sf.icon}</span>
+                        <strong class="text-[#18181B] uppercase">${sf.key} PİST</strong>
+                        <span class="px-1.5 py-0.5 rounded border text-[10px] font-bold mono ${sf.badgeCls}">
+                          ${st.starts} Koşu: ${st.w1}-${st.w2}-${st.w3}-${st.w4}
+                        </span>
+                      </div>
+                      <span class="text-[11px] font-extrabold text-[#0F291E] mono">Uyum: ${st.affinity_score}/100</span>
+                    </div>
+                    <div class="h-2 bg-[#E8E3D8] rounded-full overflow-hidden mb-1.5">
+                      <div class="h-full ${sf.barCls} rounded-full" style="width: ${st.affinity_score}%"></div>
+                    </div>
+                    <div class="flex items-center justify-between text-[10px] text-[#57534E] mono">
+                      <span>Birincilik: <strong class="text-[#18181B]">%${st.win_pct}</strong></span>
+                      <span>İlk 3: <strong class="text-[#0F291E]">%${st.podium_pct}</strong></span>
+                      <span>Tabela: <strong class="text-[#8C5A3C]">%${st.tabela_pct}</strong></span>
+                      <span>Kazanç: <strong class="text-[#18181B]">${st.earnings}</strong></span>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+
+            ${(pistDurumRows.length || mesafeRows.length) ? `
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-[#E2DDD2] text-[11px]">
+                ${pistDurumRows.length ? `
+                  <div class="bg-[#FAF8F3] rounded-lg p-2.5 border border-[#E2DDD2]">
+                    <div class="text-[10px] font-extrabold text-[#8C5A3C] uppercase mb-1">🌧️ Zemin Durumu Karnesi</div>
+                    <div class="space-y-1 mono text-[10px]">
+                      ${pistDurumRows.map(r => `
+                        <div class="flex justify-between">
+                          <span class="text-[#44403C]">${r[0]} (${r[1]})</span>
+                          <span class="text-[#18181B] font-bold">${r[2]}K • 1.(${r[3]}) 2.(${r[4]}) 3.(${r[5]})</span>
+                        </div>
+                      `).join('')}
+                    </div>
+                  </div>
+                ` : ''}
+                ${mesafeRows.length ? `
+                  <div class="bg-[#FAF8F3] rounded-lg p-2.5 border border-[#E2DDD2]">
+                    <div class="text-[10px] font-extrabold text-[#0F291E] uppercase mb-1">📏 Mesafe Karnesi (${mesafeKey})</div>
+                    <div class="space-y-1 mono text-[10px]">
+                      ${mesafeRows.map(r => `
+                        <div class="flex justify-between">
+                          <span class="text-[#44403C]">${r[0]}m</span>
+                          <span class="text-[#18181B] font-bold">${r[1]}K • 1.(${r[2]}) 2.(${r[3]}) 3.(${r[4]})</span>
+                        </div>
+                      `).join('')}
+                    </div>
+                  </div>
+                ` : ''}
+              </div>
+            ` : ''}
+          `;
+        }
+
+        // B) 3-Generation Pedigree Tree
+        if (pedEl) {
+          const p = d.pedigree;
+          if (!p) {
+            pedEl.innerHTML = `
+              <h4 class="serif-title text-base font-bold text-[#0F291E] uppercase mb-2">🧬 Soyağacı (Orijin)</h4>
+              <div class="grid grid-cols-3 gap-2 text-xs">
+                <div class="bg-[#FAF8F3] p-2.5 rounded-lg border border-[#E2DDD2]"><span class="text-[#57534E] block text-[10px]">BABA</span><strong class="text-[#18181B]">${h.sire}</strong></div>
+                <div class="bg-[#FAF8F3] p-2.5 rounded-lg border border-[#E2DDD2]"><span class="text-[#57534E] block text-[10px]">ANNE</span><strong class="text-[#18181B]">${h.dam}</strong></div>
+                <div class="bg-[#FAF8F3] p-2.5 rounded-lg border border-[#E2DDD2]"><span class="text-[#57534E] block text-[10px]">KISRAK BABASI</span><strong class="text-[#7A1C1C]">${h.damsire || '-'}</strong></div>
+              </div>
+            `;
+          } else {
+            pedEl.innerHTML = `
+              <div class="mb-2.5">
+                <h4 class="serif-title text-base font-bold text-[#0F291E] uppercase">🧬 3 Kuşak Soyağacı (Pedigri Şeması)</h4>
+                <p class="text-[10px] text-[#57534E]">Baba, Anne, Kısrak Babası ve 3. Kuşak Kan Hattı</p>
+              </div>
+
+              <div class="space-y-2.5 text-[11px]">
+                <!-- BABA HATTI -->
+                <div class="bg-[#FAF8F3] border border-[#0F291E]/30 rounded-xl p-2.5">
+                  <div class="text-[9px] font-extrabold text-[#0F291E] uppercase mb-1.5">♂ BABA KAN HATTI (AYGIR SOYU)</div>
+                  <div class="grid grid-cols-12 gap-1.5 items-center">
+                    <div class="col-span-4 bg-[#0F291E] text-[#F9F6F0] p-2 rounded-lg">
+                      <div class="text-[9px] text-[#D4AF37] font-bold">BABA</div>
+                      <div class="font-extrabold text-xs leading-tight">${p.baba}</div>
+                    </div>
+                    <div class="col-span-4 space-y-1.5">
+                      <div class="bg-white p-1.5 rounded border border-[#D8D2C5]">
+                        <div class="text-[8px] text-[#57534E]">Baba Babası</div>
+                        <div class="font-bold text-[#18181B] text-[10px] leading-tight">${p.baba_baba}</div>
+                      </div>
+                      <div class="bg-white p-1.5 rounded border border-[#D8D2C5]">
+                        <div class="text-[8px] text-[#57534E]">Baba Annesi</div>
+                        <div class="font-bold text-[#18181B] text-[10px] leading-tight">${p.baba_anne}</div>
+                      </div>
+                    </div>
+                    <div class="col-span-4 space-y-1 text-[9px] text-[#44403C]">
+                      <div class="bg-white px-1.5 py-0.5 rounded border border-[#E2DDD2] truncate">♂ ${p.baba_baba_baba}</div>
+                      <div class="bg-white px-1.5 py-0.5 rounded border border-[#E2DDD2] truncate">♀ ${p.baba_baba_anne}</div>
+                      <div class="bg-white px-1.5 py-0.5 rounded border border-[#E2DDD2] truncate">♂ ${p.baba_anne_baba}</div>
+                      <div class="bg-white px-1.5 py-0.5 rounded border border-[#E2DDD2] truncate">♀ ${p.baba_anne_anne}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- ANNE & KISRAK BABASI HATTI -->
+                <div class="bg-[#FAF8F3] border border-[#8C5A3C]/40 rounded-xl p-2.5">
+                  <div class="text-[9px] font-extrabold text-[#7A1C1C] uppercase mb-1.5">♀ ANNE KAN HATTI (KISRAK &amp; KISRAK BABASI)</div>
+                  <div class="grid grid-cols-12 gap-1.5 items-center">
+                    <div class="col-span-4 bg-[#7A1C1C] text-white p-2 rounded-lg">
+                      <div class="text-[9px] text-[#F7F1E3] font-bold">ANNE</div>
+                      <div class="font-extrabold text-xs leading-tight">${p.anne}</div>
+                    </div>
+                    <div class="col-span-4 space-y-1.5">
+                      <div class="bg-[#F7F1E3] p-1.5 rounded border border-[#A67C37]">
+                        <div class="text-[8px] text-[#7A1C1C] font-bold">Kısrak Babası</div>
+                        <div class="font-extrabold text-[#18181B] text-[10px] leading-tight">${p.anne_baba}</div>
+                      </div>
+                      <div class="bg-white p-1.5 rounded border border-[#D8D2C5]">
+                        <div class="text-[8px] text-[#57534E]">Anne Annesi</div>
+                        <div class="font-bold text-[#18181B] text-[10px] leading-tight">${p.anne_anne}</div>
+                      </div>
+                    </div>
+                    <div class="col-span-4 space-y-1 text-[9px] text-[#44403C]">
+                      <div class="bg-white px-1.5 py-0.5 rounded border border-[#E2DDD2] truncate">♂ ${p.anne_baba_baba}</div>
+                      <div class="bg-white px-1.5 py-0.5 rounded border border-[#E2DDD2] truncate">♀ ${p.anne_baba_anne}</div>
+                      <div class="bg-white px-1.5 py-0.5 rounded border border-[#E2DDD2] truncate">♂ ${p.anne_anne_baba}</div>
+                      <div class="bg-white px-1.5 py-0.5 rounded border border-[#E2DDD2] truncate">♀ ${p.anne_anne_anne}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `;
+          }
+        }
+
+        // C) Past Races Performance Table
+        if (!tblEl) return;
+        if (!d.races || !d.races.length) {
+          tblEl.innerHTML = `<span class="text-[#78716C]">Bu safkanın geçmiş yarış kaydı bulunamadı.</span>`;
+          return;
+        }
+        const rows = d.races;
+        const sum = d.summary;
+        const gradeBadge = g => {
+          const map = {
+            A: 'bg-[#0F291E] text-[#E6C762]',
+            B: 'bg-[#1B4332]/15 text-[#0F291E] border border-[#1B4332]/30',
+            C: 'bg-[#F7F1E3] text-[#8C5A3C] border border-[#A67C37]/40',
+            D: 'bg-[#EFECE4] text-[#57534E]',
+            E: 'bg-[#7A1C1C]/10 text-[#7A1C1C]'
+          };
+          return `<span class="px-1.5 py-0.5 rounded font-extrabold text-[10px] mono ${map[g] || map.C}">${g}</span>`;
+        };
+
+        tblEl.innerHTML = `
+          <div class="grid grid-cols-3 gap-2 mb-3 text-center bg-[#FAF8F3] p-2 rounded-lg border border-[#E2DDD2]">
+            <div>
+              <div class="text-[9px] text-[#57534E] font-bold uppercase">ORT. PERFORMANS</div>
+              <div class="text-xs font-extrabold text-[#0F291E] mono">${sum.avg_performans} <span class="text-[10px] text-[#57534E]">(Max: ${sum.max_performans})</span></div>
+            </div>
+            <div>
+              <div class="text-[9px] text-[#57534E] font-bold uppercase">KİLOYA GÖRE ORT.</div>
+              <div class="text-xs font-extrabold text-[#18181B] mono">${sum.avg_kiloya_gore}</div>
+            </div>
+            <div>
+              <div class="text-[9px] text-[#57534E] font-bold uppercase">ORTALAMA POZ.</div>
+              <div class="text-xs font-extrabold text-[#8C5A3C] mono">%${sum.avg_poz_pct}</div>
+            </div>
+          </div>
+          <div class="overflow-x-auto -mx-1">
+            <table class="w-full text-left text-[11px] whitespace-nowrap">
+              <thead>
+                <tr class="text-[9px] text-[#57534E] border-b border-[#D8D2C5] uppercase">
+                  <th class="pb-1.5 px-1">Tarih/Şehir</th>
+                  <th class="pb-1.5 px-1">Şart</th>
+                  <th class="pb-1.5 px-1">Pist</th>
+                  <th class="pb-1.5 px-1">P.D</th>
+                  <th class="pb-1.5 px-1 text-center">Sıra</th>
+                  <th class="pb-1.5 px-1 text-right">Perf.</th>
+                  <th class="pb-1.5 px-1 text-right">Zorluk</th>
+                  <th class="pb-1.5 px-1 text-center">Form</th>
+                  <th class="pb-1.5 px-1 text-right">Kiloya G.</th>
+                  <th class="pb-1.5 px-1 text-right" title="1200m Normalize Derece">Norm.Der</th>
+                  <th class="pb-1.5 px-1 text-right">Poz%</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-[#E8E3D8] mono">
+                ${rows.map(r => `
+                  <tr class="hover:bg-[#FAF8F3]">
+                    <td class="py-1.5 px-1 text-[#18181B] font-sans"><strong>${r.tarih.slice(0,5)}</strong> <span class="text-[10px] text-[#57534E]">${r.sehir}</span></td>
+                    <td class="py-1.5 px-1 text-[#44403C] font-sans truncate max-w-[75px]">${r.sart}</td>
+                    <td class="py-1.5 px-1 text-[#18181B] font-semibold">${r.pist}</td>
+                    <td class="py-1.5 px-1 text-[#8C5A3C] font-bold">${r.pd}</td>
+                    <td class="py-1.5 px-1 text-center font-extrabold ${r.sira <= 3 ? 'text-[#0F291E]' : 'text-[#57534E]'}">${r.sira}</td>
+                    <td class="py-1.5 px-1 text-right font-bold text-[#18181B]">${r.performans.toFixed(2)}</td>
+                    <td class="py-1.5 px-1 text-right text-[#57534E]">${r.zorluk.toFixed(1)}</td>
+                    <td class="py-1.5 px-1 text-center">${gradeBadge(r.form)}</td>
+                    <td class="py-1.5 px-1 text-right font-bold text-[#0F291E]">${r.kiloya_gore.toFixed(2)}</td>
+                    <td class="py-1.5 px-1 text-right text-[#7A1C1C] font-bold" title="Gerçek Derece: ${r.gercek_derece}">${r.norm_1200_derece}</td>
+                    <td class="py-1.5 px-1 text-right text-[#44403C]">%${r.poz_pct}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+      });
+  }
+}
+
+function closeHorseModal() {
+  document.getElementById('horseModal').classList.add('hidden');
+}
+
+function populateXraySelectors() {
+  const race = STATE.program.races[STATE.currentRaceIndex];
+  if (!race || !race.horses.length) return;
+
+  const sorted = [...race.horses].sort((a, b) => a.model_rank - b.model_rank);
+  const selA = document.getElementById('xrayHorseA');
+  const selB = document.getElementById('xrayHorseB');
+
+  const optionsHTML = sorted.map(h => `<option value="${h.no}">#${h.no} ${h.name} (Puan: ${h.quant_score})</option>`).join('');
+  selA.innerHTML = optionsHTML;
+  selB.innerHTML = optionsHTML;
+
+  if (sorted.length > 1) {
+    selA.value = sorted[0].no;
+    selB.value = sorted[1].no;
+  }
+  renderXrayComparison();
+}
+
+function renderXrayComparison() {
+  const race = STATE.program.races[STATE.currentRaceIndex];
+  const noA = parseInt(document.getElementById('xrayHorseA').value);
+  const noB = parseInt(document.getElementById('xrayHorseB').value);
+  const hA = race.horses.find(h => h.no === noA) || race.horses[0];
+  const hB = race.horses.find(h => h.no === noB) || race.horses[0];
+
+  const rows = [
+    { label: 'Genel Bülten Puanı', a: hA.quant_score, b: hB.quant_score },
+    { label: 'Kazanma Şansı (%)', a: hA.simulation.win_prob, b: hB.simulation.win_prob },
+    { label: 'Kronometre & Hız Derecesi', a: hA.metrics.speed_figure, b: hB.metrics.speed_figure },
+    { label: 'Son 6 Koşu Form & Pist', a: hA.metrics.form_rating, b: hB.metrics.form_rating },
+    { label: 'Handikap & Grup Klası', a: hA.metrics.class_rating, b: hB.metrics.class_rating },
+    { label: 'Jokey & Eküri İstikrarı', a: hA.metrics.jockey_rating, b: hB.metrics.jockey_rating },
+    { label: 'Sıklet (Kilo) Avantajı', a: hA.metrics.weight_rating, b: hB.metrics.weight_rating },
+    { label: 'KGS Dinlenme & Tazelik', a: hA.metrics.fitness_rating, b: hB.metrics.fitness_rating }
+  ];
+
+  document.getElementById('xrayComparisonBody').innerHTML = `
+    <div class="space-y-3">
+      ${rows.map(r => {
+        const total = (r.a + r.b) || 1;
+        const pctA = Math.round((r.a / total) * 100);
+        const aWins = r.a >= r.b;
+        return `
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="mono font-extrabold ${aWins ? 'text-[#0F291E]' : 'text-[#78716C]'}">${r.a}</span>
+              <span class="text-[#44403C] font-bold text-[11px]">${r.label}</span>
+              <span class="mono font-extrabold ${!aWins ? 'text-[#7A1C1C]' : 'text-[#78716C]'}">${r.b}</span>
+            </div>
+            <div class="h-2.5 bg-[#E8E3D8] rounded-full overflow-hidden flex">
+              <div style="width: ${pctA}%" class="bg-[#0F291E] h-full"></div>
+              <div style="width: ${100 - pctA}%" class="bg-[#7A1C1C] h-full"></div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function openWeightsModal() {
+  document.getElementById('weightsModal').classList.remove('hidden');
+}
+
+function closeWeightsModal() {
+  document.getElementById('weightsModal').classList.add('hidden');
+}
+
+function updateWeightLabels() {
+  ['wSpeed', 'wForm', 'wClass', 'wJockey', 'wWeight'].forEach(id => {
+    const val = document.getElementById(id).value;
+    document.getElementById(`lbl-${id}`).textContent = `${val}%`;
+  });
+}
+
+function resetWeights() {
+  document.getElementById('wSpeed').value = 25;
+  document.getElementById('wForm').value = 25;
+  document.getElementById('wClass').value = 20;
+  document.getElementById('wJockey').value = 15;
+  document.getElementById('wWeight').value = 15;
+  updateWeightLabels();
+}
+
+function applyCustomWeights() {
+  const wS = parseFloat(document.getElementById('wSpeed').value);
+  const wF = parseFloat(document.getElementById('wForm').value);
+  const wC = parseFloat(document.getElementById('wClass').value);
+  const wJ = parseFloat(document.getElementById('wJockey').value);
+  const wW = parseFloat(document.getElementById('wWeight').value);
+  const total = (wS + wF + wC + wJ + wW) || 100;
+
+  STATE.program.races.forEach(race => {
+    let scoreSum = 0;
+    race.horses.forEach(h => {
+      const m = h.metrics;
+      const newScore = (
+        m.speed_figure * (wS / total) +
+        m.form_rating * (wF / total) +
+        m.class_rating * (wC / total) +
+        m.jockey_rating * (wJ / total) +
+        ((m.weight_rating + m.fitness_rating) / 2) * (wW / total) +
+        m.pace_adjustment +
+        m.post_bonus * 0.4 +
+        m.eq_bonus * 0.4
+      );
+      h.quant_score = Math.round(Math.max(25, Math.min(99, newScore)) * 10) / 10;
+      scoreSum += Math.exp(h.quant_score / 9.5);
+    });
+
+    race.horses.forEach(h => {
+      const prob = (Math.exp(h.quant_score / 9.5) / scoreSum) * 100;
+      h.simulation.win_prob = Math.round(prob * 10) / 10;
+      h.simulation.fair_ganyan = Math.round((100 / Math.max(0.5, h.simulation.win_prob)) * 100) / 100;
+      if (h.agf_pct > 0) {
+        h.simulation.value_edge = Math.round((h.simulation.win_prob - h.agf_pct) * 10) / 10;
+        h.simulation.is_value_bet = h.simulation.value_edge >= 4.0 && h.simulation.win_prob >= 10.0;
+      }
+    });
+
+    const sorted = [...race.horses].sort((a, b) => b.quant_score - a.quant_score);
+    sorted.forEach((h, idx) => { h.model_rank = idx + 1; });
+  });
+
+  closeWeightsModal();
+  renderCurrentRace();
+  renderValueRadar();
+  generateAltiliTicket();
+  populateXraySelectors();
+}
