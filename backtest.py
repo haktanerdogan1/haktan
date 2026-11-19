@@ -221,7 +221,8 @@ def compute_signals(rec):
     """Bir koşucu kaydından (yarış öncesi bilgiler) işaret kümesi."""
     s = set()
     agf = rec.get("agf_pct") or 0
-    if agf > 0 and rec.get("win_prob", 0) >= 1.5 * agf:
+    model_p = rec.get("win_prob_raw", rec.get("win_prob", 0))  # canlıda ham şans ayrı alanda
+    if agf > 0 and model_p >= 1.5 * agf:
         s.add("model_value")
     if (rec.get("hp_resid") or 0) <= -2:
         s.add("hp_light")
@@ -261,9 +262,14 @@ def is_overlooked(rec):
 
 
 # ------------------------------------------------------------------ toplama
+class IncompleteDay(Exception):
+    """Bir hipodromun verisi alınamadı: gün eksik kaydedilmesin, sonraki çalıştırmada yeniden denensin."""
+
+
 def collect_day(date_str):
     race_date = datetime.strptime(date_str, "%d/%m/%Y")
     records = []
+    failed = []
     for city in results_cities(date_str):
         try:
             res_page = fetch_disk(city["url"])
@@ -274,6 +280,7 @@ def collect_day(date_str):
             prog = S.fetch_city_program(date_str, city_id=city["id"])
         except Exception as e:
             log(f"  ! {date_str} {city['name']}: {e}")
+            failed.append(city["name"])
             continue
         jobs = []
         for race in prog["races"]:
@@ -292,7 +299,10 @@ def collect_day(date_str):
                     "surface": race["surface"], "distance": race["distance_m"], "field": len(race["horses"]),
                     "no": h["no"], "name": h["name"], "at_id": h.get("at_id"),
                     "agf_pct": h["agf_pct"], "agf_rank": h["agf_rank"],
-                    "win_prob": h["simulation"]["win_prob"], "model_rank": h.get("model_rank"),
+                    # Ölçümde hep HAM model şansı kullanılır (kalibrasyon bu veriden öğrenilir);
+                    # uygulamada gösterilen yumuşatılmış şans ayrıca saklanır.
+                    "win_prob": h["simulation"].get("raw_win_prob", h["simulation"]["win_prob"]),
+                    "win_prob_cal": h["simulation"]["win_prob"], "model_rank": h.get("model_rank"),
                     "quant": h["quant_score"], "style": h["running_style"]["code"],
                     "pace": race["pace_scenario"]["code"], "trend": h["form_analysis"]["trend"],
                     "hp": h.get("handicap"), "hp_resid": hw.get("residual"), "eff_hp": hw.get("eff_hp"),
@@ -314,6 +324,8 @@ def collect_day(date_str):
         with ThreadPoolExecutor(max_workers=4) as pool:
             records.extend(pool.map(enrich, jobs))
         log(f"  {date_str} {city['name']}: {len(jobs)} koşucu")
+    if failed:
+        raise IncompleteDay(f"{date_str}: alınamayan hipodrom(lar): {', '.join(failed)}")
     return records
 
 
@@ -535,9 +547,14 @@ if __name__ == "__main__":
     c.add_argument("--days", type=int, default=60)
     c.add_argument("--end", help="GG/AA/YYYY (varsayılan: dün)")
     sub.add_parser("analyze")
+    r = sub.add_parser("recollect", help="Bir günü arşivde yeniden topla (GG/AA/YYYY)")
+    r.add_argument("date")
     a = ap.parse_args()
     if a.cmd == "collect":
         collect(a.days, a.end)
+    elif a.cmd == "recollect":
+        write_day(a.date, collect_day(a.date))
+        log(f"{a.date} yeniden toplandı")
     else:
         st = analyze()
         print(json.dumps({"period": st["period"], "counts": st["counts"], "baseline": st["baseline"]}, ensure_ascii=False, indent=1))

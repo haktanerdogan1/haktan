@@ -1,5 +1,5 @@
 {
- "generated_at": "20/11/2026 00:24",
+ "generated_at": "20/11/2026 00:41",
  "period": {
   "from": "20/09/2026",
   "to": "19/11/2026",
@@ -45,11 +45,11 @@
   "model_value": {
    "label": "Model şansı halkın 1,5 katı",
    "all": {
-    "n": 2438,
-    "wins": 98,
+    "n": 2413,
+    "wins": 97,
     "win_pct": 4.0,
-    "avg_win_ganyan": 13.02,
-    "roi_pct": -47.7
+    "avg_win_ganyan": 13.05,
+    "roi_pct": -47.5
    },
    "train": {
     "n": 1626,
@@ -59,10 +59,10 @@
     "roi_pct": -39.5
    },
    "test": {
-    "n": 812,
-    "wins": 26,
+    "n": 787,
+    "wins": 25,
     "win_pct": 3.2,
-    "avg_win_ganyan": 11.24,
+    "avg_win_ganyan": 11.32,
     "roi_pct": -64.0
    }
   },
@@ -406,11 +406,11 @@
     "roi_pct": -32.0
    },
    "test": {
-    "n": 1163,
+    "n": 1164,
     "wins": 63,
     "win_pct": 5.4,
     "avg_win_ganyan": 10.68,
-    "roi_pct": -42.1
+    "roi_pct": -42.2
    }
   },
   {
@@ -502,21 +502,21 @@
  "calibration": [
   {
    "bucket": "%0–5",
-   "n": 5318,
+   "n": 5335,
    "model_avg": 1.8,
-   "actual": 4.1
+   "actual": 4.0
   },
   {
    "bucket": "%5–10",
-   "n": 2096,
+   "n": 2089,
    "model_avg": 7.2,
-   "actual": 8.6
+   "actual": 8.8
   },
   {
    "bucket": "%10–20",
-   "n": 2063,
+   "n": 2049,
    "model_avg": 14.3,
-   "actual": 14.5
+   "actual": 14.4
   },
   {
    "bucket": "%20–35",
@@ -526,8 +526,8 @@
   },
   {
    "bucket": "%35–100",
-   "n": 543,
-   "model_avg": 46.9,
+   "n": 547,
+   "model_avg": 47.1,
    "actual": 27.4
   }
  ],
@@ -537,8 +537,8 @@
   "agf_weight": 0.9,
   "model_temperature": 0.6,
   "log_likelihood_test": {
-   "model_only": -2.1779,
-   "model_calibrated": -2.0652,
+   "model_only": -2.1772,
+   "model_calibrated": -2.0615,
    "agf_only": -1.8185,
    "combined": -1.8202
   },

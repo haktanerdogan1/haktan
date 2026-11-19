@@ -46,6 +46,8 @@ jobs:
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             git commit -m "Günlük sonuç arşivi: $(date -u +%d.%m.%Y)"
+            # Bu arada main'e başka gönderim yapılmışsa üstüne al (arşiv dosyaları çakışmaz)
+            git pull --rebase origin main
             git push
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi

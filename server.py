@@ -1893,12 +1893,26 @@ def build_surprise_list(date_str, city_id):
     value = []
     ganyan_available = False
     jobs = []
+    now_tr = tr_now().replace(tzinfo=None)
+
+    def race_started(race):
+        """Başlamış/bitmiş koşu: sayfadaki ganyan artık kapanış oranıdır, öneri anlamsız."""
+        try:
+            start = datetime.strptime(f"{prog['date']} {race['time']}", "%d/%m/%Y %H:%M")
+        except (ValueError, TypeError):
+            return False
+        if start.hour < 6:  # gece yarısından sonraki (yabancı) koşular ertesi güne aittir
+            start += timedelta(days=1)
+        return now_tr >= start
+
     for race in prog["races"]:
         has_agf = sum(h["agf_pct"] for h in race["horses"]) > 10
         for h in race["horses"]:
             sim = h["simulation"]
             if sim.get("ganyan_live"):
                 ganyan_available = True
+            if race_started(race):
+                continue
             if sim.get("ev") and sim["ev"] >= ev_thr and (sim.get("market_prob") or 0) >= ev_min_p:
                 value.append({
                     "race_no": race["race_no"], "time": race["time"], "no": h["no"], "name": h["name"],
@@ -1914,6 +1928,7 @@ def build_surprise_list(date_str, city_id):
                 "race_no": race["race_no"], "time": race["time"], "no": h["no"], "name": h["name"],
                 "at_id": h.get("at_id"), "agf_pct": h["agf_pct"], "agf_rank": h["agf_rank"],
                 "win_prob": h["simulation"]["win_prob"], "fair_ganyan": h["simulation"]["fair_ganyan"],
+                "win_prob_raw": h["simulation"].get("raw_win_prob", h["simulation"]["win_prob"]),
                 "model_rank": h.get("model_rank"), "style": h["running_style"]["code"],
                 "pace": race["pace_scenario"]["code"], "trend": h["form_analysis"]["trend"],
                 "hp_resid": hw.get("residual"), "apprentice": h.get("jockey", "").upper().endswith(" AP"),
