@@ -341,6 +341,68 @@ def collect(days, end=None):
         log(f"{d} tamam • toplam {sum(len(v) for v in existing.values())} kayıt")
 
 
+# ------------------------------------------------------------------ piyasa ve kalibrasyon
+def _races(recs):
+    import collections
+    races = collections.defaultdict(list)
+    for r in recs:
+        races[(r["date"], r["city"], r["race_no"])].append(r)
+    return {k: v for k, v in races.items() if sum(x["won"] for x in v) == 1}
+
+
+def market_probs(race, agf_exp, model_exp=0.0):
+    """Benter tarzı birleşim: p ∝ AGF^b × model^a (AGF yoksa yalnız model^a)."""
+    import math
+    has_agf = sum(x["agf_pct"] for x in race) > 10
+    w = []
+    for x in race:
+        lp = model_exp * math.log(max(0.3, x["win_prob"]) / 100)
+        if has_agf:
+            lp += agf_exp * math.log(max(0.3, x["agf_pct"]) / 100)
+        w.append(math.exp(lp))
+    s = sum(w)
+    return [v / s for v in w]
+
+
+def mean_ll(races, agf_exp, model_exp):
+    import math
+    return sum(math.log(market_probs(r, agf_exp, model_exp)[[x["won"] for x in r].index(True)]) for r in races) / len(races)
+
+
+def market_analysis(recs, split):
+    races = _races(recs)
+    tr = {k: v for k, v in races.items() if datetime.strptime(k[0], "%d/%m/%Y") < split}
+    te = {k: v for k, v in races.items() if datetime.strptime(k[0], "%d/%m/%Y") >= split}
+    agf_tr = [v for v in tr.values() if sum(x["agf_pct"] for x in v) > 10]
+    agf_te = [v for v in te.values() if sum(x["agf_pct"] for x in v) > 10]
+    noagf_tr = list(tr.values())
+    grid = [x / 10 for x in range(0, 16)]
+    # AGF'li koşular: AGF ve model üsleri
+    best = max(((mean_ll(agf_tr, b, a), a, b) for a in grid for b in grid))
+    _, model_w, agf_w = best
+    # Model tek başına (AGF yokken kullanılacak) sıcaklık üssü
+    temp = max(((mean_ll([[dict(x, agf_pct=0) for x in r] for r in noagf_tr], 0, a), a) for a in grid if a > 0))[1]
+    ll = {
+        "model_only": round(mean_ll(agf_te, 0, 1.0), 4),
+        "model_calibrated": round(mean_ll(agf_te, 0, temp), 4),
+        "agf_only": round(mean_ll(agf_te, 1.0, 0), 4),
+        "combined": round(mean_ll(agf_te, agf_w, model_w), 4),
+    }
+
+    def ev_rule(rs, thr, minp):
+        bets = [(x, p) for r in rs for x, p in zip(r, market_probs(r, agf_w, model_w)) if p >= minp and p * (x["ganyan"] or 0) >= thr]
+        return roi_block([x for x, _ in bets])
+
+    ev = [{"threshold": thr, "train": ev_rule(agf_tr, thr, 0.05), "test": ev_rule(agf_te, thr, 0.05)} for thr in (1.0, 1.1, 1.2, 1.3, 1.5)]
+    eligible = [e for e in ev if e["train"]["n"] >= 80 and e["train"]["roi_pct"] is not None]  # az kazananlı eşiğe aşırı uymamak için
+    ev_thr = max(eligible, key=lambda e: e["train"]["roi_pct"])["threshold"] if eligible else 1.2
+    return {
+        "model_weight": model_w, "agf_weight": agf_w, "model_temperature": temp,
+        "log_likelihood_test": ll, "races_with_agf": {"train": len(agf_tr), "test": len(agf_te)},
+        "ev_rule": ev, "ev_threshold": ev_thr, "ev_min_prob": 0.05,
+    }
+
+
 # ------------------------------------------------------------------ ölçüm
 def roi_block(recs):
     n = len(recs)
@@ -419,6 +481,7 @@ def analyze():
                      "overlooked_train": roi_block(over_train), "overlooked_test": roi_block(over_test)},
         "signals": signals, "weights": weights, "thresholds": thresholds, "calibration": calib,
         "recommended_threshold": recommended,
+        "market": market_analysis(recs, split),
         "big_winners": [{"date": r["date"], "city": r["city"], "race_no": r["race_no"], "name": r["name"],
                          "ganyan": r["ganyan"], "agf_rank": r["agf_rank"], "signals": r["_sig"], "score": score(r)} for r in big],
         "labels": SIGNAL_LABELS,

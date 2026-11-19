@@ -300,9 +300,39 @@ function renderSurprise() {
         <div class="flex flex-wrap gap-1 mt-2">${c.signals.length ? c.signals.map(k => signalChip(k, d)).join('') : '<span class="text-[10px] text-[#78716C]">İşaret yok</span>'}</div>
       </div>`;
   };
+  const ev = d.value || [];
+  const valueCard = v => {
+    const raceIdx = STATE.program.races.findIndex(r => r.race_no === v.race_no);
+    return `
+      <div onclick="selectRace(${raceIdx}); switchTab('race'); openHorseModal(${v.no});" class="club-card-featured rounded-xl p-3.5 cursor-pointer">
+        <div class="flex items-center justify-between text-[10px] text-[#8C5A3C] font-bold mb-1"><span class="truncate">${v.race_label}</span><span class="mono">${v.time}</span></div>
+        <div class="flex items-start justify-between gap-2">
+          <div class="flex items-center gap-2 min-w-0">
+            ${v.forma_url ? `<img src="${v.forma_url}" class="w-9 h-9 rounded bg-white border border-[#D8D2C5] object-contain" onerror="this.style.display='none'" />` : ''}
+            <div class="min-w-0"><h3 class="serif-title text-base font-bold text-[#18181B] truncate">#${v.no} ${v.name}</h3>
+            <p class="text-[11px] text-[#57534E] truncate">${v.jockey} • ${v.weight}kg • AGF %${v.agf_pct} (${v.agf_rank}.)</p></div>
+          </div>
+          <div class="text-right flex-shrink-0">
+            <div class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#0F291E] text-[#F9F6F0]"><span class="text-[9px] text-[#D4AF37] font-bold">DEĞER</span><span class="text-sm font-extrabold mono">${v.ev}×</span></div>
+            <div class="text-[11px] mono font-bold text-[#0F291E] mt-0.5">Ganyan ${v.ganyan_live} • Eder ${v.fair_market_ganyan}</div>
+            <div class="text-[10px] mono text-[#57534E]">Piyasa şansı %${v.market_prob}</div>
+          </div>
+        </div>
+      </div>`;
+  };
+  const valueSection = `
+    <div class="club-card rounded-xl p-3.5 border-l-4 border-l-[#0F291E]">
+      <div class="serif-title text-sm font-bold text-[#0F291E] uppercase">💰 Değerli Ganyan</div>
+      <p class="text-[11px] text-[#57534E] mt-0.5">Altılı oyuncularının (AGF) verdiği şansa göre ganyanı olması gerekenden belirgin yüksek atlar: <strong>şans × ganyan ≥ ${d.ev_threshold}</strong>. Geçmiş 60 günde hem öğrenme hem test döneminde artıda kalan tek kural buydu (örneklem küçük; garanti değildir).</p>
+    </div>
+    ${!d.ganyan_available ? `<div class="club-card rounded-xl p-3 text-[11px] text-[#57534E]">Ganyan oranları henüz açılmadı. TJK'da bahis açıldığında (yarış günü) bu liste canlı oranlarla oluşur; ↻ Yenile ile güncelleyin.</div>`
+      : (ev.length ? ev.map(valueCard).join('') : `<div class="club-card rounded-xl p-3 text-[11px] text-[#57534E]">Şu anki ganyan oranlarında eşiği geçen at yok. Oranlar yarışa kadar değişir; ↻ Yenile ile tekrar bakın.</div>`)}
+  `;
   listEl.innerHTML = `
-    ${!d.uses_backtest ? `<div class="club-card rounded-xl px-3 py-2 text-[11px] text-[#8C5A3C] border-l-4 border-l-[#A67C37]">Not: İşaret ağırlıkları henüz geçmiş sonuçlarla ayarlanmadı; başlangıç ağırlıkları kullanılıyor.</div>` : ''}
-    <div class="text-[11px] text-[#44403C] px-1 font-semibold">${d.city_name} • ${d.date} — eşik ${d.threshold} puan: <strong class="text-[#7A1C1C]">${strong.length} güçlü aday</strong>, ${watch.length} izlemeye değer</div>
+    ${valueSection}
+    <div class="serif-title text-sm font-bold text-[#57534E] uppercase px-1 pt-2">🎯 İşaretli İhmal Edilen Atlar</div>
+    <div class="text-[11px] text-[#57534E] px-1">Bilgi amaçlı: aşağıdaki işaretlerin hiçbiri geçmiş veride halkın tahminini (AGF) tek başına geçemedi.</div>
+    <div class="text-[11px] text-[#44403C] px-1 font-semibold">${d.city_name} • ${d.date} — eşik ${d.threshold} puan: <strong class="text-[#7A1C1C]">${strong.length} aday</strong>, ${watch.length} izlemeye değer</div>
     ${strong.length ? strong.map(card).join('') : `<div class="club-card rounded-xl p-4 text-xs text-[#57534E]">Bu programda eşiği geçen sürpriz adayı yok.</div>`}
     ${watch.length ? `<div class="serif-title text-sm font-bold text-[#57534E] uppercase px-1 pt-1">İzlemeye Değer</div>${watch.slice(0, 12).map(card).join('')}` : ''}
   `;
@@ -320,7 +350,21 @@ function renderSurpriseKarne() {
   const rows = Object.entries(st.signals).sort((a, c) => (c[1].all.roi_pct ?? -999) - (a[1].all.roi_pct ?? -999));
   const roi = v => v == null ? '-' : `<span class="${v >= 0 ? 'text-[#0F291E] font-extrabold' : 'text-[#7A1C1C] font-bold'}">${v > 0 ? '+' : ''}${v}%</span>`;
   el.innerHTML = `
-    <h3 class="serif-title text-base font-bold text-[#0F291E] uppercase">📊 İşaretlerin Geçmiş Karnesi</h3>
+    <h3 class="serif-title text-base font-bold text-[#0F291E] uppercase">📊 Geçmiş Karne (${st.period.days} gün)</h3>
+    ${st.market ? `
+      <div class="bg-[#FAF8F3] rounded-lg p-2.5 border border-[#E2DDD2] my-2 text-[11px] text-[#18181B] space-y-1">
+        <div class="text-[9px] font-extrabold text-[#8C5A3C] uppercase">Ne öğrendik</div>
+        <div>• <strong>Halkın tahmini (AGF) en isabetli tahmin.</strong> Model + AGF birleşiminde modelin ağırlığı ${st.market.model_weight} çıktı; model, AGF'nin bilmediğini söylemiyor.</div>
+        <div>• Model favorilerde aşırı iddialıydı; yüzdeleri artık geçmiş veriden öğrenilen ${st.market.model_temperature} üssüyle yumuşatılıyor.</div>
+        <div>• "Değerli Ganyan" kuralı (şans × ganyan ≥ ${st.market.ev_threshold}):
+          ${st.market.ev_rule.filter(e => e.threshold === st.market.ev_threshold).map(e => `öğrenme ${e.train.n} at / ${e.train.wins} kazanan / getiri ${roi(e.train.roi_pct)}, test ${e.test.n} at / ${e.test.wins} kazanan / getiri ${roi(e.test.roi_pct)}`).join('')}.</div>
+      </div>
+      <table class="w-full text-[11px] mono mb-2">
+        <thead><tr class="text-[9px] text-[#57534E] uppercase font-sans"><th class="text-left">Şans×Ganyan</th><th class="text-right">Öğrenme at/kaz/getiri</th><th class="text-right">Test at/kaz/getiri</th></tr></thead>
+        <tbody>${st.market.ev_rule.map(e => `<tr${e.threshold === st.market.ev_threshold ? ' class="bg-[#0F291E]/10"' : ''}><td class="py-0.5">≥ ${e.threshold}${e.threshold === st.market.ev_threshold ? ' ◀' : ''}</td>
+          <td class="py-0.5 text-right">${e.train.n} / ${e.train.wins} / ${roi(e.train.roi_pct)}</td><td class="py-0.5 text-right">${e.test.n} / ${e.test.wins} / ${roi(e.test.roi_pct)}</td></tr>`).join('')}</tbody>
+      </table>
+      <div class="text-[9px] font-extrabold text-[#8C5A3C] uppercase mt-2">İşaretler (yalnız ihmal edilen atlar)</div>` : ''}
     <p class="text-[11px] text-[#57534E] mb-2">${st.period.from} – ${st.period.to} arası ${st.counts.races} yerli koşu, ${st.counts.runners} koşucu. Yalnız ihmal edilmiş atlar (AGF 4.+). Getiri: her ata 1 TL ganyan oynansaydı net kazanç/kayıp (kapanış ganyanıyla). Ağırlıklar ${st.period.test_from} öncesinden öğrenildi; "Test" sütunu sonrasını gösterir.</p>
     <div class="grid grid-cols-3 gap-2 mb-3 text-center">
       <div class="bg-[#FAF8F3] rounded-lg p-2 border border-[#E2DDD2]"><div class="text-[9px] text-[#57534E] font-bold">İHMAL EDİLENLER</div><div class="text-xs mono font-extrabold">${b.overlooked.n} at</div></div>

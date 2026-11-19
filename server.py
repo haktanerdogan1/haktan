@@ -263,6 +263,9 @@ def extract_horse_extras_from_html(html):
         at_m = re.search(r'QueryParameter_AtId=(\d+)[^>]*>\s*([^<]+)', row)
         kb_m = re.search(r'QueryParameter_KisrakBabaAdi=[^"\'>]+["\'][^>]*>\s*([^<]+)', row)
         idm_m = re.search(r'idmanpisti/Kosu\?KosuKodu=(\d+)', row)
+        gny_m = re.search(r'gunluk-GunlukYarisProgrami-Gny[^>]*>(.*?)</td>', row, re.S)
+        gny_txt = clean_cell(gny_m.group(1)) if gny_m else ""
+        gny_num = re.match(r'^(\d+(?:,\d+)?)$', gny_txt)
         if at_m:
             at_id = at_m.group(1).strip()
             raw_name = html_lib.unescape(at_m.group(2)).strip()
@@ -272,7 +275,9 @@ def extract_horse_extras_from_html(html):
                 "at_id": at_id,
                 "forma_url": forma_m.group(1) if forma_m else None,
                 "damsire": damsire,
-                "idman_kosu_kodu": idm_m.group(1) if idm_m else None
+                "idman_kosu_kodu": idm_m.group(1) if idm_m else None,
+                # Bahis açıkken TJK'nın gösterdiği güncel ganyan oranı (yarıştan sonra kapanış oranı)
+                "ganyan_live": float(gny_num.group(1).replace(",", ".")) if gny_num else None,
             }
     return extras
 
@@ -909,8 +914,23 @@ def analyze_race_quant(race, weights=None):
     total_agf = sum(h["agf_pct"] for h in horses)
     has_agf = total_agf > 10.0
 
+    # Kalibrasyon: model favorilerde aşırı iddialıydı (geçmiş veride %47 dediği at %28 kazanıyordu).
+    # Geçmiş TJK sonuçlarından öğrenilen sıcaklık üssüyle yumuşatılır: p ∝ p_model^T
+    params = (load_surprise_stats().get("market") or {})
+    temp = params.get("model_temperature") or 0.6
+    agf_w = params.get("agf_weight") or 0.9
+    raw = {h["no"]: max(0.2, win_counts[h["no"]] / n_sims * 100.0) for h in horses}
+    norm = sum(v ** temp for v in raw.values())
+    cal = {no: (v ** temp) / norm * 100.0 for no, v in raw.items()}
+    # Piyasa şansı: AGF^b (geçmiş veride en isabetli tahmin; model eklenince iyileşmedi)
+    mkt = {}
+    if has_agf:
+        wm = {h["no"]: max(0.3, h["agf_pct"]) ** agf_w for h in horses}
+        sm = sum(wm.values())
+        mkt = {no: v / sm * 100.0 for no, v in wm.items()}
+
     for h in horses:
-        win_prob = round((win_counts[h["no"]] / n_sims) * 100.0, 1)
+        win_prob = round(cal[h["no"]], 1)
         top2_prob = round((top2_counts[h["no"]] / n_sims) * 100.0, 1)
         top3_prob = round((top3_counts[h["no"]] / n_sims) * 100.0, 1)
 
@@ -928,7 +948,13 @@ def analyze_race_quant(race, weights=None):
             value_edge = 0.0
             market_odds = None
 
+        p_mkt = round(mkt[h["no"]], 1) if mkt else None
+        gl = h.get("ganyan_live")
         h["simulation"] = {
+            "raw_win_prob": round(raw[h["no"]], 1),
+            "market_prob": p_mkt,
+            "ganyan_live": gl,
+            "ev": round(p_mkt / 100.0 * gl, 2) if (p_mkt and gl) else None,
             "win_prob": win_prob,
             "top2_prob": max(win_prob, top2_prob),
             "top3_prob": max(top2_prob, top3_prob),
@@ -1854,16 +1880,34 @@ def build_surprise_list(date_str, city_id):
     """
     import backtest as BT  # döngüsel içe aktarmayı önlemek için geç yükleme
     cache_key = f"surprise_{date_str}_{city_id}"
-    cached = cache_get(cache_key, 600)
+    cached = cache_get(cache_key, 180)  # canlı ganyan oranları değiştiği için kısa
     if cached is not None:
         return cached
     prog = fetch_city_program(date_str, city_id=city_id)
     stats = load_surprise_stats()
     weights = stats.get("weights") or DEFAULT_SURPRISE_WEIGHTS
     race_date = datetime.strptime(prog["date"] or date_str, "%d/%m/%Y")
+    market = stats.get("market") or {}
+    ev_thr = market.get("ev_threshold") or 1.2
+    ev_min_p = (market.get("ev_min_prob") or 0.05) * 100
+    value = []
+    ganyan_available = False
     jobs = []
     for race in prog["races"]:
         has_agf = sum(h["agf_pct"] for h in race["horses"]) > 10
+        for h in race["horses"]:
+            sim = h["simulation"]
+            if sim.get("ganyan_live"):
+                ganyan_available = True
+            if sim.get("ev") and sim["ev"] >= ev_thr and (sim.get("market_prob") or 0) >= ev_min_p:
+                value.append({
+                    "race_no": race["race_no"], "time": race["time"], "no": h["no"], "name": h["name"],
+                    "jockey": h.get("jockey"), "weight": h["weight"], "forma_url": h.get("forma_url"),
+                    "market_prob": sim["market_prob"], "ganyan_live": sim["ganyan_live"], "ev": sim["ev"],
+                    "fair_market_ganyan": round(100.0 / sim["market_prob"], 2),
+                    "agf_pct": h["agf_pct"], "agf_rank": h["agf_rank"], "win_prob": sim["win_prob"],
+                    "race_label": f"{race['race_no']}. Koşu • {race['distance_m']}m {race['surface']} • {race.get('condition', '')}",
+                })
         for h in race["horses"]:
             hw = h.get("hp_weight") or {}
             rec = {
@@ -1914,6 +1958,8 @@ def build_surprise_list(date_str, city_id):
         "date": prog["date"], "city_name": prog["city_name"], "threshold": threshold,
         "weights": weights, "labels": BT.SIGNAL_LABELS, "uses_backtest": bool(stats.get("weights")),
         "min_win_prob": SURPRISE_MIN_WIN_PROB, "candidates": recs,
+        "value": sorted(value, key=lambda v: -v["ev"]), "ev_threshold": ev_thr,
+        "ganyan_available": ganyan_available, "market": market,
     }
     cache_set(cache_key, result)
     return result
@@ -2263,6 +2309,7 @@ def parse_tjk_csv(csv_text, html_extras=None):
                     "forma_url": extra.get("forma_url"),
                     "at_id": extra.get("at_id"),
                     "idman_kosu_kodu": extra.get("idman_kosu_kodu"),
+                    "ganyan_live": extra.get("ganyan_live"),
                     "is_ekuri": False,
                     "is_scratched": is_scratched
                 })
