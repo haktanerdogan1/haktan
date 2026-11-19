@@ -65,7 +65,8 @@ Kullanıcı bir ata tıkladığında arka planda TJK'nın 3 ayrı uç noktasına
   5. `weight_rating`: Mesafe uzadıkça logaritmik artan sıklet (kilo) avantaj/dezavantajı
   6. `fitness_rating`: KGS (Koşmadığı Gün Sayısı) dinlenme, tazelik ve kondisyon analizi
 * **Koşu Gidişatı ve Tempo Senaryosu (`infer_running_style` & `pace_scenario`):**
-  * Her ata kulvar, takı (`KG`, `DB`, `SK`), mesafe ve form yapısına göre koşu stili atar: **Kaçak (`E`)**, **Takipçi (`P`)**, **Son Düzlükçü / Spinter (`S`)**.
+  * Her ata deterministik ve açıklanabilir sinyallerle bir **Erken Hız Endeksi** hesaplar: kulvar, takı (`KG`, `DB`, `SK`/`K`), mesafe, yaş (2 yaşlı), sahaya göre en iyi derece sırası, sıklet farkı ve son koşulardaki bitiriş düzeni. Her sinyal gerekçesiyle safkan penceresinde gösterilir.
+  * Stil sahaya göre göreceli atanır (`assign_running_styles`): **Kaçak (`E`)** = endeks ≥ 60, sahanın ilk 3'ünde ve liderin en fazla 6 puan gerisinde; **Son Düzlükçü / Spinter (`S`)** = endeks < 46 ya da sahanın son %30'unda; diğerleri **Takipçi (`P`)**.
   * Koşuda tek kaçak varsa **`LONE_SPEED` (Tek Kaçak / Beyaz Bayrak-Ayna Avantajı)**, 3 veya daha fazla kaçak varsa **`SPEED_DUEL` (Çok Sert Tempo / Spinter Avantajı)** senaryosunu kurar ve atların puanlarını gidişata göre günceller.
 * **Monte Carlo Simülasyonu & Cazip Safkan (Value) Tespiti:**
   * Her atın ortalama puanı ve istikrarına (standart sapma) göre koşuyu olasılıksal simüle ederek **Kazanma %**, **İlk 2 %**, **İlk 3 (Tabela) %** ve **Eder Ganyan** üretir.
@@ -79,5 +80,9 @@ Kullanıcı bir ata tıkladığında arka planda TJK'nın 3 ayrı uç noktasına
   1. **📖 Bülten:** Koşu özeti, Öne Çıkan İlk 4, Küçük/Orta/Geniş Kupon Şablonu, Safkan Kartları ve Başhandikapçı Notları.
   2. **⏱️ Tempo:** Koşu gidişatı analizi, İlk 600m piste yayılış şeması ve İhtimal/Eder Ganyan tablosu.
   3. **🏛️ Cazip Atlar:** Tüm koşulardaki AGF oranına göre en yüksek şans farkı taşıyan sürpriz adayları.
-  4. **🎫 6'lı Kurgu:** Küçük, Orta veya Geniş ölçekli stratejiye göre otomatik 6'lı Ganyan kupon kurucu ve interaktif kombinasyon/tutar hesaplayıcı.
+  4. **🎫 6'lı Kurgu:** Ayaklar TJK dipnotundaki *"6'LI GANYAN Bu koşudan başlar"* işaretinden kurulur (`build_altili_groups`); günde iki altılı varsa seçici çıkar. İşaret yoksa son 6 koşu kullanılır ve bu açıkça belirtilir. Küçük, Orta veya Geniş ölçekli stratejiye göre otomatik 6'lı Ganyan kupon kurucu ve interaktif kombinasyon/tutar hesaplayıcı.
   5. **⚖️ Kıyasla:** İki safkanı 8 kriterde başa baş terazi barlarıyla kıyaslama + Sağ üstte **Başhandikapçı Terazi Ayarı** (kriter ağırlıklarını canlı değiştirme).
+
+### 6. Başhandikapçı Terazisi (Tek Doğruluk Kaynağı)
+* Varsayılan ağırlıklar `server.py` içindeki `DEFAULT_WEIGHTS` ile sürgüler birebir aynıdır: Kronometre **25**, Form **24**, Klas **18**, Jokey **14**, Sıklet + KGS **19** (iç oran 10:9).
+* Terazi değiştirildiğinde ön yüz `/api/program?w=25,24,18,14,19` biçiminde sunucuya gönderir; sunucu önbellekteki bülteni bozmadan **tüm analizi** (bileşik puan, tempo düzeltmesi, Monte Carlo İlk 2 / Tabela %, rol rozetleri, kupon ölçekleri) yeniden yapar. Ayar tarayıcıda hatırlanır.

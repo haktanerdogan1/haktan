@@ -187,6 +187,11 @@
             <p class="text-[11px] text-[#57534E]">Bütçenize ve oyun tarzınıza göre ayaklardaki Banko, Plase ve Sürpriz dağılımı.</p>
           </div>
 
+          <div id="altiliGroupPicker" class="hidden mb-2.5 bg-[#F6F3EC] p-2.5 rounded-lg border border-[#D8D2C5]">
+            <label class="text-[10px] text-[#57534E] uppercase font-bold block mb-1">Altılı Seçimi</label>
+            <select id="altiliGroup" onchange="selectAltiliGroup(this.value)" class="w-full bg-transparent text-xs font-bold text-[#0F291E] focus:outline-none"></select>
+          </div>
+
           <div class="grid grid-cols-2 gap-2.5 mb-3">
             <div class="bg-[#F6F3EC] p-2.5 rounded-lg border border-[#D8D2C5]">
               <label class="text-[10px] text-[#57534E] uppercase font-bold block mb-1">Kupon Ölçeği</label>
@@ -204,6 +209,8 @@
 
           <div id="altiliStatsBar" class="grid grid-cols-3 gap-2 p-2.5 rounded-lg bg-[#0F291E] text-[#F9F6F0] text-center"></div>
         </div>
+
+        <div id="altiliGroupNote"></div>
 
         <div id="altiliLegsContainer" class="space-y-2.5"></div>
       </section>
@@ -245,7 +252,7 @@
         <div class="flex items-center justify-between mb-3">
           <div>
             <h3 class="serif-title text-lg font-bold text-[#0F291E]">⚖️ Başhandikapçı Terazi Ayarı</h3>
-            <p class="text-[11px] text-[#57534E]">Bülten puanlamasında hangi kritere ne kadar ağırlık verileceğini belirleyin.</p>
+            <p class="text-[11px] text-[#57534E]">Bülten puanlamasında hangi kritere ne kadar ağırlık verileceğini belirleyin. Değişiklikte tempo, Monte Carlo, rozetler ve kupon ölçekleri yeniden hesaplanır.</p>
           </div>
           <button onclick="closeWeightsModal()" class="w-8 h-8 rounded-full bg-[#E8E3D8] text-[#18181B] font-bold">✕</button>
         </div>
@@ -256,20 +263,20 @@
             <input id="wSpeed" type="range" min="5" max="50" value="25" oninput="updateWeightLabels()" class="w-full accent-[#0F291E]" />
           </div>
           <div>
-            <div class="flex justify-between mb-1 font-semibold"><span>📈 Son 6 Koşu Formu &amp; Pist Uyumu</span><span id="lbl-wForm" class="mono text-[#0F291E] font-bold">25%</span></div>
-            <input id="wForm" type="range" min="5" max="50" value="25" oninput="updateWeightLabels()" class="w-full accent-[#0F291E]" />
+            <div class="flex justify-between mb-1 font-semibold"><span>📈 Son 6 Koşu Formu &amp; Pist Uyumu</span><span id="lbl-wForm" class="mono text-[#0F291E] font-bold">24%</span></div>
+            <input id="wForm" type="range" min="5" max="50" value="24" oninput="updateWeightLabels()" class="w-full accent-[#0F291E]" />
           </div>
           <div>
-            <div class="flex justify-between mb-1 font-semibold"><span>🏆 Handikap &amp; Grup Klası</span><span id="lbl-wClass" class="mono text-[#0F291E] font-bold">20%</span></div>
-            <input id="wClass" type="range" min="5" max="50" value="20" oninput="updateWeightLabels()" class="w-full accent-[#0F291E]" />
+            <div class="flex justify-between mb-1 font-semibold"><span>🏆 Handikap &amp; Grup Klası</span><span id="lbl-wClass" class="mono text-[#0F291E] font-bold">18%</span></div>
+            <input id="wClass" type="range" min="5" max="50" value="18" oninput="updateWeightLabels()" class="w-full accent-[#0F291E]" />
           </div>
           <div>
-            <div class="flex justify-between mb-1 font-semibold"><span>🏇 Jokey &amp; Eküri İstikrarı (s20)</span><span id="lbl-wJockey" class="mono text-[#0F291E] font-bold">15%</span></div>
-            <input id="wJockey" type="range" min="5" max="40" value="15" oninput="updateWeightLabels()" class="w-full accent-[#0F291E]" />
+            <div class="flex justify-between mb-1 font-semibold"><span>🏇 Jokey &amp; Eküri İstikrarı (s20)</span><span id="lbl-wJockey" class="mono text-[#0F291E] font-bold">14%</span></div>
+            <input id="wJockey" type="range" min="5" max="40" value="14" oninput="updateWeightLabels()" class="w-full accent-[#0F291E]" />
           </div>
           <div>
-            <div class="flex justify-between mb-1 font-semibold"><span>⚖️ Sıklet (Kilo) &amp; KGS Tazeliği</span><span id="lbl-wWeight" class="mono text-[#0F291E] font-bold">15%</span></div>
-            <input id="wWeight" type="range" min="5" max="40" value="15" oninput="updateWeightLabels()" class="w-full accent-[#0F291E]" />
+            <div class="flex justify-between mb-1 font-semibold"><span>⚖️ Sıklet (Kilo) &amp; KGS Tazeliği</span><span id="lbl-wWeight" class="mono text-[#0F291E] font-bold">19%</span></div>
+            <input id="wWeight" type="range" min="5" max="40" value="19" oninput="updateWeightLabels()" class="w-full accent-[#0F291E]" />
           </div>
         </div>
 

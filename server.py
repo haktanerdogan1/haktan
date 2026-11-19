@@ -21,6 +21,7 @@ import io
 import json
 import math
 import random
+import copy
 import html as html_lib
 import urllib.request
 import urllib.parse
@@ -45,6 +46,38 @@ ELITE_JOCKEYS = {
     "M.AKYAVUZ": 87, "E.AKTUĞ": 86, "H.ŞİMŞEK": 84, "A.KÜRÜNDÜK": 85,
     "F.ÇETİNBAŞ": 85, "S.BOYRAZ": 87, "M.HAMEDİ": 84, "İ.S.SÖĞÜT": 83,
 }
+
+# Başhandikapçı Terazisi varsayılan ağırlıkları (ön yüz sürgüleri ile birebir aynı).
+# "weight" sürgüsü Sıklet + KGS tazeliğini birlikte temsil eder (iç oran 10:9).
+DEFAULT_WEIGHTS = {"speed": 25.0, "form": 24.0, "class": 18.0, "jockey": 14.0, "weight": 19.0}
+WEIGHT_KEYS = ["speed", "form", "class", "jockey", "weight"]
+
+
+def normalize_weights(weights):
+    w = dict(DEFAULT_WEIGHTS)
+    if weights:
+        for k in WEIGHT_KEYS:
+            try:
+                w[k] = max(0.0, min(100.0, float(weights.get(k, w[k]))))
+            except (TypeError, ValueError):
+                pass
+    if sum(w.values()) <= 0:
+        w = dict(DEFAULT_WEIGHTS)
+    return w
+
+
+def parse_weights_param(raw):
+    """'25,24,18,14,19' -> dict; hatalı/eksikse None"""
+    if not raw:
+        return None
+    parts = raw.split(",")
+    if len(parts) != len(WEIGHT_KEYS):
+        return None
+    try:
+        return normalize_weights({k: float(v) for k, v in zip(WEIGHT_KEYS, parts)})
+    except ValueError:
+        return None
+
 
 TAKI_CODES = {"KG", "DB", "SK", "SKG", "GKR", "K", "YP", "ÖG", "BB", "ÇB", "SGKR"}
 
@@ -263,58 +296,154 @@ def parse_son6(son6_str, current_surface_code):
     }
 
 
-def infer_running_style(horse, distance_m):
+def build_field_context(horses):
     """
-    Infers running style (E: Kaçak/Önde, P: Takipçi/Presser, S: Spinter/Son Düzlük)
-    using Start No, Equipment (KG/DB), Age, Distance, and Recent Form pattern.
+    Koşu stili için saha bağlamı: en iyi derece sıralaması ve ortalama sıklet.
+    Stil tespiti atın kendi verisini sahadaki rakiplerine göre değerlendirir.
     """
+    timed = sorted((h["best_time_sec"], h["no"]) for h in horses if h.get("best_time_sec"))
+    time_rank = {no: idx for idx, (_, no) in enumerate(timed)}
+    weights = [h["weight"] for h in horses if h.get("weight", 0) > 0]
+    return {
+        "time_rank": time_rank,
+        "timed_count": len(timed),
+        "avg_weight": (sum(weights) / len(weights)) if weights else 57.0,
+    }
+
+
+def infer_running_style(horse, distance_m, field=None):
+    """
+    Koşu stili (E: Kaçak/Önde, P: Takipçi, S: Son Düzlükçü) tespiti.
+    Tamamen deterministik ve açıklanabilir sinyaller kullanır:
+    kulvar, takılar (KG/DB/SK/K), mesafe, yaş, sahaya göre en iyi derece sırası,
+    sıklet farkı ve son koşulardaki bitiriş düzeni.
+    Her sinyal `factors` listesinde gerekçesiyle döner.
+    """
+    field = field or {}
     st_num = horse["start_no"]
     eq = horse["equipment"]
     son6_items = horse["form_analysis"]["items"]
+    factors = []
 
-    # Deterministic analytical score for early speed
-    early_speed_index = 50.0
-    if st_num <= 3:
-        early_speed_index += 14.0
+    def add(points, text):
+        nonlocal idx
+        idx += points
+        factors.append(f"{text} ({'+' if points >= 0 else ''}{points:g})")
+
+    idx = 50.0
+
+    # Kulvar: iç kulvar erken pozisyon almayı kolaylaştırır
+    if st_num <= 2:
+        add(10, f"İç kulvar St:{st_num}")
+    elif st_num <= 4:
+        add(6, f"İç-orta kulvar St:{st_num}")
     elif st_num <= 6:
-        early_speed_index += 5.0
-    elif st_num >= 9:
-        early_speed_index -= 10.0
+        add(2, f"Orta kulvar St:{st_num}")
+    elif st_num >= 10:
+        add(-8, f"Dış kulvar St:{st_num}")
+    elif st_num >= 8:
+        add(-4, f"Dış-orta kulvar St:{st_num}")
 
+    # Takılar
     if "KG" in eq:
-        early_speed_index += 11.0
-    if "SK" in eq or "K" in eq:
-        early_speed_index -= 6.0
+        add(9, "Kapalı gözlük (KG) erken hız")
     if "DB" in eq:
-        early_speed_index += 4.0
+        add(3, "Dil bağı (DB)")
+    if "SK" in eq or "K" in eq:
+        add(-5, "Kulaklık (sakin koşturma)")
 
-    if distance_m <= 1400:
-        early_speed_index += 6.0
+    # Mesafe
+    if distance_m <= 1200:
+        add(8, f"Kısa mesafe {distance_m}m")
+    elif distance_m <= 1400:
+        add(4, f"Sprint mesafe {distance_m}m")
+    elif distance_m >= 2200:
+        add(-10, f"Uzun mesafe {distance_m}m")
     elif distance_m >= 1900:
-        early_speed_index -= 7.0
+        add(-6, f"Orta-uzun mesafe {distance_m}m")
 
-    # Hash variation by horse name & sire so each horse has distinct style signature
-    name_hash = sum(ord(c) for c in (horse["name"] + horse["sire"])) % 27 - 13
-    early_speed_index += name_hash
+    # Yaş: 2 yaşlılar genelde ön tarafta koşar
+    age_m = re.match(r"\s*(\d+)", str(horse.get("age", "")))
+    if age_m and int(age_m.group(1)) == 2:
+        add(4, "2 yaşlı (genç hız)")
 
-    if son6_items and son6_items[-1]["pos"] == 1:
-        early_speed_index += 5.0
+    # Sahaya göre en iyi derece: hızlı atlar ön grupta yer alır
+    tr = field.get("time_rank", {})
+    n_timed = field.get("timed_count", 0)
+    if horse["no"] in tr and n_timed >= 3:
+        rank = tr[horse["no"]]
+        if rank < n_timed / 3.0:
+            add(6, f"Sahanın en hızlı derecelerinden ({rank + 1}/{n_timed})")
+        elif rank >= n_timed * 2.0 / 3.0:
+            add(-4, f"Derece olarak sahanın gerisinde ({rank + 1}/{n_timed})")
 
-    if early_speed_index >= 60:
-        return {"code": "E", "label": "Kaçak (Önde)", "early_speed": round(min(98, early_speed_index + 18), 1)}
-    elif early_speed_index >= 45:
-        return {"code": "P", "label": "Takipçi (Presser)", "early_speed": round(min(88, early_speed_index + 12), 1)}
-    else:
-        return {"code": "S", "label": "Spinter (Bekleme)", "early_speed": round(max(25, early_speed_index), 1)}
+    # Sıklet: hafif kilo erken tempoyu kolaylaştırır
+    avg_w = field.get("avg_weight")
+    if avg_w and horse.get("weight", 0) > 0:
+        wd = horse["weight"] - avg_w
+        if wd <= -2.0:
+            add(3, f"Hafif sıklet ({horse['weight']}kg)")
+        elif wd >= 2.5:
+            add(-3, f"Ağır sıklet ({horse['weight']}kg)")
+
+    # Son koşu düzeni
+    if son6_items:
+        if son6_items[-1]["pos"] == 1:
+            add(5, "Son koşusunu kazandı")
+        last3 = [it["pos"] for it in son6_items[-3:]]
+        if len(last3) >= 2 and sum(last3) / len(last3) <= 3.0:
+            add(4, "Son koşularda sürekli ön grupta")
+        elif len(last3) >= 2 and sum(last3) / len(last3) >= 7.0:
+            add(-3, "Son koşularda geride bitirdi")
+
+    return {"index": round(idx, 1), "factors": factors}
 
 
-def analyze_race_quant(race):
+STYLE_LABELS = {"E": "Kaçak (Önde)", "P": "Takipçi (Presser)", "S": "Spinter (Bekleme)"}
+
+
+def assign_running_styles(horses):
+    """
+    Erken hız endekslerini sahaya göre sınıflandırır. Mutlak eşik tek başına yetmez:
+    bir koşuda öne ancak birkaç at geçebilir.
+    - Kaçak (E): endeksi >= 60, sahanın ilk 3'ünde ve liderin en fazla 6 puan gerisinde
+    - Son Düzlükçü (S): endeksi < 46 ya da sahanın son %30'unda
+    - Diğerleri Takipçi (P)
+    """
+    ranked = sorted(horses, key=lambda h: (-h["running_style"]["index"], h["start_no"]))
+    n = len(ranked)
+    if not n:
+        return
+    top_idx = ranked[0]["running_style"]["index"]
+    s_from = n - max(1, int(round(n * 0.3))) if n >= 4 else n
+    for rank, h in enumerate(ranked):
+        rs = h["running_style"]
+        idx = rs["index"]
+        if idx >= 60 and rank < 3 and idx >= top_idx - 6:
+            code = "E"
+        elif idx < 46 or rank >= s_from:
+            code = "S"
+        else:
+            code = "P"
+        if code == "E":
+            es = min(98.0, idx + 18)
+        elif code == "P":
+            es = min(88.0, idx + 12)
+        else:
+            es = max(25.0, min(60.0, idx))
+        rs.update({"code": code, "label": STYLE_LABELS[code],
+                   "early_speed": round(es, 1), "field_rank": rank + 1})
+
+
+def analyze_race_quant(race, weights=None):
     """
     Performs the deep quantitative analysis & 10,000-run Monte Carlo simulation on a single race.
     """
     horses = race["horses"]
     if not horses:
         return race
+    w = normalize_weights(weights)
+    w_total = sum(w.values())
 
     distance = race.get("distance_m", 1600) or 1600
     surface = race.get("surface", "Kum")
@@ -333,10 +462,10 @@ def analyze_race_quant(race):
     avg_weight = sum(valid_weights) / len(valid_weights) if valid_weights else 57.0
 
     # Step 1: Enrich each horse with individual sub-scores
+    field_ctx = build_field_context(horses)
     for h in horses:
         h["form_analysis"] = parse_son6(h["son6"], surf_code)
-        style_info = infer_running_style(h, distance)
-        h["running_style"] = style_info
+        h["running_style"] = infer_running_style(h, distance, field_ctx)
 
         # 1. Speed Figure (Beyer-style 0-100)
         if h["best_time_sec"]:
@@ -410,6 +539,8 @@ def analyze_race_quant(race):
             "eq_bonus": round(eq_bonus, 1)
         }
 
+    assign_running_styles(horses)
+
     # Step 2: Pace Scenario Simulation (Tempo Haritası)
     front_runners = [h for h in horses if h["running_style"]["code"] == "E"]
     pressers = [h for h in horses if h["running_style"]["code"] == "P"]
@@ -457,13 +588,14 @@ def analyze_race_quant(race):
 
         m["pace_adjustment"] = round(pace_adj, 1)
 
+        # Terazi ağırlıkları: "weight" sürgüsü Sıklet (10/19) + KGS Tazeliği (9/19)
         composite = (
-            m["speed_figure"] * 0.25 +
-            m["form_rating"] * 0.24 +
-            m["class_rating"] * 0.18 +
-            m["jockey_rating"] * 0.14 +
-            m["weight_rating"] * 0.10 +
-            m["fitness_rating"] * 0.09 +
+            m["speed_figure"] * (w["speed"] / w_total) +
+            m["form_rating"] * (w["form"] / w_total) +
+            m["class_rating"] * (w["class"] / w_total) +
+            m["jockey_rating"] * (w["jockey"] / w_total) +
+            m["weight_rating"] * (w["weight"] / w_total) * (10.0 / 19.0) +
+            m["fitness_rating"] * (w["weight"] / w_total) * (9.0 / 19.0) +
             m["post_bonus"] * 0.5 +
             m["eq_bonus"] * 0.5 +
             pace_adj
@@ -603,6 +735,7 @@ def analyze_race_quant(race):
         else:
             h["role_badge"] = {"label": "ZAYIF İHTİMAL", "type": "out"}
 
+    race["weights"] = w
     race["top_picks"] = [h["no"] for h in sorted_horses[:4]]
     race["banko_confidence"] = round(top_prob - second_prob, 1)
 
@@ -956,6 +1089,47 @@ def fetch_horse_bankomat_sheet(at_id, today_weight=57.0, target_dist=1200, is_ar
     return result
 
 
+ALTILI_RE = re.compile(r"6\s*['’`´]?\s*L[Iİı]\s*GANYAN", re.I)
+
+
+def handle_race_footer(race, line):
+    """Koşu dipnotu: eküri bilgisi ve bahis türleri (örn. "6'LI GANYAN Bu koşudan başlar")."""
+    race["bet_info"] = (race["bet_info"] + " " + line).strip() if race["bet_info"] else line
+    if ALTILI_RE.search(line):
+        race["is_altili_start"] = True
+    ek_matches = re.findall(r'\((\d+)\)', line)
+    if "eküridir" in line.lower() and ek_matches:
+        ek_nos = {int(x) for x in ek_matches}
+        cut = line.lower().index("eküridir") + len("eküridir")
+        race["ekuri_info"] = line[:cut].rstrip(" .") + "."
+        for h in race["horses"]:
+            if h["no"] in ek_nos:
+                h["is_ekuri"] = True
+
+
+def build_altili_groups(races):
+    """
+    TJK dipnotlarındaki "6'LI GANYAN Bu koşudan başlar" işaretlerine göre altılı ayaklarını kurar.
+    Bir günde birden fazla altılı olabilir (örn. 1. ve 2. Altılı). İşaret yoksa son 6 koşu kullanılır.
+    Dönen her grup: {label, start_race_no, race_indices[6], source}
+    """
+    groups = []
+    starts = [i for i, r in enumerate(races) if r.get("is_altili_start")]
+    for n, si in enumerate(starts):
+        idxs = list(range(si, min(si + 6, len(races))))
+        if len(idxs) < 6:
+            continue
+        label = f"{n + 1}. Altılı" if len(starts) > 1 else "Altılı Ganyan"
+        groups.append({"label": label, "start_race_no": races[si]["race_no"],
+                       "race_indices": idxs, "source": "tjk"})
+    if not groups and races:
+        si = max(0, len(races) - 6)
+        groups.append({"label": "Altılı Ganyan (Tahmini: Son 6 Koşu)",
+                       "start_race_no": races[si]["race_no"],
+                       "race_indices": list(range(si, len(races))), "source": "fallback"})
+    return groups
+
+
 def parse_tjk_csv(csv_text, html_extras=None):
     """
     Parses the complete TJK Daily Race Program CSV into structured races and horses,
@@ -975,6 +1149,7 @@ def parse_tjk_csv(csv_text, html_extras=None):
     races = []
     current_race = None
     in_horses = False
+    after_horses = False
 
     i = 1
     while i < len(lines):
@@ -1024,9 +1199,11 @@ def parse_tjk_csv(csv_text, html_extras=None):
                 "prizes": [],
                 "bet_info": "",
                 "ekuri_info": "",
+                "is_altili_start": False,
                 "horses": []
             }
             in_horses = False
+            after_horses = False
             i += 1
             continue
 
@@ -1124,16 +1301,13 @@ def parse_tjk_csv(csv_text, html_extras=None):
                     "is_ekuri": False
                 })
             else:
-                # Footer line with Eküri & Bet types (e.g. "6'LI GANYAN Bu koşudan başlar")
+                # Atlar bitti; bu ve sonraki satırlar koşu dipnotudur
                 in_horses = False
-                current_race["bet_info"] = line
-                ek_matches = re.findall(r'\((\d+)\)', line)
-                if "eküridir" in line.lower() and ek_matches:
-                    ek_nos = {int(x) for x in ek_matches}
-                    current_race["ekuri_info"] = line.split("eküridir.")[0] + "eküridir."
-                    for h in current_race["horses"]:
-                        if h["no"] in ek_nos:
-                            h["is_ekuri"] = True
+                after_horses = True
+                handle_race_footer(current_race, line)
+        elif after_horses:
+            # Eküri ve bahis dipnotları birden fazla satıra yayılabilir
+            handle_race_footer(current_race, line)
         i += 1
 
     if current_race:
@@ -1144,6 +1318,7 @@ def parse_tjk_csv(csv_text, html_extras=None):
         analyze_race_quant(r)
 
     return {
+        "altili_groups": build_altili_groups(races),
         "city": city_name,
         "meeting_day": meeting_day,
         "date": race_date,
@@ -1213,6 +1388,16 @@ def fetch_city_program(date_str, city_id=None, city_name=None):
     return program_data
 
 
+def reweight_program(program_data, weights):
+    """Önbellekteki bülteni bozmadan, verilen terazi ağırlıklarıyla tüm koşuları yeniden analiz eder
+    (bileşik puan, tempo düzeltmesi, Monte Carlo, rol rozetleri ve kupon ölçekleri dahil)."""
+    data = copy.deepcopy(program_data)
+    for r in data["races"]:
+        analyze_race_quant(r, weights)
+    data["weights"] = normalize_weights(weights)
+    return data
+
+
 class TurfQuantHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=STATIC_DIR, **kwargs)
@@ -1258,6 +1443,12 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
 
             try:
                 data = fetch_city_program(date_str, city_id=city_id, city_name=city_name)
+                weights = parse_weights_param(params.get("w", [None])[0])
+                if weights and weights != DEFAULT_WEIGHTS:
+                    data = reweight_program(data, weights)
+                else:
+                    data = dict(data, weights=dict(DEFAULT_WEIGHTS))
+                data["default_weights"] = dict(DEFAULT_WEIGHTS)
                 body = json.dumps({"ok": True, "data": data}, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")

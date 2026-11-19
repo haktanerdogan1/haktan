@@ -10,14 +10,24 @@ let STATE = {
   activeTab: 'race',
   sortMode: 'quant', // 'quant' | 'agf' | 'no'
   altiliSelections: {},
-  weights: { speed: 25, form: 25, class: 20, jockey: 15, weight: 15 }
+  altiliGroupIdx: 0,
+  weights: null // null = sunucu varsayılanı; sunucu tek doğruluk kaynağıdır
 };
+
+const WEIGHT_KEYS = ['speed', 'form', 'class', 'jockey', 'weight'];
+const WEIGHT_INPUTS = { speed: 'wSpeed', form: 'wForm', class: 'wClass', jockey: 'wJockey', weight: 'wWeight' };
+const FALLBACK_DEFAULT_WEIGHTS = { speed: 25, form: 24, class: 18, jockey: 14, weight: 19 };
+
+try {
+  const saved = JSON.parse(localStorage.getItem('padok_weights') || 'null');
+  if (saved && WEIGHT_KEYS.every(k => typeof saved[k] === 'number')) STATE.weights = saved;
+} catch (e) { /* tarayıcı depolaması kapalı olabilir */ }
 
 document.addEventListener('DOMContentLoaded', () => {
   loadProgram();
 });
 
-async function loadProgram(cityId = null, forceRefresh = false) {
+async function loadProgram(cityId = null, forceRefresh = false, opts = {}) {
   const loadingEl = document.getElementById('loadingOverlay');
   const mainEl = document.getElementById('mainContent');
   loadingEl.classList.remove('hidden');
@@ -26,14 +36,22 @@ async function loadProgram(cityId = null, forceRefresh = false) {
   try {
     let url = `/api/program?refresh=${forceRefresh ? '1' : '0'}`;
     if (cityId) url += `&city_id=${encodeURIComponent(cityId)}`;
+    if (STATE.weights) url += `&w=${WEIGHT_KEYS.map(k => STATE.weights[k]).join(',')}`;
 
     const res = await fetch(url);
     const json = await res.json();
     if (!json.ok) throw new Error(json.error || 'Bülten verisi alınamadı');
 
+    const sameCity = String(STATE.currentCityId) === String(json.data.city_id);
     STATE.program = json.data;
     STATE.currentCityId = json.data.city_id;
-    STATE.currentRaceIndex = 0;
+    if (!(opts.keepRace && sameCity) || STATE.currentRaceIndex >= json.data.races.length) {
+      STATE.currentRaceIndex = 0;
+    }
+    if (!(opts.keepRace && sameCity) || STATE.altiliGroupIdx >= (json.data.altili_groups || []).length) {
+      STATE.altiliGroupIdx = 0;
+    }
+    syncWeightSliders(json.data.weights);
 
     renderHeaderAndTabs();
     renderCurrentRace();
@@ -87,7 +105,7 @@ function renderRacePills() {
   const raceContainer = document.getElementById('raceTabs');
   raceContainer.innerHTML = p.races.map((r, idx) => {
     const active = idx === STATE.currentRaceIndex;
-    const isAltiliStart = (r.bet_info || '').includes("6'LI GANYAN");
+    const isAltiliStart = !!r.is_altili_start;
     return `
       <button onclick="selectRace(${idx})"
         class="px-2.5 py-1 rounded-md text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1 ${
@@ -525,11 +543,57 @@ function renderValueRadar() {
   }).join('');
 }
 
+function getAltiliGroup() {
+  const p = STATE.program;
+  const groups = (p && p.altili_groups) || [];
+  if (groups.length) return groups[Math.min(STATE.altiliGroupIdx, groups.length - 1)];
+  // Eski sunucu yanıtı için yedek: son 6 koşu
+  const start = Math.max(0, p.races.length - 6);
+  return { label: 'Altılı Ganyan (Tahmini: Son 6 Koşu)', source: 'fallback',
+           race_indices: p.races.slice(start).map((_, i) => start + i) };
+}
+
+function getAltiliRaces() {
+  return getAltiliGroup().race_indices.map(i => STATE.program.races[i]).filter(Boolean);
+}
+
+function selectAltiliGroup(idx) {
+  STATE.altiliGroupIdx = parseInt(idx, 10) || 0;
+  generateAltiliTicket();
+}
+
+function renderAltiliGroupPicker() {
+  const groups = STATE.program.altili_groups || [];
+  const picker = document.getElementById('altiliGroupPicker');
+  const sel = document.getElementById('altiliGroup');
+  if (picker && sel) {
+    if (groups.length > 1) {
+      sel.innerHTML = groups.map((g, i) => {
+        const races = g.race_indices.map(ri => STATE.program.races[ri]);
+        const first = races[0], last = races[races.length - 1];
+        return `<option value="${i}">${g.label} • ${first.race_no}.–${last.race_no}. Koşular (${first.time})</option>`;
+      }).join('');
+      sel.value = String(STATE.altiliGroupIdx);
+      picker.classList.remove('hidden');
+    } else {
+      picker.classList.add('hidden');
+    }
+  }
+  const note = document.getElementById('altiliGroupNote');
+  if (note) {
+    const g = getAltiliGroup();
+    note.innerHTML = g.source === 'fallback'
+      ? `<div class="club-card rounded-xl px-3 py-2 text-[11px] text-[#7A1C1C] border-l-4 border-l-[#7A1C1C]">TJK bülteninde "6'LI GANYAN Bu koşudan başlar" işareti bulunamadı; ayaklar tahmini olarak günün son 6 koşusundan kuruldu.</div>`
+      : '';
+  }
+}
+
 function generateAltiliTicket() {
   const p = STATE.program;
   if (!p || !p.races.length) return;
 
-  const altiliRaces = p.races.length >= 6 ? p.races.slice(p.races.length - 6) : p.races;
+  renderAltiliGroupPicker();
+  const altiliRaces = getAltiliRaces();
   const strategy = document.getElementById('altiliStrategy').value;
 
   const legOrder = altiliRaces.map((r, idx) => ({
@@ -578,9 +642,7 @@ function toggleAltiliHorse(legIdx, horseNo) {
   } else {
     set.add(horseNo);
   }
-  const p = STATE.program;
-  const altiliRaces = p.races.length >= 6 ? p.races.slice(p.races.length - 6) : p.races;
-  renderAltiliLegs(altiliRaces);
+  renderAltiliLegs(getAltiliRaces());
   updateAltiliCost();
 }
 
@@ -628,7 +690,7 @@ function renderAltiliLegs(altiliRaces) {
 function updateAltiliCost() {
   const p = STATE.program;
   if (!p) return;
-  const altiliRaces = p.races.length >= 6 ? p.races.slice(p.races.length - 6) : p.races;
+  const altiliRaces = getAltiliRaces();
   const unitCost = parseFloat(document.getElementById('altiliUnitCost').value) || 1.25;
 
   let combinations = 1;
@@ -728,6 +790,19 @@ function openHorseModal(horseNo) {
       <div><span class="text-[#57534E]">KGS (Dinlenme):</span> <strong class="text-[#0F291E]">${h.metrics.kgs_status}</strong></div>
       <div><span class="text-[#57534E]">En İyi Derece:</span> <strong class="text-[#7A1C1C] mono">${h.best_time || 'İlk / Kayıtsız'}</strong></div>
     </div>
+
+    <!-- Koşu Stili Gerekçesi -->
+    ${(h.running_style.factors && h.running_style.factors.length) ? `
+      <div class="bg-white rounded-xl p-3 border border-[#D8D2C5] mb-3.5">
+        <div class="flex items-center justify-between mb-1.5">
+          <h4 class="serif-title text-sm font-bold text-[#0F291E] uppercase">🏁 Koşu Stili: ${h.running_style.label}</h4>
+          <span class="text-[10px] mono text-[#57534E] font-bold">Erken Hız Endeksi ${h.running_style.index} • Sahada ${h.running_style.field_rank}.</span>
+        </div>
+        <div class="flex flex-wrap gap-1">
+          ${h.running_style.factors.map(f => `<span class="px-1.5 py-0.5 rounded bg-[#FAF8F3] border border-[#E2DDD2] text-[10px] text-[#44403C]">${f}</span>`).join('')}
+        </div>
+      </div>
+    ` : ''}
 
     <!-- Komiser / Başhandikapçı Değerlendirmesi -->
     <div class="bg-[#F7F1E3] border border-[#A67C37]/50 rounded-xl p-3 mb-3.5">
@@ -1097,64 +1172,37 @@ function closeWeightsModal() {
 }
 
 function updateWeightLabels() {
-  ['wSpeed', 'wForm', 'wClass', 'wJockey', 'wWeight'].forEach(id => {
+  Object.values(WEIGHT_INPUTS).forEach(id => {
     const val = document.getElementById(id).value;
     document.getElementById(`lbl-${id}`).textContent = `${val}%`;
   });
 }
 
-function resetWeights() {
-  document.getElementById('wSpeed').value = 25;
-  document.getElementById('wForm').value = 25;
-  document.getElementById('wClass').value = 20;
-  document.getElementById('wJockey').value = 15;
-  document.getElementById('wWeight').value = 15;
+function syncWeightSliders(weights) {
+  const w = weights || STATE.weights || FALLBACK_DEFAULT_WEIGHTS;
+  WEIGHT_KEYS.forEach(k => {
+    const el = document.getElementById(WEIGHT_INPUTS[k]);
+    if (el && w[k] != null) el.value = Math.round(w[k]);
+  });
   updateWeightLabels();
 }
 
+function resetWeights() {
+  syncWeightSliders((STATE.program && STATE.program.default_weights) || FALLBACK_DEFAULT_WEIGHTS);
+}
+
 function applyCustomWeights() {
-  const wS = parseFloat(document.getElementById('wSpeed').value);
-  const wF = parseFloat(document.getElementById('wForm').value);
-  const wC = parseFloat(document.getElementById('wClass').value);
-  const wJ = parseFloat(document.getElementById('wJockey').value);
-  const wW = parseFloat(document.getElementById('wWeight').value);
-  const total = (wS + wF + wC + wJ + wW) || 100;
-
-  STATE.program.races.forEach(race => {
-    let scoreSum = 0;
-    race.horses.forEach(h => {
-      const m = h.metrics;
-      const newScore = (
-        m.speed_figure * (wS / total) +
-        m.form_rating * (wF / total) +
-        m.class_rating * (wC / total) +
-        m.jockey_rating * (wJ / total) +
-        ((m.weight_rating + m.fitness_rating) / 2) * (wW / total) +
-        m.pace_adjustment +
-        m.post_bonus * 0.4 +
-        m.eq_bonus * 0.4
-      );
-      h.quant_score = Math.round(Math.max(25, Math.min(99, newScore)) * 10) / 10;
-      scoreSum += Math.exp(h.quant_score / 9.5);
-    });
-
-    race.horses.forEach(h => {
-      const prob = (Math.exp(h.quant_score / 9.5) / scoreSum) * 100;
-      h.simulation.win_prob = Math.round(prob * 10) / 10;
-      h.simulation.fair_ganyan = Math.round((100 / Math.max(0.5, h.simulation.win_prob)) * 100) / 100;
-      if (h.agf_pct > 0) {
-        h.simulation.value_edge = Math.round((h.simulation.win_prob - h.agf_pct) * 10) / 10;
-        h.simulation.is_value_bet = h.simulation.value_edge >= 4.0 && h.simulation.win_prob >= 10.0;
-      }
-    });
-
-    const sorted = [...race.horses].sort((a, b) => b.quant_score - a.quant_score);
-    sorted.forEach((h, idx) => { h.model_rank = idx + 1; });
-  });
+  const w = {};
+  WEIGHT_KEYS.forEach(k => { w[k] = parseFloat(document.getElementById(WEIGHT_INPUTS[k]).value); });
+  const defaults = (STATE.program && STATE.program.default_weights) || FALLBACK_DEFAULT_WEIGHTS;
+  const isDefault = WEIGHT_KEYS.every(k => Math.abs(w[k] - defaults[k]) < 0.01);
+  STATE.weights = isDefault ? null : w;
+  try {
+    if (STATE.weights) localStorage.setItem('padok_weights', JSON.stringify(STATE.weights));
+    else localStorage.removeItem('padok_weights');
+  } catch (e) { /* depolama kapalı */ }
 
   closeWeightsModal();
-  renderCurrentRace();
-  renderValueRadar();
-  generateAltiliTicket();
-  populateXraySelectors();
+  // Sunucu tüm analizi (tempo, Monte Carlo, rozetler, kupon ölçekleri) yeni teraziyle baştan yapar
+  loadProgram(STATE.currentCityId, false, { keepRace: true });
 }
