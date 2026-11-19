@@ -263,6 +263,7 @@ def extract_horse_extras_from_html(html):
         at_m = re.search(r'QueryParameter_AtId=(\d+)[^>]*>\s*([^<]+)', row)
         kb_m = re.search(r'QueryParameter_KisrakBabaAdi=[^"\'>]+["\'][^>]*>\s*([^<]+)', row)
         idm_m = re.search(r'idmanpisti/Kosu\?KosuKodu=(\d+)', row)
+        jk_m = re.search(r'QueryParameter_JokeyId=(\d+)', row)
         gny_m = re.search(r'gunluk-GunlukYarisProgrami-Gny[^>]*>(.*?)</td>', row, re.S)
         gny_txt = clean_cell(gny_m.group(1)) if gny_m else ""
         gny_num = re.match(r'^(\d+(?:,\d+)?)$', gny_txt)
@@ -276,6 +277,7 @@ def extract_horse_extras_from_html(html):
                 "forma_url": forma_m.group(1) if forma_m else None,
                 "damsire": damsire,
                 "idman_kosu_kodu": idm_m.group(1) if idm_m else None,
+                "jokey_id": jk_m.group(1) if jk_m else None,
                 # Bahis açıkken TJK'nın gösterdiği güncel ganyan oranı (yarıştan sonra kapanış oranı)
                 "ganyan_live": float(gny_num.group(1).replace(",", ".")) if gny_num else None,
             }
@@ -744,7 +746,13 @@ def analyze_race_quant(race, weights=None):
         j_raw = h["jockey"].upper()
         is_apprentice = " AP" in j_raw or j_raw.endswith("AP")
         clean_j = j_raw.replace(" AP", "").strip()
-        jockey_base = ELITE_JOCKEYS.get(clean_j, 76 if not is_apprentice else 71)
+        js = h.get("jockey_stats") or {}
+        if js.get("win_adj") is not None:
+            # TJK'nın bu yılki gerçek jokey istatistiği (küçük örneklem düzeltmeli):
+            # ortalama jokey (%10 birincilik, %30 ilk 3) ≈ 76; en iyiler (%20+ / %45+) ≈ 95+
+            jockey_base = max(55.0, min(97.0, 76.0 + (js["win_adj"] - JOCKEY_AVG_WIN) * 1.3 + (js["top3_adj"] - JOCKEY_AVG_TOP3) * 0.35))
+        else:
+            jockey_base = ELITE_JOCKEYS.get(clean_j, 76 if not is_apprentice else 71)
         # s20 score reflects stable/trainer recent 20-race momentum
         s20_bonus = min(10.0, (h["s20"] / 20.0) * 10.0)
         jockey_score = min(99.0, jockey_base + s20_bonus * 0.6)
@@ -986,7 +994,10 @@ def analyze_race_quant(race, weights=None):
             reasons.insert(0, hwf["text"])
         if h["form_analysis"]["trend"] == "Yükselişte":
             reasons.append("Son koşularında form grafiği belirgin şekilde yukarı yönlü.")
-        if m["jockey_rating"] >= 88:
+        jy = (h.get("jockey_stats") or {}).get("year")
+        if jy and jy.get("starts", 0) >= 30 and jy["win_pct"] >= 18:
+            reasons.append(f"Jokeyi {h['jockey']} bu yıl {jy['starts']} koşuda %{jy['win_pct']} birincilik, %{jy['top3_pct']} ilk 3 yapıyor.")
+        elif m["jockey_rating"] >= 88:
             reasons.append(f"Usta jokeyi ({h['jockey']}) ve ahırın son 20 yarış ivmesi (s20: {h['s20']}) güven veriyor.")
         if m["weight_rating"] >= 80:
             reasons.append(f"{h['weight']} kg sıkletiyle rakiplerine göre belirgin kilo avantajına sahip.")
@@ -2357,6 +2368,8 @@ def parse_tjk_csv(csv_text, html_extras=None):
                     "weight": weight,
                     "over_weight": over_weight,
                     "jockey": jockey,
+                    "jokey_id": extra.get("jokey_id"),
+                    "jockey_stats": extra.get("jockey_stats"),
                     "owner": owner,
                     "trainer": trainer,
                     "start_no": start_no,
@@ -2418,6 +2431,62 @@ def parse_tjk_csv(csv_text, html_extras=None):
     }
 
 
+JOCKEY_PRIOR_STARTS = 40   # az koşulu jokeyin oranı bu kadar koşuluk ortalamaya doğru çekilir
+JOCKEY_AVG_WIN, JOCKEY_AVG_TOP3 = 10.0, 30.0
+
+
+def fetch_jockey_stats(jokey_id, year, city_id=None):
+    """TJK JokeyIstatistikleri: bu yıl (tüm hipodromlar) ve bu yıl bu hipodromda koşu/1.-5./yüzdeler."""
+    cache_key = f"jockey_{jokey_id}_{year}_{city_id or '-'}"
+    cached = cache_get(cache_key, 24 * 3600)
+    if cached is not None:
+        return cached
+    base = f"https://www.tjk.org/TR/YarisSever/Query/Page/JokeyIstatistikleri?1=1&QueryParameter_JokeyId={jokey_id}&QueryParameter_YIL={year}"
+    out = {}
+    year_page = fetch_cached(base, 24 * 3600)
+    out["year"] = parse_query_table(year_page, "")
+    if city_id:
+        try:
+            out["city"] = parse_query_table(fetch_cached(base + f"&QueryParameter_SehirId={city_id}", 24 * 3600), "")
+        except Exception:
+            out["city"] = None
+    y = out.get("year")
+    if y and y.get("starts"):
+        n = y["starts"]
+        # Küçük örneklem düzeltmesi (ampirik Bayes): oran ortalamaya doğru çekilir
+        out["win_adj"] = round((y["w1"] + JOCKEY_PRIOR_STARTS * JOCKEY_AVG_WIN / 100) / (n + JOCKEY_PRIOR_STARTS) * 100, 1)
+        out["top3_adj"] = round((y["w1"] + y["w2"] + y["w3"] + JOCKEY_PRIOR_STARTS * JOCKEY_AVG_TOP3 / 100) / (n + JOCKEY_PRIOR_STARTS) * 100, 1)
+    out["year_label"] = str(year)
+    cache_set(cache_key, out)
+    return out
+
+
+def attach_jockey_stats(extras, date_str, city_id=None, budget_s=3):
+    """
+    Programdaki tüm jokeylerin istatistiklerini paralel çeker. Bülten beklemesin diye kısa bir süre
+    bütçesi var: yetişmeyenler arka planda çekilmeye devam eder ve önbelleğe girer.
+    Dönen: tüm jokeyler hazır mı
+    """
+    year = date_str.split("/")[-1]
+    ids = sorted({e["jokey_id"] for e in extras.values() if e.get("jokey_id")})
+    if not ids:
+        return True
+    results = {}
+    pool = ThreadPoolExecutor(max_workers=4)
+    futures = {jid: pool.submit(fetch_jockey_stats, jid, year, city_id) for jid in ids}
+    deadline = time.time() + budget_s
+    for jid, fut in futures.items():
+        try:
+            results[jid] = fut.result(timeout=max(0.1, deadline - time.time()))
+        except Exception:
+            results[jid] = None
+    pool.shutdown(wait=False)  # yetişmeyen istekler arka planda tamamlanıp önbelleğe yazılır
+    for e in extras.values():
+        if e.get("jokey_id"):
+            e["jockey_stats"] = results.get(e["jokey_id"])
+    return all(results.get(j) for j in ids)
+
+
 def fetch_city_program(date_str, city_id=None, city_name=None):
     """
     Fetches live TJK program for the selected date & city.
@@ -2449,6 +2518,7 @@ def fetch_city_program(date_str, city_id=None, city_name=None):
 
     city_html = fetch_url(target_city["url"])
     html_extras = extract_horse_extras_from_html(city_html)
+    jockeys_ready = attach_jockey_stats(html_extras, date_str, target_city["id"] if target_city.get("is_domestic") else None)
 
     # Find CSV link inside city_html
     csv_m = re.search(r'href=["\'](https://medya-cdn\.tjk\.org/[^"\']+\.csv)["\']', city_html, re.I)
@@ -2475,7 +2545,13 @@ def fetch_city_program(date_str, city_id=None, city_name=None):
     program_data["source_csv_url"] = safe_csv_url
     program_data["fetched_at"] = tr_now().strftime("%H:%M:%S")
 
-    cache_set(cache_key, program_data)
+    program_data["jockeys_pending"] = not jockeys_ready
+    if jockeys_ready:
+        cache_set(cache_key, program_data)
+    else:
+        # Jokey verisi arka planda tamamlanıyor: bülteni kısa süre (45 sn) sakla, sonra yeniden kur
+        with CACHE_LOCK:
+            CACHE[cache_key] = (time.time() - TTL_PROGRAM + 45, program_data)
     return program_data
 
 

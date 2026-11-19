@@ -653,6 +653,7 @@ function renderCurrentRace() {
               <div class="text-[11px] text-[#44403C] leading-snug mt-0.5">
                 <strong class="text-[#18181B]">${h.jockey}</strong> • ${h.weight}kg • Kulvar:${h.start_no} ${h.handicap ? `• HP:${h.handicap}` : ''}${h.hp_weight ? ` <span class="text-[#8C5A3C] font-bold" title="Kilo Ayarlı HP: HP + (ortanca kilo − kilo) × ${(race.hp_weight || {}).hp_per_kg || 3} HP/kg">(K.A. ${h.hp_weight.eff_hp})</span>` : ''}
               </div>
+              ${jockeyLineHTML(h, true)}
               <div class="text-[10px] text-[#57534E] truncate">
                 ${h.age} • <strong class="text-[#44403C]">${h.sire}</strong> - ${h.dam}${h.damsire ? ` / <span class="text-[#7A1C1C] font-semibold">${h.damsire}</span>` : ''}
               </div>
@@ -953,6 +954,32 @@ function seasonFlag(h) {
       text: `🌤️ MEVSİM ATI: ${SEASON_LOC[cur]} ${c.starts} koşuda ${c.w1} galibiyet (İlk 3 %${c.top3_pct}) — diğer mevsimlerde İlk 3 %${oTop3}` };
   }
   return null;
+}
+
+// ---------------- JOKEY ORTALAMALARI ----------------
+function jockeyLineHTML(h, compact) {
+  const js = h.jockey_stats;
+  const y = js && js.year;
+  if (!y || !y.starts) {
+    return (STATE.program && STATE.program.jockeys_pending && h.jokey_id)
+      ? `<div class="text-[10px] text-[#78716C] mt-0.5">🏇 Jokey istatistiği hazırlanıyor… (↻ ile güncelleyin)</div>` : '';
+  }
+  const c = js.city;
+  const strong = y.starts >= 30 && y.win_pct >= 15;
+  const weak = y.starts >= 30 && y.win_pct < 6;
+  const tone = strong ? 'text-[#0F291E] font-extrabold' : weak ? 'text-[#7A1C1C] font-bold' : 'text-[#44403C] font-bold';
+  const city = c && c.starts ? ` • ${STATE.program.city_name}'de <span class="mono">%${c.win_pct}</span> <span class="opacity-70">(${c.starts}K)</span>` : '';
+  return `<div class="text-[10px] mt-0.5 ${compact ? '' : 'leading-snug'}" title="${js.year_label} yılı TJK jokey istatistiği. Küçük örneklem düzeltmeli birincilik: %${js.win_adj}">
+    🏇 <span class="${tone}">Jokey ${js.year_label}: <span class="mono">%${y.win_pct}</span> 1. • İlk3 <span class="mono">%${y.top3_pct}</span></span>
+    <span class="text-[#57534E]">(${y.starts} koşu)${city}</span>${strong ? ' <span class="px-1 rounded bg-[#0F291E] text-[#E6C762] text-[9px] font-extrabold">FORMDA JOKEY</span>' : ''}</div>`;
+}
+
+function jockeyModalHTML(h) {
+  const js = h.jockey_stats;
+  const y = js && js.year;
+  if (!y || !y.starts) return '';
+  const row = (lbl, b) => b && b.starts ? `<div class="mono text-[10px] text-[#44403C]">${lbl}: ${b.starts}K • ${b.w1}-${b.w2}-${b.w3} • 1. %${b.win_pct} • İlk3 %${b.top3_pct}</div>` : '';
+  return `<div class="mt-0.5">${row(js.year_label, y)}${row(STATE.program.city_name, js.city)}</div>`;
 }
 
 function weightBadgeHTML(h) {
@@ -1467,7 +1494,7 @@ function openHorseModal(horseNo) {
 
     <!-- Künye Bilgileri -->
     <div class="bg-white rounded-xl p-3 border border-[#D8D2C5] mb-3.5 grid grid-cols-2 gap-2 text-xs">
-      <div><span class="text-[#57534E]">Jokey:</span> <strong class="text-[#18181B]">${h.jockey}</strong></div>
+      <div><span class="text-[#57534E]">Jokey:</span> <strong class="text-[#18181B]">${h.jockey}</strong>${jockeyModalHTML(h)}</div>
       <div><span class="text-[#57534E]">Sıklet / Kulvar:</span> <strong class="text-[#18181B]">${h.weight} kg / St: ${h.start_no}</strong></div>
       <div><span class="text-[#57534E]">Antrenör:</span> <strong class="text-[#18181B]">${h.trainer}</strong></div>
       <div><span class="text-[#57534E]">Sahip:</span> <strong class="text-[#18181B]">${h.owner}</strong></div>
@@ -2479,6 +2506,11 @@ function renderXrayComparison() {
     { label: 'KGS Dinlenme & Tazelik', a: hA.metrics.fitness_rating, b: hB.metrics.fitness_rating }
   ];
   if (hA.hp_weight && hB.hp_weight) rows.push({ label: 'Kilo Ayarlı Handikap Puanı', a: hA.hp_weight.eff_hp, b: hB.hp_weight.eff_hp });
+  const jA = hA.jockey_stats && hA.jockey_stats.year, jB = hB.jockey_stats && hB.jockey_stats.year;
+  if (jA && jB && jA.starts && jB.starts) {
+    rows.push({ label: 'Jokey Birincilik % (bu yıl)', a: jA.win_pct, b: jB.win_pct },
+              { label: 'Jokey İlk 3 % (bu yıl)', a: jA.top3_pct, b: jB.top3_pct });
+  }
   const cA = (STATE.extras[hA.at_id] || {}).career_stats, cB = (STATE.extras[hB.at_id] || {}).career_stats;
   if (cA && cB && cA.starts && cB.starts) {
     rows.push(

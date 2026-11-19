@@ -307,6 +307,9 @@ def collect_day(date_str):
                     "pace": race["pace_scenario"]["code"], "trend": h["form_analysis"]["trend"],
                     "hp": h.get("handicap"), "hp_resid": hw.get("residual"), "eff_hp": hw.get("eff_hp"),
                     "weight": h["weight"], "apprentice": h.get("jockey", "").upper().endswith(" AP"),
+                    # Not: geçmiş günler için jokeyin 'bu yıl' istatistiği o günden sonraki koşuları da içerir
+                    "jockey": h.get("jockey"), "jokey_id": h.get("jokey_id"),
+                    "jockey_win_adj": (h.get("jockey_stats") or {}).get("win_adj"),
                     "kgs": h.get("kgs"), "equipment": h.get("equipment", []),
                     "pos": r["pos"], "won": r["pos"] == 1, "ganyan": r["ganyan"], "agf_final": r["agf_final"],
                 }

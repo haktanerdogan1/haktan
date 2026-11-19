@@ -328,3 +328,28 @@ class TestProbabilityOrder(unittest.TestCase):
                 sm = h["simulation"]
                 self.assertLessEqual(sm["win_prob"], sm["top2_prob"] + 1e-9)
                 self.assertLessEqual(sm["top2_prob"], sm["top3_prob"] + 1e-9)
+
+
+class TestJockeyStats(unittest.TestCase):
+    PAGE = ('<table id="queryTable"><tr><th>Jokey</th><th>Koşu</th><th>1.</th><th>2.</th><th>3.</th><th>4.</th><th>5.</th>'
+            '<th>1.%</th><th>2.%</th><th>3.%</th><th>4.%</th><th>5.%</th></tr>'
+            '<tr><td>X JOKEY</td><td>{n}</td><td>{w1}</td><td>{w2}</td><td>{w3}</td><td>0</td><td>0</td>'
+            '<td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr></table>')
+
+    def stats(self, n, w1, w2, w3):
+        orig = S.fetch_cached
+        S.fetch_cached = lambda url, ttl: self.PAGE.format(n=n, w1=w1, w2=w2, w3=w3)
+        try:
+            S.CACHE.clear()
+            return S.fetch_jockey_stats("1", "2026", None)
+        finally:
+            S.fetch_cached = orig
+
+    def test_small_sample_shrinks(self):
+        js = self.stats(5, 2, 0, 0)            # 5 koşuda %40 birincilik
+        self.assertEqual(js["year"]["win_pct"], 40.0)
+        self.assertLess(js["win_adj"], 15)     # ortalamaya çekilir
+
+    def test_big_sample_kept(self):
+        js = self.stats(800, 160, 120, 100)    # %20 birincilik, 800 koşu
+        self.assertGreater(js["win_adj"], 19)
