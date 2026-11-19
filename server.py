@@ -1804,6 +1804,11 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
                 self.wfile.write(err_body)
             return
 
+        if parsed.path == "/health":
+            # Platform sağlık kontrolü: TJK'ya gitmeden anında yanıt verir
+            self.send_json(200, {"ok": True, "time": tr_now().strftime("%Y-%m-%d %H:%M:%S")})
+            return
+
         if parsed.path == "/api/race_idman":
             params = urllib.parse.parse_qs(parsed.query)
             kosu = params.get("kosu", [""])[0]
@@ -1859,8 +1864,12 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
 
 if __name__ == "__main__":
     os.makedirs(STATIC_DIR, exist_ok=True)
-    port = 8090
-    print(f"TurfQuant Pro Analiz Sunucusu başlatılıyor: http://localhost:{port}")
+    # Railway/Render gibi platformlar portu PORT ortam değişkeniyle verir; yerelde 8090
+    try:
+        port = int(os.environ.get("PORT", "8090"))
+    except ValueError:
+        port = 8090
+    print(f"TurfQuant Pro Analiz Sunucusu başlatılıyor: http://localhost:{port}", flush=True)
     # Çok iş parçacıklı: safkan geçmişi çekilirken (3 TJK isteği) diğer istekler beklemez
     server = ThreadingHTTPServer(("0.0.0.0", port), TurfQuantHandler)
     server.daemon_threads = True  # Ctrl+C'de yarım kalan TJK isteklerini beklemeden kapan

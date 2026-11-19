@@ -1,0 +1,2 @@
+# Harici bağımlılık yok: uygulama yalnızca Python standart kütüphanesini kullanır.
+# Bu dosya, Railway gibi platformların projeyi Python uygulaması olarak tanıması içindir.

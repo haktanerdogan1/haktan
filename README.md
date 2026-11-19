@@ -29,6 +29,14 @@ python server.py
 ```
 Sunucu `http://localhost:8090` adresinde başlar.
 
+### ☁️ Railway'de Yayınlama
+Depo Railway'e hazırdır (`railway.json`, `requirements.txt`, `.python-version`, `Procfile`):
+1. [railway.com](https://railway.com) → **New Project** → **Deploy from GitHub repo** → `haktanerdogan1/haktan`.
+2. Kurulum bitince servisin **Settings → Networking → Generate Domain** ile herkese açık adres alın (`https://….up.railway.app`).
+3. `main` dalına yapılan her gönderim otomatik olarak yeniden yayınlanır.
+
+Notlar: Sunucu portu `PORT` ortam değişkeninden alır (yerelde 8090). `/health` adresi platform sağlık kontrolü içindir. HTTPS üzerinden açıldığı için telefonda "Ana ekrana ekle" ile tam PWA (çevrimdışı mod dahil) çalışır.
+
 **Testler** (internet gerekmez):
 ```bash
 python -m unittest discover -s tests -v
