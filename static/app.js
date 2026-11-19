@@ -480,9 +480,15 @@ function fetchJSON(url) {
   return p;
 }
 
+// TJK zaman zaman yanıt vermez: başarısız kayıtlar kalıcı değildir, 30 sn sonra yeniden denenir
+const RETRY_AFTER_MS = 30000;
+function needsFetch(entry) {
+  return !entry || (entry.failed && Date.now() - (entry.failedAt || 0) > RETRY_AFTER_MS);
+}
+
 function ensureRaceIdman(race) {
   if (!race.kosu_kodu || !race.idman_at_kodu) return Promise.resolve(null);
-  if (STATE.idman[race.kosu_kodu]) return Promise.resolve(STATE.idman[race.kosu_kodu]);
+  if (!needsFetch(STATE.idman[race.kosu_kodu])) return Promise.resolve(STATE.idman[race.kosu_kodu]);
   const date = encodeURIComponent(STATE.program.date || '');
   return fetchJSON(`/api/race_idman?kosu=${race.kosu_kodu}&at=${race.idman_at_kodu}&date=${date}`)
     .then(d => {
@@ -495,7 +501,7 @@ function ensureRaceIdman(race) {
       STATE.idman[race.kosu_kodu] = d;
       return d;
     })
-    .catch(() => { STATE.idman[race.kosu_kodu] = { rows: [], failed: true }; return STATE.idman[race.kosu_kodu]; });
+    .catch(() => { STATE.idman[race.kosu_kodu] = { rows: [], failed: true, failedAt: Date.now() }; return STATE.idman[race.kosu_kodu]; });
 }
 
 function idmanForHorse(race, h) {
@@ -514,8 +520,8 @@ function loadRaceExtras(race) {
     if (!isCurrentRace(race)) return;
     race.horses.forEach(h => paintHorseExtras(race, h));
   });
-  const queue = race.horses.filter(h => h.at_id && !STATE.extras[h.at_id]);
-  race.horses.filter(h => !h.at_id || STATE.extras[h.at_id]).forEach(h => paintHorseExtras(race, h));
+  const queue = race.horses.filter(h => h.at_id && needsFetch(STATE.extras[h.at_id]));
+  race.horses.filter(h => !queue.includes(h)).forEach(h => paintHorseExtras(race, h));
   let active = 0;
   const next = () => {
     if (!isCurrentRace(race)) return;  // başka koşuya / hipodroma geçildi
@@ -525,7 +531,7 @@ function loadRaceExtras(race) {
       const isArab = (race.age_group || '').toLowerCase().includes('arap') ? '1' : '0';
       fetchJSON(`/api/horse_history?lite=1&at_id=${encodeURIComponent(h.at_id)}&weight=${h.weight}&dist=${race.distance_m}&arab=${isArab}`)
         .then(d => { STATE.extras[h.at_id] = d; })
-        .catch(() => { STATE.extras[h.at_id] = { failed: true }; })
+        .catch(() => { STATE.extras[h.at_id] = { failed: true, failedAt: Date.now() }; })
         .finally(() => {
           active--;
           if (isCurrentRace(race)) paintHorseExtras(race, h);
@@ -571,10 +577,10 @@ function horseExtrasHTML(race, h) {
   let karne;
   if (!h.at_id) {
     karne = '<span class="text-[#78716C]">Karne: TJK kimliği yok</span>';
-  } else if (!ex) {
+  } else if (!ex || (ex.failed && needsFetch(ex))) {
     karne = '<span class="text-[#78716C]">⏳ Derece karnesi yükleniyor…</span>';
   } else if (ex.failed || !ex.career_stats) {
-    karne = '<span class="text-[#78716C]">Karne alınamadı</span>';
+    karne = '<span class="text-[#78716C]">Karne alınamadı (TJK yanıt vermedi) — koşuyu yeniden açınca tekrar denenir</span>';
   } else {
     const c = ex.career_stats;
     karne = c.starts ? `
