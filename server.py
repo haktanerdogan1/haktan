@@ -2304,7 +2304,9 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
 
         if parsed.path == "/health":
             # Platform sağlık kontrolü: TJK'ya gitmeden anında yanıt verir
-            self.send_json(200, {"ok": True, "time": tr_now().strftime("%Y-%m-%d %H:%M:%S")})
+            # Render çalışan sürümün commit kodunu RENDER_GIT_COMMIT ile verir: yayındaki sürüm buradan görülür
+            self.send_json(200, {"ok": True, "time": tr_now().strftime("%Y-%m-%d %H:%M:%S"),
+                                 "commit": (os.environ.get("RENDER_GIT_COMMIT") or "")[:7] or None})
             return
 
         if parsed.path == "/api/horse_relatives":
