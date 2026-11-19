@@ -569,6 +569,11 @@ function loadRaceExtras(race) {
   let active = 0;
   const next = () => {
     if (!isCurrentRace(race)) return;  // başka koşuya / hipodroma geçildi
+    // Safkan penceresi açıkken kart karnelerini beklet: pencerenin TJK istekleri öne geçsin
+    if (!document.getElementById('horseModal').classList.contains('hidden')) {
+      if (!active) setTimeout(next, 800);
+      return;
+    }
     while (active < 3 && queue.length) {
       const h = queue.shift();
       active++;
@@ -1340,11 +1345,24 @@ function openHorseModal(horseNo) {
       : 'Yabancı hipodrom: TJK bu safkanın geçmiş koşu, soyağacı ve idman kayıtlarını yayınlamıyor.');
   } else {
     const irk = (race.age_group || '').toLowerCase().includes('arap') ? '2' : ((race.age_group || '').toLowerCase().includes('ingiliz') ? '1' : '');
-    fetchJSON(`/api/horse_relatives?at_id=${encodeURIComponent(h.at_id)}&irk=${irk}`)
+    fetchJSON(`/api/horse_relatives?at_id=${encodeURIComponent(h.at_id)}&irk=${irk}&part=parents`)
       .then(rel => {
         if (token !== HORSE_MODAL_TOKEN) return;
         const el = document.getElementById('relativesSection');
         if (el) el.innerHTML = relativesHTML(rel, h, race);
+        // Kardeşler TJK'da ayrı ve yavaş bir sayfa: geldiğinde kendi kutusuna yerleşir
+        fetchJSON(`/api/horse_relatives?at_id=${encodeURIComponent(h.at_id)}&irk=${irk}&part=siblings`)
+          .then(sib => {
+            if (token !== HORSE_MODAL_TOKEN) return;
+            const box = document.getElementById('siblingsBox');
+            if (box) box.outerHTML = siblingsHTML(sib.kardesler);
+            const sb = document.getElementById('sireSurfaceBox');
+            if (sb) sb.outerHTML = sireSurfaceHTML(sib.baba_by_surface, race);
+          })
+          .catch(() => {
+            const box = document.getElementById('siblingsBox');
+            if (box) box.innerHTML = '<div class="text-[11px] text-[#7A1C1C]">⚠️ Kardeş bilgisi alınamadı.</div>';
+          });
       })
       .catch(err => {
         if (token !== HORSE_MODAL_TOKEN) return;
@@ -1884,10 +1902,10 @@ function relativeCard(title, tone, blk, opts = {}) {
   `;
 }
 
-function relativesHTML(rel, h, race) {
-  const today = (race.surface || '').includes('Çim') ? 'Çim' : (race.surface || '').includes('Sentetik') ? 'Sentetik' : 'Kum';
-  const bySurf = (rel.baba && rel.baba.by_surface) || {};
-  const sireSurface = Object.keys(bySurf).length ? `
+function sireSurfaceHTML(bySurfIn, race) {
+  const bySurf = bySurfIn || {};
+  const today = raceSurfaceName(race);
+  return Object.keys(bySurf).length ? `
     <div class="mt-2 pt-2 border-t border-[#E2DDD2]">
       <div class="text-[9px] font-extrabold text-[#57534E] uppercase mb-1">Taylarının pist başarısı</div>
       <div class="grid grid-cols-3 gap-1.5 text-center">
@@ -1899,8 +1917,11 @@ function relativesHTML(rel, h, race) {
           </div>`).join('')}
       </div>
     </div>` : '';
-  const kd = rel.kardesler || { list: [], total: {} };
-  const kardesHTML = kd.list.length ? `
+}
+
+function siblingsHTML(kdIn) {
+  const kd = kdIn || { list: [], total: {} };
+  return kd.list.length ? `
     <div class="bg-[#FAF8F3] rounded-lg p-2.5 border border-[#E2DDD2]">
       <div class="flex items-center justify-between">
         <div class="text-[10px] font-extrabold uppercase text-[#0F291E]">👪 Kardeşler (aynı anneden)</div>
@@ -1927,6 +1948,14 @@ function relativesHTML(rel, h, race) {
         </table>
       </div>
     </div>` : `<div class="bg-[#FAF8F3] rounded-lg p-2.5 border border-[#E2DDD2] text-[11px] text-[#78716C]">👪 TJK kayıtlarında yarışmış kardeşi bulunmuyor.</div>`;
+}
+
+function relativesHTML(rel, h, race) {
+  const today = (race.surface || '').includes('Çim') ? 'Çim' : (race.surface || '').includes('Sentetik') ? 'Sentetik' : 'Kum';
+  const sireSurface = rel.baba && rel.baba.by_surface ? sireSurfaceHTML(rel.baba.by_surface, race)
+    : (rel.baba ? '<div id="sireSurfaceBox" class="mt-2 pt-2 border-t border-[#E2DDD2] text-[10px] text-[#57534E]">⏳ Taylarının Çim / Kum / Sentetik başarısı getiriliyor...</div>' : '');
+  const kardesHTML = rel.kardesler ? siblingsHTML(rel.kardesler)
+    : `<div id="siblingsBox" class="bg-[#FAF8F3] rounded-lg p-2.5 border border-[#E2DDD2] text-[11px] text-[#57534E]">⏳ 👪 Kardeşler TJK'dan getiriliyor (bu sayfa yavaş açılır)...</div>`;
   return `
     <div class="mb-2">
       <h4 class="serif-title text-base font-bold text-[#0F291E] uppercase">🧬 Akraba İstatistikleri</h4>

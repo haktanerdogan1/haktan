@@ -1352,17 +1352,12 @@ def fetch_horse_bankomat_sheet(at_id, today_weight=57.0, target_dist=1200, is_ar
     base_url = f"https://www.tjk.org/TR/YarisSever/Query/ConnectedPage/AtKosuBilgileri?1=1&QueryParameter_AtId={at_id}"
     html = fetch_cached(base_url, TTL_HISTORY)
 
-    pedigree_tree = None
+    # Soyağacı arka planda paralel çekilir; koşu tablosu işlenirken beklenmez.
+    # (AtKosuIstatistik sayfası artık çekilmiyor: TJK'nın en yavaş sayfası; zemin/mesafe karnesini
+    #  build_breakdowns tüm kariyer koşularından zaten hesaplıyor.)
     detailed_stats = {}
-    if not lite:
-        try:
-            pedigree_tree = parse_pedigri_tree(fetch_cached(f"https://www.tjk.org/TR/YarisSever/Query/Pedigri/Pedigri?Atkodu={at_id}", 24 * 3600))
-        except Exception:
-            pedigree_tree = None
-        try:
-            detailed_stats = parse_detailed_stat_tables(fetch_cached(f"https://www.tjk.org/TR/YarisSever/Query/AtKosuIstatistik/AtKosuIstatistik?Atkodu={at_id}", TTL_HISTORY))
-        except Exception:
-            detailed_stats = {}
+    ped_pool = ThreadPoolExecutor(max_workers=1) if not lite else None
+    ped_future = ped_pool.submit(fetch_cached, f"https://www.tjk.org/TR/YarisSever/Query/Pedigri/Pedigri?Atkodu={at_id}", 24 * 3600) if ped_pool else None
 
     # Tablo gövdelerini içeriğe göre ayır (genç atlarda özet tablosu hiç olmayabilir)
     summary_rows, race_rows = [], []
@@ -1399,6 +1394,14 @@ def fetch_horse_bankomat_sheet(at_id, today_weight=57.0, target_dist=1200, is_ar
                     merged.append(tds)
         merged.sort(key=lambda t: datetime.strptime(t[0], "%d.%m.%Y"), reverse=True)
         race_rows = merged
+
+    pedigree_tree = None
+    if ped_future is not None:
+        try:
+            pedigree_tree = parse_pedigri_tree(ped_future.result(timeout=60))
+        except Exception:
+            pedigree_tree = None
+        ped_pool.shutdown(wait=False)
 
     # --- Koşu satırları (tüm kariyer) ---
     all_races = [race_row_to_dict(tds) for tds in race_rows]
@@ -1657,11 +1660,12 @@ def parse_query_table(page_html, wanted_name):
     return blk
 
 
-def fetch_horse_relatives(at_id, irk=None):
+def fetch_horse_relatives(at_id, irk=None, part="all"):
     """Babası (pist kırılımlı), annesi, kısrak babası ve kardeşlerinin TJK istatistikleri.
     irk: '1' İngiliz, '2' Arap — aynı adlı Arap ve İngiliz kısrak/aygır karışmasın diye."""
     irk = irk if irk in ("1", "2") else None
-    cache_key = f"relatives_{at_id}_{irk or '-'}"
+    part = part if part in ("parents", "siblings") else "all"
+    cache_key = f"relatives_{at_id}_{irk or '-'}_{part}"
     cached = cache_get(cache_key, 24 * 3600)
     if cached is not None:
         return cached
@@ -1678,16 +1682,23 @@ def fetch_horse_relatives(at_id, irk=None):
 
     base = "https://www.tjk.org/TR/YarisSever/Query/Page/"
     jobs = {}
-    for key, name in names.items():
+    want_parents = part in ("all", "parents")
+    want_siblings = part in ("all", "siblings")
+    for key, name in (names.items() if want_parents else []):
         page_name, param = RELATIVE_PAGES[key]
         url = f"{base}{page_name}?QueryParameter_{param}={urllib.parse.quote(name)}"
         if irk:
             url += f"&QueryParameter_IrkId={irk}"
         jobs[key] = url
-        if key == "baba":
-            for sn, pid in SIRE_SURFACES.items():
-                jobs[f"baba_{sn}"] = f"{url}&QueryParameter_PistId={pid}"
-    jobs["kardes"] = f"https://www.tjk.org/TR/YarisSever/Query/Kardes/Kardes?Atkodu={at_id}"
+    # Babanın pist kırılımı (3 yavaş sorgu) ikinci aşamada, kardeşlerle birlikte gelir
+    if want_siblings and "baba" in names:
+        page_name, param = RELATIVE_PAGES["baba"]
+        sire_url = f"{base}{page_name}?QueryParameter_{param}={urllib.parse.quote(names['baba'])}" + (f"&QueryParameter_IrkId={irk}" if irk else "")
+        for sn, pid in SIRE_SURFACES.items():
+            jobs[f"baba_{sn}"] = f"{sire_url}&QueryParameter_PistId={pid}"
+    if want_siblings:
+        # TJK'nın en yavaş sayfası (≈10 sn): ayrı istenebilir ki baba/anne beklemesin
+        jobs["kardes"] = f"https://www.tjk.org/TR/YarisSever/Query/Kardes/Kardes?Atkodu={at_id}"
 
     failures = []
 
@@ -1702,20 +1713,28 @@ def fetch_horse_relatives(at_id, irk=None):
     with ThreadPoolExecutor(max_workers=4) as pool:
         pages = dict(pool.map(load, jobs.items()))
 
-    result = {"names": names}
+    result = {"names": names, "part": part}
     for key in RELATIVE_PAGES:
         if key in names and pages.get(key):
             result[key] = parse_query_table(pages[key], names[key])
-    if result.get("baba"):
-        result["baba"]["by_surface"] = {}
+    if want_siblings and "baba" in names:
+        by_surface = {}
         for sn in SIRE_SURFACES:
             pg = pages.get(f"baba_{sn}")
             blk = parse_query_table(pg, names["baba"]) if pg else None
             if blk:
-                result["baba"]["by_surface"][sn] = blk
+                by_surface[sn] = blk
+        result["baba_by_surface"] = by_surface
+        if result.get("baba"):
+            result["baba"]["by_surface"] = by_surface
 
     siblings = []
     kp = pages.get("kardes")
+    if not want_siblings:
+        result["incomplete"] = bool(failures)
+        if not failures:
+            cache_set(cache_key, result)
+        return result
     if kp:
         for tr in re.findall(r'<tr[^>]*>(.*?)</tr>', kp, re.S):
             c = [clean_cell(x) for x in re.findall(r'<td[^>]*>(.*?)</td>', tr, re.S)]
@@ -2313,10 +2332,11 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
             params = urllib.parse.parse_qs(parsed.query)
             at_id = params.get("at_id", [""])[0]
             irk = params.get("irk", [""])[0]
+            part = params.get("part", ["all"])[0]
             try:
                 if not at_id.isdigit():
                     raise ValueError("Geçersiz safkan kimliği")
-                self.send_json(200, {"ok": True, "data": fetch_horse_relatives(at_id, irk)})
+                self.send_json(200, {"ok": True, "data": fetch_horse_relatives(at_id, irk, part)})
             except Exception as e:
                 self.send_json(500, {"ok": False, "error": str(e)})
             return
