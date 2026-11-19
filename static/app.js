@@ -101,6 +101,7 @@ async function loadProgram(cityId = null, forceRefresh = false, opts = {}) {
 
     renderHeaderAndTabs();
     loadDates();
+    if (STATE.activeTab === 'surprise') loadSurprise(false);
     renderCurrentRace();
     renderValueRadar();
     generateAltiliTicket();
@@ -217,19 +218,153 @@ function selectRace(idx) {
 
 function switchTab(tabName) {
   STATE.activeTab = tabName;
-  const tabs = ['race', 'pace', 'value', 'altili', 'xray'];
+  const tabs = ['race', 'pace', 'value', 'surprise', 'altili', 'xray'];
   tabs.forEach(t => {
     const viewEl = document.getElementById(`view-${t}`);
     const navEl = document.getElementById(`nav-${t}`);
     if (t === tabName) {
       viewEl.classList.remove('hidden');
-      navEl.className = 'relative flex flex-col items-center py-1 px-2.5 rounded-lg text-[#0F291E] bg-[#0F291E]/10 font-bold';
+      navEl.className = 'relative flex flex-col items-center py-1 px-1.5 rounded-lg text-[#0F291E] bg-[#0F291E]/10 font-bold';
     } else {
       viewEl.classList.add('hidden');
-      navEl.className = 'relative flex flex-col items-center py-1 px-2.5 rounded-lg text-[#57534E] hover:text-[#0F291E]';
+      navEl.className = 'relative flex flex-col items-center py-1 px-1.5 rounded-lg text-[#57534E] hover:text-[#0F291E]';
     }
   });
   window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (tabName === 'surprise') loadSurprise(false);
+}
+
+// ---------------- SÜRPRİZ TERCİHLERİ ----------------
+const SURPRISE = { key: null, data: null, stats: null, loading: false };
+
+function loadSurprise(force) {
+  const p = STATE.program;
+  if (!p) return;
+  const key = `${p.date}|${p.city_id}`;
+  const listEl = document.getElementById('surpriseList');
+  if (!force && SURPRISE.key === key && SURPRISE.data) { renderSurprise(); return; }
+  SURPRISE.key = key;
+  SURPRISE.data = null;
+  listEl.innerHTML = `<div class="club-card rounded-xl p-5 text-center text-xs text-[#57534E]">⏳ ${p.city_name} programındaki ihmal edilmiş atların geçmişi TJK'dan inceleniyor (ilk açılışta 20–40 sn sürebilir)...</div>`;
+  if (!SURPRISE.stats) {
+    fetch('/data/surprise_stats.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : null)
+      .then(st => { SURPRISE.stats = st ? deepEscape(st) : {}; renderSurpriseKarne(); }).catch(() => { SURPRISE.stats = {}; renderSurpriseKarne(); });
+  } else {
+    renderSurpriseKarne();
+  }
+  fetchJSON(`/api/surprise?date=${encodeURIComponent(p.date)}&city_id=${encodeURIComponent(p.city_id)}`)
+    .then(d => { if (SURPRISE.key === key) { SURPRISE.data = d; renderSurprise(); } })
+    .catch(err => {
+      if (SURPRISE.key === key) listEl.innerHTML = `<div class="club-card rounded-xl p-4 text-xs text-[#7A1C1C]">⚠️ Sürpriz listesi alınamadı: ${esc(err.message)} <button onclick="loadSurprise(true)" class="underline font-bold">Tekrar dene</button></div>`;
+    });
+}
+
+function signalChip(key, d) {
+  const w = (d.weights || {})[key] || 0;
+  const label = (d.labels || {})[key] || key;
+  const pos = w > 0;
+  const cls = pos ? 'bg-[#0F291E]/10 text-[#0F291E] border-[#0F291E]/25' : (w < 0 ? 'bg-[#7A1C1C]/10 text-[#7A1C1C] border-[#7A1C1C]/30' : 'bg-[#EFECE4] text-[#57534E] border-[#D8D2C5]');
+  return `<span class="px-1.5 py-0.5 rounded border text-[10px] font-bold ${cls}" title="Ağırlık ${w > 0 ? '+' : ''}${w}">${pos ? '✓' : (w < 0 ? '✗' : '•')} ${label}</span>`;
+}
+
+function renderSurprise() {
+  const d = SURPRISE.data;
+  const listEl = document.getElementById('surpriseList');
+  if (!d) return;
+  const strong = d.candidates.filter(c => c.score >= d.threshold);
+  const watch = d.candidates.filter(c => c.score < d.threshold && c.score > 0);
+  const card = c => {
+    const raceIdx = STATE.program.races.findIndex(r => r.race_no === c.race_no);
+    const tone = c.score >= d.threshold ? 'club-card-cazip' : 'club-card';
+    return `
+      <div onclick="selectRace(${raceIdx}); switchTab('race'); openHorseModal(${c.no});" class="${tone} rounded-xl p-3.5 cursor-pointer transition hover:translate-y-[-1px]">
+        <div class="flex items-center justify-between text-[10px] text-[#8C5A3C] font-bold mb-1">
+          <span class="truncate">${c.race_label}</span><span class="mono whitespace-nowrap">${c.time}</span>
+        </div>
+        <div class="flex items-start justify-between gap-2">
+          <div class="flex items-center gap-2 min-w-0">
+            ${c.forma_url ? `<img src="${c.forma_url}" class="w-9 h-9 rounded bg-white border border-[#D8D2C5] object-contain" onerror="this.style.display='none'" />` : ''}
+            <div class="min-w-0">
+              <h3 class="serif-title text-base font-bold text-[#18181B] truncate">#${c.no} ${c.name}</h3>
+              <p class="text-[11px] text-[#57534E] truncate">${c.jockey} • ${c.weight}kg</p>
+            </div>
+          </div>
+          <div class="text-right flex-shrink-0">
+            <div class="inline-flex items-center gap-1 px-2 py-0.5 rounded ${c.score >= d.threshold ? 'bg-[#7A1C1C] text-white' : 'bg-[#EFECE4] text-[#18181B]'}">
+              <span class="text-[9px] font-bold uppercase">Sürpriz</span><span class="text-sm font-extrabold mono">${c.score}</span>
+            </div>
+            <div class="text-[11px] mono font-bold text-[#0F291E] mt-0.5">Şans %${c.win_prob} • Eder ${c.fair_ganyan}</div>
+            <div class="text-[10px] mono text-[#57534E]">${c.has_agf ? `AGF %${c.agf_pct} (${c.agf_rank}.)` : `Model sırası ${c.model_rank}.`}</div>
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-1 mt-2">${c.signals.length ? c.signals.map(k => signalChip(k, d)).join('') : '<span class="text-[10px] text-[#78716C]">İşaret yok</span>'}</div>
+      </div>`;
+  };
+  listEl.innerHTML = `
+    ${!d.uses_backtest ? `<div class="club-card rounded-xl px-3 py-2 text-[11px] text-[#8C5A3C] border-l-4 border-l-[#A67C37]">Not: İşaret ağırlıkları henüz geçmiş sonuçlarla ayarlanmadı; başlangıç ağırlıkları kullanılıyor.</div>` : ''}
+    <div class="text-[11px] text-[#44403C] px-1 font-semibold">${d.city_name} • ${d.date} — eşik ${d.threshold} puan: <strong class="text-[#7A1C1C]">${strong.length} güçlü aday</strong>, ${watch.length} izlemeye değer</div>
+    ${strong.length ? strong.map(card).join('') : `<div class="club-card rounded-xl p-4 text-xs text-[#57534E]">Bu programda eşiği geçen sürpriz adayı yok.</div>`}
+    ${watch.length ? `<div class="serif-title text-sm font-bold text-[#57534E] uppercase px-1 pt-1">İzlemeye Değer</div>${watch.slice(0, 12).map(card).join('')}` : ''}
+  `;
+}
+
+function renderSurpriseKarne() {
+  const el = document.getElementById('surpriseKarne');
+  const st = SURPRISE.stats;
+  if (!el) return;
+  if (!st || !st.signals) {
+    el.innerHTML = `<h3 class="serif-title text-base font-bold text-[#0F291E] uppercase mb-1">📊 İşaretlerin Geçmiş Karnesi</h3><div class="text-xs text-[#57534E]">Geçmiş sonuç analizi henüz yüklenmedi.</div>`;
+    return;
+  }
+  const b = st.baseline;
+  const rows = Object.entries(st.signals).sort((a, c) => (c[1].all.roi_pct ?? -999) - (a[1].all.roi_pct ?? -999));
+  const roi = v => v == null ? '-' : `<span class="${v >= 0 ? 'text-[#0F291E] font-extrabold' : 'text-[#7A1C1C] font-bold'}">${v > 0 ? '+' : ''}${v}%</span>`;
+  el.innerHTML = `
+    <h3 class="serif-title text-base font-bold text-[#0F291E] uppercase">📊 İşaretlerin Geçmiş Karnesi</h3>
+    <p class="text-[11px] text-[#57534E] mb-2">${st.period.from} – ${st.period.to} arası ${st.counts.races} yerli koşu, ${st.counts.runners} koşucu. Yalnız ihmal edilmiş atlar (AGF 4.+). Getiri: her ata 1 TL ganyan oynansaydı net kazanç/kayıp (kapanış ganyanıyla). Ağırlıklar ${st.period.test_from} öncesinden öğrenildi; "Test" sütunu sonrasını gösterir.</p>
+    <div class="grid grid-cols-3 gap-2 mb-3 text-center">
+      <div class="bg-[#FAF8F3] rounded-lg p-2 border border-[#E2DDD2]"><div class="text-[9px] text-[#57534E] font-bold">İHMAL EDİLENLER</div><div class="text-xs mono font-extrabold">${b.overlooked.n} at</div></div>
+      <div class="bg-[#FAF8F3] rounded-lg p-2 border border-[#E2DDD2]"><div class="text-[9px] text-[#57534E] font-bold">KAZANMA</div><div class="text-xs mono font-extrabold">%${b.overlooked.win_pct}</div></div>
+      <div class="bg-[#FAF8F3] rounded-lg p-2 border border-[#E2DDD2]"><div class="text-[9px] text-[#57534E] font-bold">HEPSİNE OYNANSA</div><div class="text-xs mono">${roi(b.overlooked.roi_pct)}</div></div>
+    </div>
+    <div class="overflow-x-auto -mx-1">
+      <table class="w-full text-[11px] whitespace-nowrap mono">
+        <thead><tr class="text-[9px] text-[#57534E] border-b border-[#D8D2C5] uppercase font-sans">
+          <th class="pb-1 px-1 text-left">İşaret</th><th class="pb-1 px-1 text-right">At</th><th class="pb-1 px-1 text-right">Kazanma</th>
+          <th class="pb-1 px-1 text-right">Ort. Gny</th><th class="pb-1 px-1 text-right">Getiri</th><th class="pb-1 px-1 text-right">Test</th><th class="pb-1 px-1 text-right">Ağırlık</th>
+        </tr></thead>
+        <tbody class="divide-y divide-[#E8E3D8]">
+          ${rows.map(([k, s]) => `<tr>
+            <td class="py-1 px-1 font-sans font-bold text-[#18181B]">${s.label}</td>
+            <td class="py-1 px-1 text-right">${s.all.n}</td>
+            <td class="py-1 px-1 text-right">%${s.all.win_pct}</td>
+            <td class="py-1 px-1 text-right">${s.all.avg_win_ganyan ?? '-'}</td>
+            <td class="py-1 px-1 text-right">${roi(s.all.roi_pct)}</td>
+            <td class="py-1 px-1 text-right">${roi(s.test.roi_pct)} <span class="text-[9px] text-[#78716C]">(${s.test.n})</span></td>
+            <td class="py-1 px-1 text-right font-bold">${(st.weights || {})[k] ?? '-'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    ${(st.thresholds || []).length ? `
+      <div class="mt-3 text-[9px] font-extrabold text-[#8C5A3C] uppercase">Sürpriz puanı eşiğine göre (Eğitim → Test)</div>
+      <table class="w-full text-[11px] mono mt-1">
+        <thead><tr class="text-[9px] text-[#57534E] uppercase font-sans"><th class="text-left">Eşik</th><th class="text-right">Eğitim at/kazanma/getiri</th><th class="text-right">Test at/kazanma/getiri</th></tr></thead>
+        <tbody>${st.thresholds.map(t => `<tr${t.threshold === st.recommended_threshold ? ' class="bg-[#0F291E]/10"' : ''}>
+          <td class="py-0.5">≥ ${t.threshold}${t.threshold === st.recommended_threshold ? ' ◀' : ''}</td>
+          <td class="py-0.5 text-right">${t.train.n} / %${t.train.win_pct} / ${roi(t.train.roi_pct)}</td>
+          <td class="py-0.5 text-right">${t.test.n} / %${t.test.win_pct} / ${roi(t.test.roi_pct)}</td></tr>`).join('')}</tbody>
+      </table>` : ''}
+    ${(st.big_winners || []).length ? `
+      <div class="mt-3 text-[9px] font-extrabold text-[#8C5A3C] uppercase">Dönemin en yüksek ganyanlı kazananları</div>
+      <div class="space-y-1 mt-1">${st.big_winners.slice(0, 10).map(w => `
+        <div class="text-[11px] flex items-start justify-between gap-2 border-t border-[#E8E3D8] pt-1">
+          <span><strong>${w.name}</strong> <span class="text-[#57534E]">${w.date.slice(0, 5)} ${w.city} ${w.race_no}. koşu • AGF ${w.agf_rank}.</span><br>
+          <span class="text-[10px] text-[#57534E]">${w.signals.map(k => (st.labels || {})[k] || k).join(' • ') || 'işaret yok'}</span></span>
+          <span class="mono font-extrabold text-[#7A1C1C] whitespace-nowrap">${w.ganyan} gny</span>
+        </div>`).join('')}</div>` : ''}
+    <p class="text-[10px] text-[#78716C] mt-3">Geçmiş getiri geleceği garanti etmez; kısa dönemde şans baskındır. Uygulama karar destek aracıdır.</p>
+  `;
 }
 
 function setSortMode(mode) {

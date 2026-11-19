@@ -302,6 +302,19 @@ def normalize_surface(part):
 SCRATCH_RE = re.compile(r'\s*\((?:Koşmaz|KOŞMAZ|koşmaz)\)\s*')
 
 
+def parse_weight(text):
+    """
+    TJK kilo hücresi: '55', '53,5', '54 +2.00' (fazla kilo), '53,5 +0.50'.
+    Atın taşıyacağı gerçek kilo = temel kilo + fazla kilo. Dönen: (toplam, fazla_kilo)
+    """
+    nums = re.findall(r'\d+(?:[\.,]\d+)?', text or "")
+    if not nums:
+        return None, 0.0
+    base = float(nums[0].replace(",", "."))
+    extra = sum(float(n.replace(",", ".")) for n in nums[1:]) if "+" in (text or "") else 0.0
+    return round(base + extra, 2), round(extra, 2)
+
+
 def split_horse_name_and_equipment(raw_name):
     """
     In TJK CSV, At İsmi looks like: 'LADY ECRİN KG DB SK' or 'BAŞ YARGIÇ K DB GKR'
@@ -1219,10 +1232,7 @@ def race_row_to_dict(tds):
     p_name = "Çim" if p_letter == "Ç" else ("Sentetik" if p_letter == "S" else "Kum")
     pd_code = "SE" if p_letter == "S" else PD_MAP.get(p_cond, tr_upper(p_cond)[:2] or "NO")
     sira = int(tds[4]) if tds[4].isdigit() and int(tds[4]) > 0 else None
-    try:
-        past_weight = float(re.findall(r'[\d\.]+', tds[6].replace(",", "."))[0])
-    except Exception:
-        past_weight = None
+    past_weight = parse_weight(tds[6])[0]
     kcins = tds[13]
     cls_key, cls_label, cls_order = classify_race(kcins)
     return {
@@ -1813,6 +1823,102 @@ def fetch_offspring_breakdown(kind, name):
     return result
 
 
+# ------------------------- SÜRPRİZ TERCİHLERİ -------------------------
+SURPRISE_STATS_PATH = os.path.join(STATIC_DIR, "data", "surprise_stats.json")
+SURPRISE_MIN_WIN_PROB = 5.0   # araştırma: en uç sürprizler (çok düşük şans) elenince getiri iyileşiyor
+DEFAULT_SURPRISE_WEIGHTS = {  # geçmiş veri analizi yoksa kullanılan başlangıç ağırlıkları
+    "model_value": 1.0, "hp_light": 0.8, "apprentice": 0.3, "class_drop": 0.8, "surface_fit": 0.7,
+    "distance_fit": 0.6, "season_fit": 0.5, "recent_top3": 0.6, "improving": 0.4, "lone_speed": 0.6,
+    "first_blinkers": 0.2, "fresh": 0.2, "long_layoff": -0.8, "season_weak": -0.6,
+}
+
+
+def load_surprise_stats():
+    cached = cache_get("surprise_stats", 300)
+    if cached is not None:
+        return cached
+    stats = None
+    try:
+        with open(SURPRISE_STATS_PATH, encoding="utf-8") as f:
+            stats = json.load(f)
+    except (OSError, ValueError):
+        stats = None
+    cache_set("surprise_stats", stats or {})
+    return stats or {}
+
+
+def build_surprise_list(date_str, city_id):
+    """
+    Günün programında halkın ihmal ettiği atlar (AGF 4. sıra ve gerisi / AGF %8 altı) için
+    sürpriz işaretlerini (backtest.py ile aynı kurallar) hesaplar ve ağırlıklı puanlar.
+    """
+    import backtest as BT  # döngüsel içe aktarmayı önlemek için geç yükleme
+    cache_key = f"surprise_{date_str}_{city_id}"
+    cached = cache_get(cache_key, 600)
+    if cached is not None:
+        return cached
+    prog = fetch_city_program(date_str, city_id=city_id)
+    stats = load_surprise_stats()
+    weights = stats.get("weights") or DEFAULT_SURPRISE_WEIGHTS
+    race_date = datetime.strptime(prog["date"] or date_str, "%d/%m/%Y")
+    jobs = []
+    for race in prog["races"]:
+        has_agf = sum(h["agf_pct"] for h in race["horses"]) > 10
+        for h in race["horses"]:
+            hw = h.get("hp_weight") or {}
+            rec = {
+                "race_no": race["race_no"], "time": race["time"], "no": h["no"], "name": h["name"],
+                "at_id": h.get("at_id"), "agf_pct": h["agf_pct"], "agf_rank": h["agf_rank"],
+                "win_prob": h["simulation"]["win_prob"], "fair_ganyan": h["simulation"]["fair_ganyan"],
+                "model_rank": h.get("model_rank"), "style": h["running_style"]["code"],
+                "pace": race["pace_scenario"]["code"], "trend": h["form_analysis"]["trend"],
+                "hp_resid": hw.get("residual"), "apprentice": h.get("jockey", "").upper().endswith(" AP"),
+                "equipment": h.get("equipment", []), "jockey": h.get("jockey"), "weight": h["weight"],
+                "forma_url": h.get("forma_url"), "has_agf": has_agf,
+                "race_label": f"{race['race_no']}. Koşu • {race['distance_m']}m {race['surface']} • {race.get('condition', '')}",
+            }
+            overlooked = BT.is_overlooked(rec) if has_agf else (h.get("model_rank") or 0) >= 4
+            if not overlooked or rec["win_prob"] < SURPRISE_MIN_WIN_PROB:
+                continue
+            jobs.append((rec, race, h))
+
+    def enrich(item):
+        rec, race, h = item
+        if h.get("at_id"):
+            try:
+                page = fetch_cached(f"https://www.tjk.org/TR/YarisSever/Query/ConnectedPage/AtKosuBilgileri?1=1&QueryParameter_AtId={h['at_id']}", TTL_HISTORY)
+                rows = [race_row_to_dict(t) for tb in re.findall(r'<tbody.*?</tbody>', page, re.S) for t in parse_horse_race_rows(tb)]
+                hist = []
+                for r in rows:
+                    try:
+                        r["_date"] = datetime.strptime(r["tarih"], "%d.%m.%Y")
+                    except ValueError:
+                        continue
+                    if r["_date"] < race_date:
+                        hist.append(r)
+                hist.sort(key=lambda r: r["_date"], reverse=True)
+                rec.update(BT.history_features(hist, race, h, race_date))
+                rec.pop("last_taki", None)
+            except Exception:
+                rec["hist_error"] = True
+        sig = sorted(BT.compute_signals(rec))
+        rec["signals"] = sig
+        rec["score"] = round(sum(weights.get(k, 0) for k in sig), 2)
+        return rec
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        recs = list(pool.map(enrich, jobs))
+    threshold = (stats.get("recommended_threshold") if stats else None) or 1.0
+    recs.sort(key=lambda r: (-r["score"], -r["win_prob"]))
+    result = {
+        "date": prog["date"], "city_name": prog["city_name"], "threshold": threshold,
+        "weights": weights, "labels": BT.SIGNAL_LABELS, "uses_backtest": bool(stats.get("weights")),
+        "min_win_prob": SURPRISE_MIN_WIN_PROB, "candidates": recs,
+    }
+    cache_set(cache_key, result)
+    return result
+
+
 # ------------------------- İDMAN (GALOP / SPRINT / KENTER) -------------------------
 IDMAN_SPLITS = [2200, 2000, 1800, 1600, 1400, 1200, 1000, 800, 600, 400, 200]
 IDMAN_DURUM_ORDER = {"ÇOK RAHAT": 1, "RAHAT": 2, "HAFİF ÇALIŞIR": 3, "ÇALIŞIR": 3, "ÇALIŞARAK": 3,
@@ -2099,11 +2205,8 @@ def parse_tjk_csv(csv_text, html_extras=None):
                 sire = cols[3] if len(cols) > 3 else ""
                 dam = cols[4] if len(cols) > 4 else ""
 
-                weight_str = (cols[5] if len(cols) > 5 else "57").replace(",", ".")
-                try:
-                    weight = float(re.findall(r'[\d\.]+', weight_str)[0])
-                except Exception:
-                    weight = 57.0
+                weight, over_weight = parse_weight(cols[5] if len(cols) > 5 else "57")
+                weight = weight or 57.0
 
                 jockey = cols[6] if len(cols) > 6 else ""
                 owner = cols[7] if len(cols) > 7 else ""
@@ -2141,6 +2244,7 @@ def parse_tjk_csv(csv_text, html_extras=None):
                     "dam": dam,
                     "damsire": extra.get("damsire", ""),
                     "weight": weight,
+                    "over_weight": over_weight,
                     "jockey": jockey,
                     "owner": owner,
                     "trainer": trainer,
@@ -2353,6 +2457,18 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
                     raise ValueError("TJK kaydında bu akraba bulunamadı")
                 # Kısrak babası: aygır olarak kendi taylarının başarısı
                 self.send_json(200, {"ok": True, "data": fetch_offspring_breakdown("anne" if kind == "anne" else "aygir", names[kind])})
+            except Exception as e:
+                self.send_json(500, {"ok": False, "error": str(e)})
+            return
+
+        if parsed.path == "/api/surprise":
+            params = urllib.parse.parse_qs(parsed.query)
+            date_str = params.get("date", [tr_now().strftime("%d/%m/%Y")])[0]
+            city_id = params.get("city_id", [""])[0]
+            try:
+                if not re.match(r'^\d{2}/\d{2}/\d{4}$', date_str) or not city_id.isdigit():
+                    raise ValueError("Geçersiz tarih veya hipodrom")
+                self.send_json(200, {"ok": True, "data": build_surprise_list(date_str, city_id)})
             except Exception as e:
                 self.send_json(500, {"ok": False, "error": str(e)})
             return
