@@ -138,3 +138,12 @@ Bülten kartlarında (koşu açılınca arka planda yüklenir) ve safkan pencere
 * Bir koşuda birden fazla **eküri grubu** olabilir (`[(1)A,(6)B,] eküridir.[(2)C],(11)D],] eküridir.`); her grup ayrı tutulur. TJK'da eküri atlar bahiste tek at sayıldığı için 6'lı Kurgu'nun **Kapsama Gücü**, seçilen atın eküri arkadaşlarını da hesaba katar.
 * 50'den fazla koşusu olan atlarda TJK sayfası son 50 koşuyu gösterir; eksik yıllar `QueryParameter_Yil` ile ayrıca çekilip kariyer tamamlanır.
 * "Bugün" Türkiye saatine (UTC+3) göre belirlenir; sunucu hangi saat diliminde çalışırsa çalışsın doğru günün bülteni açılır.
+
+### 10. Yıllık / İl / Pist Karnesi, Akrabalar, Mesafe × İl Dereceleri ve İleri Tarihli Bültenler
+* **Gün seçici:** Bugün, Yarın ve TJK'nın yayınladığı sonraki günlerin bültenleri (`/api/dates`, `/api/program?date=GG/AA/YYYY`).
+* **Yıllık Karne & Kazanç:** Her yılın koşu sayısı, 1.–5.'likleri, Ç/K/S dağılımı ve TJK resmi kazancı.
+* **İl İl Hipodrom Karnesi:** Her hipodromda koşu, 1-2-3, 1.% / İlk 3 / İlk 5, ortalama sıra, pist dağılımı, toplam ikramiye.
+* **Pist Bazında Koşular:** Çim / Kum / Sentetik sekmeleriyle tüm kariyer koşuları (tarih, şehir, mesafe, zemin, sıra, derece, sınıf, kilo, jokey, ikramiye).
+* **Pist • Zemin • Mevsim • Mesafe Başarısı (`build_breakdowns`):** Kum (Normal/Nemli/Islak/Sulu), Çim (Normal/Biraz Yumuşak/Yumuşak/Biraz Ağır/Ağır/Çok Ağır…), İlkbahar/Yaz/Sonbahar/Kış ve mesafe grupları; bugünkü pist ve mesafe işaretlenir.
+* **Aynı Mesafe, Farklı İller (`build_distance_city_times`):** Her mesafe ve pistte hipodrom hipodrom en iyi / ortalama derece. Tempo sekmesinde koşudaki tüm atların bugünkü mesafedeki il il dereceleri yan yana.
+* **Akraba İstatistikleri (`/api/horse_relatives`):** Baba (TJK aygır istatistiği + Çim/Kum/Sentetik), Anne, Kısrak Babası ve kardeşler. "Analiz" düğmesiyle (`/api/relative_breakdown`) yavruların koşu kayıtlarından pist/zemin/mevsim/mesafe kırılımı: anne için tüm yavrular; baba ve kısrak babası (kendi tayları) için en fazla 20 taylık örneklem. Sonuçlar 24 saat önbellekte tutulur.

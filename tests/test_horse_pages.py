@@ -198,3 +198,41 @@ class TestProgramExtras(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBreakdowns(unittest.TestCase):
+    def races(self):
+        rows = [
+            race_row("05.11.2026", "1400", "K:Normal", "1", "1.29.10", "Handikap 16", "62"),
+            race_row("20.10.2026", "1400", "K:Nemli", "2", "1.28.50", "Handikap 15", "58"),
+            race_row("01.07.2026", "1400", "K:Normal", "5", "1.30.50", "ŞARTLI 4", "56"),
+            race_row("10.04.2026", "1600", "Ç:Biraz Ağır 4.1", "3", "1.40.00", "ŞARTLI 4", "56"),
+            race_row("15.01.2026", "1200", "S:Normal", "", "", "ŞARTLI 3", "50"),
+        ]
+        rows[1] = rows[1].replace("<td>İzmir</td>", "<td>Bursa</td>", 1)
+        return [S.race_row_to_dict(S.parse_horse_race_rows("<tbody>" + r + "</tbody>")[0]) for r in rows]
+
+    def test_season_condition_distance(self):
+        b = S.build_breakdowns(self.races())
+        season = {x["label"]: x["starts"] for x in b["season"]}
+        self.assertEqual(season, {"İlkbahar": 1, "Yaz": 1, "Sonbahar": 2, "Kış": 1})
+        kum = {x["label"]: (x["starts"], x["w1"]) for x in b["condition"]["Kum"]}
+        self.assertEqual(kum, {"Normal": (2, 1), "Nemli": (1, 0)})
+        self.assertEqual([x["label"] for x in b["condition"]["Çim"]], ["Biraz Ağır"])
+        dist = {x["label"]: x["starts"] for x in b["distance"]}
+        self.assertEqual(dist["1300–1500m"], 3)
+        self.assertEqual(dist["Sprint (≤1200m)"], 1)
+
+    def test_distance_city_times(self):
+        g = S.build_distance_city_times(self.races())
+        k1400 = next(x for x in g if x["msf"] == 1400 and x["surface"] == "Kum")
+        self.assertEqual([c["city"] for c in k1400["cities"]], ["Bursa", "İzmir"])   # en hızlı önce
+        self.assertEqual(k1400["cities"][0]["best"], "1.28.50")
+        self.assertEqual(k1400["cities"][1]["count"], 2)
+        only = S.build_distance_city_times(self.races(), only_dist=1600)
+        self.assertEqual([(x["msf"], x["surface"]) for x in only], [(1600, "Çim")])
+
+    def test_money(self):
+        self.assertEqual(S.parse_tl("1.297.200 t"), 1297200)
+        self.assertEqual(S.parse_tl("451.271.930,63"), 451271930)
+        self.assertEqual(S.format_tl(1420500), "1.420.500 t")

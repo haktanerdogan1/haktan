@@ -11,6 +11,8 @@ let STATE = {
   sortMode: 'quant', // 'quant' | 'agf' | 'no'
   altiliSelections: {},
   altiliGroupIdx: 0,
+  date: null,      // null = bugün; 'GG/AA/YYYY' = TJK'nın yayınladığı ileri tarihli bülten
+  dates: [],
   extras: {},      // at_id -> safkan karnesi (hafif): 1-5 yüzdeleri, sınıf karnesi, HP seyri
   idman: {},       // kosu_kodu -> koşunun idman (galop/sprint/kenter) tablosu
   pending: {},     // devam eden istekler (aynı veri iki kez istenmesin)
@@ -73,6 +75,7 @@ async function loadProgram(cityId = null, forceRefresh = false, opts = {}) {
 
   try {
     let url = `/api/program?refresh=${forceRefresh ? '1' : '0'}`;
+    if (STATE.date) url += `&date=${encodeURIComponent(STATE.date)}`;
     if (cityId) url += `&city_id=${encodeURIComponent(cityId)}`;
     if (STATE.weights) url += `&w=${WEIGHT_KEYS.map(k => STATE.weights[k]).join(',')}`;
 
@@ -97,6 +100,7 @@ async function loadProgram(cityId = null, forceRefresh = false, opts = {}) {
     syncWeightSliders(json.data.weights);
 
     renderHeaderAndTabs();
+    loadDates();
     renderCurrentRace();
     renderValueRadar();
     generateAltiliTicket();
@@ -123,6 +127,40 @@ function refreshProgram(force) {
     STATE.idman = {};
   }
   loadProgram(STATE.currentCityId, force, { keepRace: true });
+}
+
+// ---------------- GÜN SEÇİCİ ----------------
+function loadDates() {
+  if (STATE.dates.length) return renderDateTabs();
+  fetchJSON('/api/dates').then(days => { STATE.dates = days; renderDateTabs(); }).catch(() => {});
+}
+
+function renderDateTabs() {
+  const el = document.getElementById('dateTabs');
+  if (!el || !STATE.dates.length) return;
+  const current = STATE.date || (STATE.dates[0] && STATE.dates[0].date);
+  el.innerHTML = STATE.dates.map(d => {
+    const label = d.offset === 0 ? 'Bugün' : d.offset === 1 ? 'Yarın' : d.weekday;
+    const active = d.date === current;
+    const dom = d.domestic.length ? d.domestic.join(', ') : 'Yalnız yabancı';
+    return `
+      <button onclick="selectDate('${d.date}')" title="${dom}"
+        class="px-2.5 py-1 rounded-md whitespace-nowrap flex items-center gap-1.5 text-[11px] font-bold ${
+          active ? 'bg-[#F6F3EC] text-[#0F291E]' : 'bg-[#091912]/60 text-[#B7C9BE] border border-white/10'
+        }">
+        <span>${label}</span><span class="mono text-[10px] opacity-80">${d.date.slice(0, 5)}</span>
+        <span class="text-[9px] opacity-70">${d.cities} hip.</span>
+      </button>`;
+  }).join('');
+}
+
+function selectDate(date) {
+  const first = STATE.dates[0] && STATE.dates[0].date;
+  STATE.date = date === first ? null : date;
+  STATE.altiliGroupIdx = 0;
+  renderDateTabs();
+  // Aynı hipodrom o gün de varsa onu aç, yoksa ilk hipodrom
+  loadProgram(STATE.currentCityId, false);
 }
 
 function renderHeaderAndTabs() {
@@ -184,10 +222,10 @@ function switchTab(tabName) {
     const navEl = document.getElementById(`nav-${t}`);
     if (t === tabName) {
       viewEl.classList.remove('hidden');
-      navEl.className = 'flex flex-col items-center py-1 px-2.5 rounded-lg text-[#0F291E] bg-[#0F291E]/10 font-bold';
+      navEl.className = 'relative flex flex-col items-center py-1 px-2.5 rounded-lg text-[#0F291E] bg-[#0F291E]/10 font-bold';
     } else {
       viewEl.classList.add('hidden');
-      navEl.className = 'flex flex-col items-center py-1 px-2.5 rounded-lg text-[#57534E] hover:text-[#0F291E]';
+      navEl.className = 'relative flex flex-col items-center py-1 px-2.5 rounded-lg text-[#57534E] hover:text-[#0F291E]';
     }
   });
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -464,6 +502,7 @@ function renderCurrentRace() {
   }).join('');
 
   renderPaceAndSimulationView(race);
+  renderDistanceCompare(race);
   loadRaceExtras(race);
 }
 
@@ -520,7 +559,9 @@ function loadRaceExtras(race) {
     if (!isCurrentRace(race)) return;
     race.horses.forEach(h => paintHorseExtras(race, h));
   });
-  const queue = race.horses.filter(h => h.at_id && needsFetch(STATE.extras[h.at_id]));
+  // Hafif karne yalnız o mesafenin derecelerini taşır: başka mesafede koşuyorsa yeniden iste
+  const stale = ex => ex && !ex.failed && !ex._full && ex._dist !== race.distance_m;
+  const queue = race.horses.filter(h => h.at_id && (needsFetch(STATE.extras[h.at_id]) || stale(STATE.extras[h.at_id])));
   race.horses.filter(h => !queue.includes(h)).forEach(h => paintHorseExtras(race, h));
   let active = 0;
   const next = () => {
@@ -530,7 +571,7 @@ function loadRaceExtras(race) {
       active++;
       const isArab = (race.age_group || '').toLowerCase().includes('arap') ? '1' : '0';
       fetchJSON(`/api/horse_history?lite=1&at_id=${encodeURIComponent(h.at_id)}&weight=${h.weight}&dist=${race.distance_m}&arab=${isArab}`)
-        .then(d => { STATE.extras[h.at_id] = d; })
+        .then(d => { d._dist = race.distance_m; if (!(STATE.extras[h.at_id] || {})._full) STATE.extras[h.at_id] = d; })
         .catch(() => { STATE.extras[h.at_id] = { failed: true, failedAt: Date.now() }; })
         .finally(() => {
           active--;
@@ -545,6 +586,7 @@ function loadRaceExtras(race) {
 function paintHorseExtras(race, h) {
   const el = document.getElementById(`hx-${h.no}`);
   if (el) el.innerHTML = horseExtrasHTML(race, h);
+  scheduleDistanceCompare(race);
 }
 
 function pctPill(label, val, strong) {
@@ -613,6 +655,72 @@ function horseExtrasHTML(race, h) {
   return `
     <div class="flex items-center gap-x-2 gap-y-0.5 flex-wrap">${karne}</div>
     ${idman ? `<div class="flex items-center gap-x-2 gap-y-0.5 flex-wrap mt-1 pt-1 border-t border-[#E8E3D8]">${idman}</div>` : ''}
+  `;
+}
+
+// ---------------- AYNI MESAFE, FARKLI İLLER: koşudaki atların dereceleri ----------------
+let DIST_CMP_TIMER = null;
+function scheduleDistanceCompare(race) {
+  clearTimeout(DIST_CMP_TIMER);
+  DIST_CMP_TIMER = setTimeout(() => { if (isCurrentRace(race)) renderDistanceCompare(race); }, 150);
+}
+
+function raceSurfaceName(race) {
+  const s = race.surface || '';
+  return s.includes('Çim') ? 'Çim' : s.includes('Sentetik') ? 'Sentetik' : 'Kum';
+}
+
+function renderDistanceCompare(race) {
+  const el = document.getElementById('distanceCompare');
+  if (!el) return;
+  const surf = raceSurfaceName(race);
+  const rows = [];
+  const cities = new Map();
+  race.horses.forEach(h => {
+    const ex = h.at_id ? STATE.extras[h.at_id] : null;
+    const grp = ex && (ex.distance_city_times || []).find(g => g.msf === race.distance_m && g.surface === surf);
+    if (grp) grp.cities.forEach(c => cities.set(c.city, (cities.get(c.city) || 0) + c.count));
+    rows.push({ h, grp, loaded: !!ex || !h.at_id });
+  });
+  const cityList = [...cities.entries()].sort((a, b) => b[1] - a[1]).map(x => x[0]);
+  // Her il sütununda en hızlı dereceyi vurgula
+  const bestBy = {};
+  cityList.forEach(c => {
+    rows.forEach(r => {
+      const cell = r.grp && r.grp.cities.find(x => x.city === c);
+      if (cell && (bestBy[c] == null || cell.best_sec < bestBy[c])) bestBy[c] = cell.best_sec;
+    });
+  });
+  const overallBest = r => r.grp ? Math.min(...r.grp.cities.map(c => c.best_sec)) : Infinity;
+  rows.sort((a, b) => overallBest(a) - overallBest(b));
+  const pending = rows.filter(r => !r.loaded).length;
+  el.innerHTML = `
+    <div class="flex items-start justify-between gap-2 mb-1">
+      <h3 class="serif-title text-base font-bold text-[#0F291E] uppercase">📏 ${race.distance_m}m ${surf}: İl İl Dereceler</h3>
+      ${pending ? `<span class="text-[10px] text-[#57534E] whitespace-nowrap">⏳ ${pending} at yükleniyor</span>` : ''}
+    </div>
+    <p class="text-[11px] text-[#57534E] mb-3">Koşudaki atların bugünkü mesafe ve pistte, farklı hipodromlarda koştuğu en iyi dereceler (parantezde koşu sayısı). Sütundaki en hızlı derece vurgulanır.</p>
+    ${cityList.length ? `
+      <div class="overflow-x-auto -mx-1">
+        <table class="w-full text-[11px] whitespace-nowrap mono">
+          <thead><tr class="text-[9px] text-[#57534E] border-b border-[#D8D2C5] uppercase font-sans">
+            <th class="pb-1.5 px-1 text-left">Safkan</th>
+            ${cityList.map(c => `<th class="pb-1.5 px-1 text-right">${c}</th>`).join('')}
+          </tr></thead>
+          <tbody class="divide-y divide-[#E8E3D8]">
+            ${rows.map(r => `
+              <tr onclick="openHorseModal(${r.h.no})" class="cursor-pointer hover:bg-[#F6F3EC]">
+                <td class="py-1.5 px-1 font-sans font-bold text-[#18181B]">#${r.h.no} ${r.h.name}</td>
+                ${cityList.map(c => {
+                  const cell = r.grp && r.grp.cities.find(x => x.city === c);
+                  if (!cell) return `<td class="py-1.5 px-1 text-right text-[#C8C1B2]">${r.loaded ? '—' : '…'}</td>`;
+                  const top = Math.abs(cell.best_sec - bestBy[c]) < 0.001;
+                  return `<td class="py-1.5 px-1 text-right ${top ? 'font-extrabold text-[#7A1C1C]' : 'font-semibold text-[#18181B]'}" title="En iyi: ${cell.best_date} • ${cell.best_sira}. • ${cell.best_pd} | Ortalama ${cell.avg}">${cell.best}<span class="text-[9px] text-[#78716C]"> (${cell.count})</span></td>`;
+                }).join('')}
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>` : `<div class="text-xs text-[#78716C]">${pending ? 'Safkan karneleri yükleniyor…' : `Koşudaki atların ${race.distance_m}m ${surf} pistte kayıtlı derecesi yok.`}</div>`}
   `;
 }
 
@@ -1040,6 +1148,26 @@ function openHorseModal(horseNo) {
       <div class="text-xs text-[#57534E] py-2 text-center">⏳ Son idman bilgisi yükleniyor...</div>
     </div>
 
+    <!-- YILLIK KARNE & KAZANÇ -->
+    <div id="yearlySection" class="bg-white border border-[#D8D2C5] rounded-xl p-3.5 mb-3.5">
+      <div class="text-xs text-[#57534E] py-2 text-center">⏳ Yıllık karne ve kazanç yükleniyor...</div>
+    </div>
+
+    <!-- PİST / ZEMİN / MEVSİM / MESAFE KIRILIMI -->
+    <div id="breakdownSection" class="bg-white border border-[#D8D2C5] rounded-xl p-3.5 mb-3.5">
+      <div class="text-xs text-[#57534E] py-2 text-center">⏳ Pist, zemin, mevsim ve mesafe başarı kırılımı yükleniyor...</div>
+    </div>
+
+    <!-- AYNI MESAFE, FARKLI İLLER -->
+    <div id="distanceCitySection" class="bg-white border border-[#D8D2C5] rounded-xl p-3.5 mb-3.5">
+      <div class="text-xs text-[#57534E] py-2 text-center">⏳ Mesafe × il dereceleri yükleniyor...</div>
+    </div>
+
+    <!-- İL (HİPODROM) KARNESİ -->
+    <div id="citySection" class="bg-white border border-[#D8D2C5] rounded-xl p-3.5 mb-3.5">
+      <div class="text-xs text-[#57534E] py-2 text-center">⏳ İl il hipodrom karnesi yükleniyor...</div>
+    </div>
+
     <!-- KOŞU SINIFI KARNESİ: GRUP / KV / ŞARTLI / HANDİKAP -->
     <div id="classKarneSection" class="bg-white border border-[#D8D2C5] rounded-xl p-3.5 mb-3.5">
       <div class="text-xs text-[#57534E] py-2 text-center">⏳ Koşu sınıfı karnesi yükleniyor...</div>
@@ -1058,6 +1186,16 @@ function openHorseModal(horseNo) {
     <!-- 2. 3 KUŞAK SOYAĞACI (PEDİGRİ: BABA, ANNE, KISRAK BABASI VE ATALARI) -->
     <div id="pedigreeTreeSection" class="bg-white border border-[#D8D2C5] rounded-xl p-3.5 mb-3.5">
       <div class="text-xs text-[#57534E] py-2 text-center">⏳ 3 Kuşak Soyağacı (Pedigri) tablosu yükleniyor...</div>
+    </div>
+
+    <!-- AKRABA İSTATİSTİKLERİ: BABA / ANNE / KISRAK BABASI / KARDEŞLER -->
+    <div id="relativesSection" class="bg-white border border-[#D8D2C5] rounded-xl p-3.5 mb-3.5">
+      <div class="text-xs text-[#57534E] py-2 text-center">⏳ Baba, anne, kısrak babası ve kardeş istatistikleri yükleniyor...</div>
+    </div>
+
+    <!-- PİST BAZINDA KOŞULAR (ÇİM / KUM / SENTETİK) -->
+    <div id="surfaceRacesSection" class="bg-white border border-[#D8D2C5] rounded-xl p-3.5 mb-3.5">
+      <div class="text-xs text-[#57534E] py-2 text-center">⏳ Çim / Kum / Sentetik koşu listeleri yükleniyor...</div>
     </div>
 
     <!-- 3. ÖZEL PERFORMANS VE DERECE BÜLTENİ TABLOSU -->
@@ -1088,7 +1226,7 @@ function openHorseModal(horseNo) {
   const showHistoryError = (msg) => {
     if (token !== HORSE_MODAL_TOKEN) return;
     const errHTML = `<div class="text-xs text-[#7A1C1C] py-2 text-center">⚠️ ${esc(msg)}</div>`;
-    ['surfaceAffinitySection', 'pedigreeTreeSection', 'bankomatHistoryTable', 'careerKarneSection', 'classKarneSection', 'hpHistorySection'].forEach(id => {
+    ['surfaceAffinitySection', 'pedigreeTreeSection', 'bankomatHistoryTable', 'careerKarneSection', 'classKarneSection', 'hpHistorySection', 'yearlySection', 'citySection', 'surfaceRacesSection', 'relativesSection', 'breakdownSection', 'distanceCitySection'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.innerHTML = errHTML;
     });
@@ -1108,6 +1246,18 @@ function openHorseModal(horseNo) {
       ? 'Bu safkanın TJK kimliği bültende bulunamadı; geçmiş koşu, soyağacı ve pist karnesi çekilemedi.'
       : 'Yabancı hipodrom: TJK bu safkanın geçmiş koşu, soyağacı ve idman kayıtlarını yayınlamıyor.');
   } else {
+    fetchJSON(`/api/horse_relatives?at_id=${encodeURIComponent(h.at_id)}`)
+      .then(rel => {
+        if (token !== HORSE_MODAL_TOKEN) return;
+        const el = document.getElementById('relativesSection');
+        if (el) el.innerHTML = relativesHTML(rel, h, race);
+      })
+      .catch(err => {
+        if (token !== HORSE_MODAL_TOKEN) return;
+        const el = document.getElementById('relativesSection');
+        if (el) el.innerHTML = `<div class="text-xs text-[#7A1C1C] py-2 text-center">⚠️ Akraba istatistikleri alınamadı: ${esc(err.message)}</div>`;
+      });
+
     const isArab = (race.age_group || '').toLowerCase().includes('arap') ? '1' : '0';
     fetch(`/api/horse_history?at_id=${encodeURIComponent(h.at_id)}&weight=${encodeURIComponent(h.weight)}&dist=${encodeURIComponent(race.distance_m)}&arab=${isArab}`)
       .then(r => r.json())
@@ -1123,6 +1273,7 @@ function openHorseModal(horseNo) {
         }
 
         const d = deepEscape(json.data);
+        d._full = true;  // tüm mesafeler ve pist listeleri dahil
         STATE.extras[h.at_id] = d;
         if (isCurrentRace(race)) paintHorseExtras(race, h);
         const ck = document.getElementById('careerKarneSection');
@@ -1131,6 +1282,22 @@ function openHorseModal(horseNo) {
         if (cl) cl.innerHTML = classKarneHTML(d);
         const hpEl = document.getElementById('hpHistorySection');
         if (hpEl) hpEl.innerHTML = hpHistoryHTML(d);
+        const yEl = document.getElementById('yearlySection');
+        if (yEl) yEl.innerHTML = yearlyHTML(d);
+        const cEl = document.getElementById('citySection');
+        if (cEl) cEl.innerHTML = cityHTML(d);
+        const bEl = document.getElementById('breakdownSection');
+        if (bEl) bEl.innerHTML = `
+          <div class="mb-2">
+            <h4 class="serif-title text-base font-bold text-[#0F291E] uppercase">🌦️ Pist • Zemin • Mevsim • Mesafe Başarısı</h4>
+            <p class="text-[10px] text-[#57534E]">Tüm kariyer (${d.breakdowns ? d.breakdowns.races : 0} koşu) • yarış başına yüzdeler</p>
+          </div>${breakdownHTML(d.breakdowns, race)}`;
+        const dEl = document.getElementById('distanceCitySection');
+        if (dEl) dEl.innerHTML = distanceCityHTML(d, race);
+        STATE.modalSurfaceRaces = d.surface_races || {};
+        const todaySurf = (race.surface || '').includes('Çim') ? 'Çim' : (race.surface || '').includes('Sentetik') ? 'Sentetik' : 'Kum';
+        renderSurfaceRaces(STATE.modalSurfaceRaces[todaySurf] && STATE.modalSurfaceRaces[todaySurf].length ? todaySurf
+          : (['Çim', 'Kum', 'Sentetik'].find(k => (STATE.modalSurfaceRaces[k] || []).length) || todaySurf));
 
         // A) Surface Affinity (Kum vs Çim vs Sentetik)
         if (surfEl) {
@@ -1373,6 +1540,311 @@ function openHorseModal(horseNo) {
       })
       .catch(err => showHistoryError(`TJK bağlantı hatası: ${err.message}`));
   }
+}
+
+const SURF_STYLE = {
+  'Çim': { icon: '🌱', on: 'bg-[#1B4332] text-[#F9F6F0]', text: 'text-[#0F291E]' },
+  'Kum': { icon: '🏜️', on: 'bg-[#8C5A3C] text-[#F9F6F0]', text: 'text-[#8C5A3C]' },
+  'Sentetik': { icon: '⚡', on: 'bg-[#3F3F46] text-[#F9F6F0]', text: 'text-[#3F3F46]' },
+};
+
+function surfMix(sf) {
+  if (!sf) return '';
+  return ['Çim', 'Kum', 'Sentetik'].filter(k => sf[k]).map(k => `<span class="${SURF_STYLE[k].text}">${k[0]}${sf[k]}</span>`).join(' ');
+}
+
+function yearlyHTML(d) {
+  const rows = d.yearly || [];
+  const head = `<h4 class="serif-title text-base font-bold text-[#0F291E] uppercase">📅 Yıllık Karne &amp; Kazanç</h4>`;
+  if (!rows.length) return head + '<div class="text-xs text-[#78716C] mt-1">Henüz koşu kaydı yok.</div>';
+  return `
+    <div class="mb-2">${head}<p class="text-[10px] text-[#57534E]">Her yılın koşu sayısı, 1.–5.'likleri, pist dağılımı (Ç/K/S) ve TJK resmi kazancı</p></div>
+    <div class="overflow-x-auto -mx-1">
+      <table class="w-full text-[11px] whitespace-nowrap mono">
+        <thead><tr class="text-[9px] text-[#57534E] border-b border-[#D8D2C5] uppercase font-sans">
+          <th class="pb-1 px-1 text-left">Yıl</th><th class="pb-1 px-1 text-right">K</th><th class="pb-1 px-1 text-right">1-2-3-4-5</th>
+          <th class="pb-1 px-1 text-right">1.%</th><th class="pb-1 px-1 text-right">İlk 3</th><th class="pb-1 px-1 text-right">Pist</th>
+          <th class="pb-1 px-1 text-right">Kazanç</th>
+        </tr></thead>
+        <tbody class="divide-y divide-[#E8E3D8]">
+          ${rows.map(y => `
+            <tr>
+              <td class="py-1.5 px-1 font-sans font-extrabold text-[#0F291E]">${y.year}</td>
+              <td class="py-1.5 px-1 text-right">${y.starts}</td>
+              <td class="py-1.5 px-1 text-right text-[#57534E]">${y.w1}-${y.w2}-${y.w3}-${y.w4}-${y.w5}</td>
+              <td class="py-1.5 px-1 text-right font-bold text-[#0F291E]">%${y.win_pct}</td>
+              <td class="py-1.5 px-1 text-right font-bold">%${y.top3_pct}</td>
+              <td class="py-1.5 px-1 text-right text-[10px] font-bold">${surfMix(y.surfaces)}</td>
+              <td class="py-1.5 px-1 text-right font-extrabold text-[#8C5A3C]">${y.earnings || '-'}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function cityHTML(d) {
+  const rows = d.by_city || [];
+  const head = `<h4 class="serif-title text-base font-bold text-[#0F291E] uppercase">🗺️ İl İl Hipodrom Karnesi</h4>`;
+  if (!rows.length) return head + '<div class="text-xs text-[#78716C] mt-1">Henüz koşu kaydı yok.</div>';
+  const best = rows.filter(r => r.starts >= 2).sort((a, b) => b.top3_pct - a.top3_pct)[0];
+  return `
+    <div class="flex items-start justify-between gap-2 mb-2">
+      <div>${head}<p class="text-[10px] text-[#57534E]">Tüm kariyer • İkramiye: koşulardan kazanılan yarış ikramiyelerinin toplamı</p></div>
+      ${best ? `<span class="px-2 py-0.5 rounded bg-[#F7F1E3] border border-[#A67C37] text-[10px] font-bold text-[#8C5A3C] whitespace-nowrap">En iyi: ${best.city} %${best.top3_pct}</span>` : ''}
+    </div>
+    <div class="overflow-x-auto -mx-1">
+      <table class="w-full text-[11px] whitespace-nowrap mono">
+        <thead><tr class="text-[9px] text-[#57534E] border-b border-[#D8D2C5] uppercase font-sans">
+          <th class="pb-1 px-1 text-left">Hipodrom</th><th class="pb-1 px-1 text-right">K</th><th class="pb-1 px-1 text-right">1-2-3</th>
+          <th class="pb-1 px-1 text-right">1.%</th><th class="pb-1 px-1 text-right">İlk 3</th><th class="pb-1 px-1 text-right">İlk 5</th>
+          <th class="pb-1 px-1 text-right">Ort.S</th><th class="pb-1 px-1 text-right">Pist</th><th class="pb-1 px-1 text-right">İkramiye</th>
+        </tr></thead>
+        <tbody class="divide-y divide-[#E8E3D8]">
+          ${rows.map(c => `
+            <tr>
+              <td class="py-1.5 px-1 font-sans font-extrabold text-[#18181B]">${c.city}</td>
+              <td class="py-1.5 px-1 text-right">${c.starts}</td>
+              <td class="py-1.5 px-1 text-right text-[#57534E]">${c.w1}-${c.w2}-${c.w3}</td>
+              <td class="py-1.5 px-1 text-right font-bold text-[#0F291E]">%${c.win_pct}</td>
+              <td class="py-1.5 px-1 text-right font-extrabold text-[#0F291E]">%${c.top3_pct}</td>
+              <td class="py-1.5 px-1 text-right">%${c.top5_pct}</td>
+              <td class="py-1.5 px-1 text-right text-[#57534E]">${c.avg_pos ?? '-'}</td>
+              <td class="py-1.5 px-1 text-right text-[10px] font-bold">${surfMix(c.surfaces)}</td>
+              <td class="py-1.5 px-1 text-right font-bold text-[#8C5A3C]">${c.earnings}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderSurfaceRaces(active) {
+  const el = document.getElementById('surfaceRacesSection');
+  if (!el) return;
+  const all = STATE.modalSurfaceRaces || {};
+  const list = all[active] || [];
+  el.innerHTML = `
+    <div class="flex items-center justify-between mb-2 gap-2 flex-wrap">
+      <h4 class="serif-title text-base font-bold text-[#0F291E] uppercase">🏟️ Pist Bazında Koşular</h4>
+      <div class="flex gap-1">
+        ${['Çim', 'Kum', 'Sentetik'].map(k => `
+          <button onclick="renderSurfaceRaces('${k}')" class="px-2.5 py-1 rounded-md text-[11px] font-bold ${k === active ? SURF_STYLE[k].on : 'bg-[#EFECE4] text-[#44403C]'}">
+            ${SURF_STYLE[k].icon} ${k} <span class="mono opacity-80">(${(all[k] || []).length})</span>
+          </button>`).join('')}
+      </div>
+    </div>
+    ${list.length ? `
+      <div class="overflow-x-auto -mx-1 max-h-80 overflow-y-auto">
+        <table class="w-full text-[11px] whitespace-nowrap mono">
+          <thead class="sticky top-0 bg-white"><tr class="text-[9px] text-[#57534E] border-b border-[#D8D2C5] uppercase font-sans">
+            <th class="pb-1 px-1 text-left">Tarih</th><th class="pb-1 px-1 text-left">Şehir</th><th class="pb-1 px-1 text-right">Msf</th>
+            <th class="pb-1 px-1">P.D</th><th class="pb-1 px-1 text-center">Sıra</th><th class="pb-1 px-1 text-right">Derece</th>
+            <th class="pb-1 px-1 text-left">Sınıf</th><th class="pb-1 px-1 text-right">Kilo</th><th class="pb-1 px-1 text-left">Jokey</th>
+            <th class="pb-1 px-1 text-right">İkramiye</th>
+          </tr></thead>
+          <tbody class="divide-y divide-[#E8E3D8]">
+            ${list.map(r => `
+              <tr>
+                <td class="py-1 px-1">${r.tarih}</td>
+                <td class="py-1 px-1 font-sans">${r.sehir}</td>
+                <td class="py-1 px-1 text-right">${r.msf}</td>
+                <td class="py-1 px-1 text-[#8C5A3C] font-bold" title="${r.penetrometre ? 'Penetrometre ' + r.penetrometre : ''}">${r.pd}${r.penetrometre ? `<span class="text-[9px] text-[#78716C]"> ${r.penetrometre}</span>` : ''}</td>
+                <td class="py-1 px-1 text-center font-extrabold ${r.sira !== '-' && r.sira <= 3 ? 'text-[#0F291E]' : 'text-[#57534E]'}">${r.sira}</td>
+                <td class="py-1 px-1 text-right text-[#7A1C1C] font-bold">${r.derece || '-'}</td>
+                <td class="py-1 px-1 font-sans" title="${r.kcins}">${r.sinif}</td>
+                <td class="py-1 px-1 text-right">${r.siklet ?? '-'}</td>
+                <td class="py-1 px-1 font-sans">${r.jokey}</td>
+                <td class="py-1 px-1 text-right font-bold text-[#8C5A3C]">${r.ikramiye || '-'}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>` : `<div class="text-xs text-[#78716C] py-1">Bu safkan ${active} pistte hiç koşmadı.</div>`}
+  `;
+}
+
+// Pist / zemin / mevsim / mesafe kırılım tabloları (at ve akrabaları için ortak)
+function breakdownHTML(b, race) {
+  if (!b || !b.races) return '<div class="text-xs text-[#78716C]">Koşu kaydı yok.</div>';
+  const today = race ? raceSurfaceName(race) : null;
+  const todayBucket = race ? (race.distance_m <= 1200 ? 'Sprint' : race.distance_m <= 1500 ? '1300' : race.distance_m <= 1700 ? 'Mil' : race.distance_m <= 2000 ? 'Orta' : 'Uzun') : null;
+  const table = (title, rows, isToday) => rows && rows.length ? `
+    <div class="bg-[#FAF8F3] rounded-lg p-2 border border-[#E2DDD2]">
+      <div class="text-[9px] font-extrabold text-[#8C5A3C] uppercase mb-1">${title}</div>
+      <table class="w-full text-[10px] mono">
+        <thead><tr class="text-[8px] text-[#78716C] uppercase font-sans"><th class="text-left font-bold"></th><th class="text-right font-bold">K</th><th class="text-right font-bold">1.%</th><th class="text-right font-bold">İlk 3</th><th class="text-right font-bold">İlk 5</th></tr></thead>
+        <tbody>
+          ${rows.map(r => {
+            const hl = isToday && isToday(r.label);
+            const strong = r.starts >= 3 && r.top3_pct >= 40;
+            return `<tr class="${hl ? 'bg-[#0F291E]/10' : ''}">
+              <td class="py-0.5 font-sans font-bold ${hl ? 'text-[#0F291E]' : 'text-[#18181B]'}">${r.label}${hl ? ' ◀' : ''}</td>
+              <td class="py-0.5 text-right text-[#57534E]">${r.starts}</td>
+              <td class="py-0.5 text-right font-bold text-[#0F291E]">%${r.win_pct}</td>
+              <td class="py-0.5 text-right ${strong ? 'font-extrabold text-[#7A1C1C]' : 'font-bold'}">%${r.top3_pct}</td>
+              <td class="py-0.5 text-right text-[#44403C]">%${r.top5_pct}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>` : '';
+  const cond = b.condition || {};
+  return `
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      ${table('🏟️ Pist', b.surface, l => l === today)}
+      ${table('🗓️ Mevsim', b.season, null)}
+      ${['Kum', 'Çim', 'Sentetik'].filter(k => cond[k] && cond[k].length).map(k => table(`${SURF_STYLE[k].icon} ${k} Zemin Durumu`, cond[k], null)).join('')}
+      ${table('📏 Mesafe', b.distance, l => todayBucket && l.startsWith(todayBucket))}
+    </div>
+    <div class="text-[9px] text-[#78716C] mt-1.5">◀ bugünkü koşunun pisti/mesafesi • <span class="text-[#7A1C1C] font-bold">kırmızı</span>: en az 3 koşuda %40+ İlk 3</div>
+  `;
+}
+
+function distanceCityHTML(d, race) {
+  const groups = d.distance_city_times || [];
+  const head = `<h4 class="serif-title text-base font-bold text-[#0F291E] uppercase">📏 Aynı Mesafe, Farklı İller</h4>`;
+  if (!groups.length) return head + '<div class="text-xs text-[#78716C] mt-1">Derece kaydı yok.</div>';
+  const surf = raceSurfaceName(race);
+  const sorted = [...groups].sort((a, b) => ((b.msf === race.distance_m && b.surface === surf) - (a.msf === race.distance_m && a.surface === surf)) || (b.count - a.count));
+  return `
+    <div class="mb-2">${head}<p class="text-[10px] text-[#57534E]">Her mesafe ve pistte hipodrom hipodrom en iyi ve ortalama derece (bugünkü mesafe en üstte)</p></div>
+    <div class="space-y-2 max-h-96 overflow-y-auto">
+      ${sorted.map(g => {
+        const isToday = g.msf === race.distance_m && g.surface === surf;
+        return `
+          <div class="rounded-lg p-2 border ${isToday ? 'border-[#0F291E] bg-[#0F291E]/5' : 'border-[#E2DDD2] bg-[#FAF8F3]'}">
+            <div class="text-[10px] font-extrabold uppercase mb-1 ${isToday ? 'text-[#0F291E]' : 'text-[#8C5A3C]'}">${g.msf}m ${g.surface}${isToday ? ' • BUGÜNKÜ MESAFE' : ''} <span class="text-[#78716C] font-bold">(${g.count} koşu)</span></div>
+            <table class="w-full text-[11px] mono">
+              <thead><tr class="text-[8px] text-[#78716C] uppercase font-sans"><th class="text-left">Hipodrom</th><th class="text-right">En İyi</th><th class="text-right">Tarih / Sıra / P.D</th><th class="text-right">Ortalama</th><th class="text-right">K</th></tr></thead>
+              <tbody>
+                ${g.cities.map((c, i) => `<tr>
+                  <td class="py-0.5 font-sans font-bold text-[#18181B]">${c.city}</td>
+                  <td class="py-0.5 text-right ${i === 0 ? 'font-extrabold text-[#7A1C1C]' : 'font-bold'}">${c.best}</td>
+                  <td class="py-0.5 text-right text-[#57534E] text-[10px]">${c.best_date.slice(0, 5)}.${c.best_date.slice(8)} • ${c.best_sira}. • ${c.best_pd}</td>
+                  <td class="py-0.5 text-right text-[#44403C]">${c.avg}</td>
+                  <td class="py-0.5 text-right text-[#57534E]">${c.count}</td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>`;
+      }).join('')}
+    </div>
+  `;
+}
+
+// Akrabanın (baba / anne / kısrak babası) yavrularından ayrıntılı kırılım — düğmeyle yüklenir
+function loadRelativeBreakdown(kind, atId) {
+  const el = document.getElementById(`relbd-${kind}`);
+  if (!el) return;
+  el.innerHTML = `<div class="text-[11px] text-[#57534E] py-2 text-center">⏳ Yavruların koşu kayıtları TJK'dan derleniyor (aygırlarda 10–20 sn sürebilir)...</div>`;
+  const race = STATE.program.races[STATE.currentRaceIndex];
+  fetchJSON(`/api/relative_breakdown?kind=${kind}&at_id=${encodeURIComponent(atId)}`)
+    .then(d => {
+      const box = document.getElementById(`relbd-${kind}`);
+      if (!box) return;
+      const note = d.kind === 'anne'
+        ? `Annenin koşmuş ${d.sample_size} yavrusu (bu safkan dahil) • ${d.breakdowns.races} koşu`
+        : `${d.is_sample ? `Örneklem: koşmuş ${d.sample_size} tayı` : `Koşmuş ${d.sample_size} tayı`} • ${d.breakdowns.races} koşu${d.is_sample ? ` (TJK'da toplam ${d.offspring_listed} kayıtlı tay)` : ''}`;
+      box.innerHTML = `<div class="text-[10px] text-[#57534E] mb-1.5">${note}</div>${breakdownHTML(d.breakdowns, race)}`;
+    })
+    .catch(err => {
+      const box = document.getElementById(`relbd-${kind}`);
+      if (box) box.innerHTML = `<div class="text-[11px] text-[#7A1C1C] py-1">⚠️ Alınamadı: ${esc(err.message)} <button onclick="loadRelativeBreakdown('${kind}', '${atId}')" class="underline font-bold">Tekrar dene</button></div>`;
+    });
+}
+
+function relativeBreakdownSlot(kind, atId, label) {
+  return `
+    <div id="relbd-${kind}" class="mt-2 pt-2 border-t border-[#E2DDD2]">
+      <button onclick="loadRelativeBreakdown('${kind}', '${atId}')" class="w-full py-1.5 rounded-md bg-[#0F291E] text-[#F9F6F0] text-[11px] font-bold">
+        🔍 ${label}: Pist • Zemin • Mevsim • Mesafe Analizi
+      </button>
+    </div>`;
+}
+
+function relativeCard(title, tone, blk, opts = {}) {
+  if (!blk) {
+    return `<div class="bg-[#FAF8F3] rounded-lg p-2.5 border border-[#E2DDD2]"><div class="text-[10px] font-extrabold uppercase ${tone}">${title}</div><div class="text-[11px] text-[#78716C] mt-1">TJK istatistiği bulunamadı.</div></div>`;
+  }
+  const stat = (label, val, strong) => `<div><div class="text-[9px] text-[#57534E] font-bold">${label}</div><div class="text-xs mono ${strong ? 'font-extrabold text-[#0F291E]' : 'font-bold text-[#18181B]'}">${val}</div></div>`;
+  return `
+    <div class="bg-[#FAF8F3] rounded-lg p-2.5 border border-[#E2DDD2]">
+      <div class="flex items-center justify-between gap-2">
+        <div class="text-[10px] font-extrabold uppercase ${tone}">${title}</div>
+        <div class="text-[10px] text-[#57534E]">${[blk.country, blk.breed].filter(Boolean).join(' • ')}</div>
+      </div>
+      <div class="serif-title text-base font-bold text-[#18181B] leading-tight mb-1.5">${blk.name}</div>
+      <div class="grid grid-cols-4 gap-1.5 text-center">
+        ${stat(opts.runnersLabel || 'Koşan Tay', blk.runners)}
+        ${blk.winners ? stat('Kazanan Yavru', `${blk.winners}${blk.winners_pct ? ` <span class="text-[9px] text-[#57534E]">%${blk.winners_pct}</span>` : ''}`) : stat('Koşu', blk.starts)}
+        ${stat('1.%', '%' + blk.win_pct, true)}
+        ${stat('İlk 3', '%' + blk.top3_pct, true)}
+      </div>
+      <div class="flex justify-between text-[10px] text-[#57534E] mono mt-1.5">
+        <span>${blk.starts} koşu: ${blk.w1}-${blk.w2}-${blk.w3}-${blk.w4}-${blk.w5}</span>
+        <span>İlk 5 %${blk.top5_pct}</span>
+        <span class="font-bold text-[#8C5A3C]">${blk.earnings}${/t$/.test(blk.earnings) ? '' : ' t'}</span>
+      </div>
+      ${opts.extra || ''}
+    </div>
+  `;
+}
+
+function relativesHTML(rel, h, race) {
+  const today = (race.surface || '').includes('Çim') ? 'Çim' : (race.surface || '').includes('Sentetik') ? 'Sentetik' : 'Kum';
+  const bySurf = (rel.baba && rel.baba.by_surface) || {};
+  const sireSurface = Object.keys(bySurf).length ? `
+    <div class="mt-2 pt-2 border-t border-[#E2DDD2]">
+      <div class="text-[9px] font-extrabold text-[#57534E] uppercase mb-1">Taylarının pist başarısı</div>
+      <div class="grid grid-cols-3 gap-1.5 text-center">
+        ${['Çim', 'Kum', 'Sentetik'].filter(k => bySurf[k]).map(k => `
+          <div class="rounded p-1.5 ${k === today ? 'bg-[#0F291E] text-[#F9F6F0]' : 'bg-white border border-[#E2DDD2]'}">
+            <div class="text-[9px] font-bold ${k === today ? 'text-[#D4AF37]' : 'text-[#57534E]'}">${SURF_STYLE[k].icon} ${k}${k === today ? ' • BUGÜN' : ''}</div>
+            <div class="text-[11px] mono font-extrabold">1. %${bySurf[k].win_pct} • İlk3 %${bySurf[k].top3_pct}</div>
+            <div class="text-[9px] mono opacity-80">${bySurf[k].starts} koşu</div>
+          </div>`).join('')}
+      </div>
+    </div>` : '';
+  const kd = rel.kardesler || { list: [], total: {} };
+  const kardesHTML = kd.list.length ? `
+    <div class="bg-[#FAF8F3] rounded-lg p-2.5 border border-[#E2DDD2]">
+      <div class="flex items-center justify-between">
+        <div class="text-[10px] font-extrabold uppercase text-[#0F291E]">👪 Kardeşler (aynı anneden)</div>
+        <div class="text-[10px] mono text-[#57534E]">${kd.total.count} kardeş • ${kd.total.winners} kazanan • ${kd.total.starts} koşu • 1. %${kd.total.win_pct} • İlk 3 %${kd.total.top3_pct}</div>
+      </div>
+      <div class="overflow-x-auto -mx-1 mt-1.5">
+        <table class="w-full text-[11px] whitespace-nowrap mono">
+          <thead><tr class="text-[9px] text-[#57534E] border-b border-[#D8D2C5] uppercase font-sans">
+            <th class="pb-1 px-1 text-left">Kardeşi</th><th class="pb-1 px-1 text-left">Babası</th><th class="pb-1 px-1 text-right">K</th>
+            <th class="pb-1 px-1 text-right">1-2-3-4</th><th class="pb-1 px-1 text-right">1.%</th><th class="pb-1 px-1 text-right">İlk 3</th><th class="pb-1 px-1 text-right">Kazanç</th>
+          </tr></thead>
+          <tbody class="divide-y divide-[#E8E3D8]">
+            ${kd.list.map(k => `
+              <tr>
+                <td class="py-1 px-1 font-sans font-bold text-[#18181B]">${k.name}</td>
+                <td class="py-1 px-1 font-sans text-[#57534E]">${k.sire}</td>
+                <td class="py-1 px-1 text-right">${k.starts}</td>
+                <td class="py-1 px-1 text-right text-[#57534E]">${k.w1}-${k.w2}-${k.w3}-${k.w4}</td>
+                <td class="py-1 px-1 text-right font-bold text-[#0F291E]">%${k.win_pct}</td>
+                <td class="py-1 px-1 text-right font-bold">%${k.top3_pct}</td>
+                <td class="py-1 px-1 text-right font-bold text-[#8C5A3C]">${k.earnings}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>` : `<div class="bg-[#FAF8F3] rounded-lg p-2.5 border border-[#E2DDD2] text-[11px] text-[#78716C]">👪 TJK kayıtlarında yarışmış kardeşi bulunmuyor.</div>`;
+  return `
+    <div class="mb-2">
+      <h4 class="serif-title text-base font-bold text-[#0F291E] uppercase">🧬 Akraba İstatistikleri</h4>
+      <p class="text-[10px] text-[#57534E]">Babasının, annesinin ve kısrak babasının yavrularıyla kardeşlerinin TJK yarış başarısı (yarış başına)</p>
+    </div>
+    <div class="space-y-2">
+      ${relativeCard('♂ Baba (Aygır)', 'text-[#0F291E]', rel.baba, { extra: sireSurface + (rel.baba ? relativeBreakdownSlot('baba', h.at_id, 'Taylarının') : '') })}
+      ${relativeCard('♀ Anne (Kısrak)', 'text-[#7A1C1C]', rel.anne, { extra: rel.anne ? relativeBreakdownSlot('anne', h.at_id, 'Yavrularının') : '' })}
+      ${relativeCard('♂ Kısrak Babası (Annenin Babası)', 'text-[#8C5A3C]', rel.kisrak_baba, { runnersLabel: 'Kızlarının Tayı', extra: rel.kisrak_baba ? relativeBreakdownSlot('kisrak_baba', h.at_id, 'Kendi Taylarının') : '' })}
+      ${kardesHTML}
+    </div>
+  `;
 }
 
 function careerKarneHTML(d) {

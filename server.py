@@ -1057,6 +1057,132 @@ def affinity_from(block):
     return min(99, int(round(30 + block["win_pct"] * 0.9 + block["top3_pct"] * 0.55 + min(15, block["starts"] * 2))))
 
 
+def parse_tl(text):
+    """'445.000' / '1.297.200 t' / '451.271.930,63' -> 445000 (kuruş atılır)."""
+    t = (text or "").replace("t", "").replace("TL", "").strip()
+    t = t.split(",")[0].replace(".", "").strip()
+    return int(t) if t.isdigit() else 0
+
+
+def format_tl(value):
+    return f"{value:,}".replace(",", ".") + " t" if value else "0 t"
+
+
+def race_row_to_dict(tds):
+    """AtKosuBilgileri koşu satırını (hücre listesi) sözlüğe çevirir."""
+    msf = int(tds[2]) if tds[2].isdigit() else 0
+    p_parts = tds[3].split(":", 1)
+    p_letter = p_parts[0].strip() if p_parts else "K"
+    p_cond_full = p_parts[1].strip() if len(p_parts) > 1 else "Normal"
+    pen_m = re.search(r'([\d]+(?:[\.,]\d+)?)\s*$', p_cond_full)
+    penetrometre = pen_m.group(1).replace(",", ".") if pen_m else ""
+    p_cond = (p_cond_full[:pen_m.start()].strip() if pen_m else p_cond_full) or "Normal"
+    p_name = "Çim" if p_letter == "Ç" else ("Sentetik" if p_letter == "S" else "Kum")
+    pd_code = "SE" if p_letter == "S" else PD_MAP.get(p_cond, tr_upper(p_cond)[:2] or "NO")
+    sira = int(tds[4]) if tds[4].isdigit() and int(tds[4]) > 0 else None
+    try:
+        past_weight = float(re.findall(r'[\d\.]+', tds[6].replace(",", "."))[0])
+    except Exception:
+        past_weight = None
+    kcins = tds[13]
+    cls_key, cls_label, cls_order = classify_race(kcins)
+    return {
+        "tarih": tds[0], "sehir": tds[1], "msf": msf, "p_name": p_name, "pd": pd_code,
+        "pd_label": p_cond, "penetrometre": penetrometre, "sira": sira,
+        "derece_raw": tds[5], "sec": parse_time_to_seconds(tds[5]), "siklet": past_weight,
+        "taki": tds[7], "jokey": tds[8], "kulvar": tds[9], "gny": tds[10], "kcins": kcins,
+        "cls_key": cls_key, "cls_label": cls_label, "cls_order": cls_order,
+        "hp": int(tds[16]) if tds[16].isdigit() else 0,
+        "ikramiye": tds[17] if len(tds) > 17 else "",
+    }
+
+
+SEASONS = [("İlkbahar", (3, 4, 5)), ("Yaz", (6, 7, 8)), ("Sonbahar", (9, 10, 11)), ("Kış", (12, 1, 2))]
+DIST_BUCKETS = [("Sprint (≤1200m)", 0, 1200), ("1300–1500m", 1201, 1500), ("Mil (1600–1700m)", 1501, 1700),
+                ("Orta (1800–2000m)", 1701, 2000), ("Uzun (2100m+)", 2001, 9999)]
+CONDITION_ORDER = ["Normal", "İyi", "Nemli", "Islak", "Sulu", "Sert", "Biraz Sert", "Biraz Yumuşak", "Yumuşak",
+                   "Çok Yumuşak", "Biraz Ağır", "Ağır", "Çok Ağır"]
+
+
+def stats_block(races):
+    """Yarış başına 1.-5.'lik istatistiği (derecesiz biten koşular paydada)."""
+    return build_finish_block(len(races), [sum(1 for r in races if r["sira"] == i) for i in range(1, 6)])
+
+
+def build_breakdowns(races):
+    """Pist, pist durumu (zemin), mevsim, mesafe ve tam mesafe kırılımları."""
+    def grouped(key_fn, order=None):
+        groups = {}
+        for r in races:
+            k = key_fn(r)
+            if k is not None:
+                groups.setdefault(k, []).append(r)
+        keys = order if order else sorted(groups)
+        out = []
+        for k in keys:
+            if k in groups:
+                blk = stats_block(groups[k])
+                blk["label"] = k
+                out.append(blk)
+        return out
+
+    def month(r):
+        try:
+            return int(r["tarih"].split(".")[1])
+        except (IndexError, ValueError):
+            return None
+
+    def season(r):
+        m = month(r)
+        return next((name for name, months in SEASONS if m in months), None)
+
+    def bucket(r):
+        return next((name for name, lo, hi in DIST_BUCKETS if lo <= r["msf"] <= hi), None) if r["msf"] else None
+
+    conditions = {}
+    for sn in ("Kum", "Çim", "Sentetik"):
+        sr = [r for r in races if r["p_name"] == sn]
+        if sr:
+            labels = sorted({r["pd_label"] for r in sr}, key=lambda x: (CONDITION_ORDER.index(x) if x in CONDITION_ORDER else 99, x))
+            conditions[sn] = grouped(lambda r, _sn=sn: r["pd_label"] if r["p_name"] == _sn else None, labels)
+    exact = grouped(lambda r: r["msf"] or None)
+    return {
+        "races": len(races),
+        "surface": grouped(lambda r: r["p_name"], ["Çim", "Kum", "Sentetik"]),
+        "condition": conditions,
+        "season": grouped(season, [n for n, _ in SEASONS]),
+        "distance": grouped(bucket, [n for n, _, _ in DIST_BUCKETS]),
+        "distance_exact": sorted(exact, key=lambda b: b["label"]),
+    }
+
+
+def build_distance_city_times(races, only_dist=None):
+    """Aynı mesafeyi farklı illerde ne sürede koştuğu: (mesafe, pist) -> il -> en iyi / ortalama derece."""
+    out = {}
+    for r in races:
+        if not r["sec"] or not r["msf"] or (only_dist and r["msf"] != only_dist):
+            continue
+        key = f"{r['msf']}|{r['p_name']}"
+        out.setdefault(key, {}).setdefault(r["sehir"], []).append(r)
+    result = []
+    for key, cities in out.items():
+        msf, surf = key.split("|")
+        rows = []
+        for city, rr in cities.items():
+            best = min(rr, key=lambda x: x["sec"])
+            rows.append({
+                "city": city, "count": len(rr),
+                "best": format_seconds_to_time_str(best["sec"]), "best_sec": round(best["sec"], 2),
+                "best_date": best["tarih"], "best_pd": best["pd"], "best_sira": best["sira"] or "-",
+                "avg": format_seconds_to_time_str(sum(x["sec"] for x in rr) / len(rr)),
+            })
+        rows.sort(key=lambda x: x["best_sec"])
+        result.append({"msf": int(msf), "surface": surf, "cities": rows,
+                       "count": sum(c["count"] for c in rows)})
+    result.sort(key=lambda g: (-g["count"], g["msf"]))
+    return result
+
+
 def parse_horse_race_rows(tbody_html):
     """AtKosuBilgileri koşu tablosu: Tarih, Şehir, Msf, Pist, S, Derece, Sıklet, Takı, Jokey, St, Gny,
     Grup, K.No, Kcins, Ant., Sahip, HP, İkramiye, S20 (tüm kariyer)."""
@@ -1136,34 +1262,7 @@ def fetch_horse_bankomat_sheet(at_id, today_weight=57.0, target_dist=1200, is_ar
         race_rows = merged
 
     # --- Koşu satırları (tüm kariyer) ---
-    all_races = []
-    for tds in race_rows:
-        msf = int(tds[2]) if tds[2].isdigit() else 0
-        pist_raw = tds[3]
-        p_parts = pist_raw.split(":", 1)
-        p_letter = p_parts[0].strip() if p_parts else "K"
-        p_cond_full = p_parts[1].strip() if len(p_parts) > 1 else "Normal"
-        pen_m = re.search(r'([\d]+(?:[\.,]\d+)?)\s*$', p_cond_full)
-        penetrometre = pen_m.group(1).replace(",", ".") if pen_m else ""
-        p_cond = p_cond_full[:pen_m.start()].strip() if pen_m else p_cond_full
-        p_name = "Çim" if p_letter == "Ç" else ("Sentetik" if p_letter == "S" else "Kum")
-        pd_code = "SE" if p_letter == "S" else PD_MAP.get(p_cond, tr_upper(p_cond)[:2] or "NO")
-        sira = int(tds[4]) if tds[4].isdigit() and int(tds[4]) > 0 else None
-        try:
-            past_weight = float(re.findall(r'[\d\.]+', tds[6].replace(",", "."))[0])
-        except Exception:
-            past_weight = None
-        kcins = tds[13]
-        cls_key, cls_label, cls_order = classify_race(kcins)
-        hp_val = int(tds[16]) if tds[16].isdigit() else 0
-        all_races.append({
-            "tarih": tds[0], "sehir": tds[1], "msf": msf, "p_name": p_name, "pd": pd_code,
-            "pd_label": p_cond, "penetrometre": penetrometre, "sira": sira,
-            "derece_raw": tds[5], "siklet": past_weight, "taki": tds[7], "jokey": tds[8],
-            "kulvar": tds[9], "gny": tds[10], "kcins": kcins, "cls_key": cls_key,
-            "cls_label": cls_label, "cls_order": cls_order, "hp": hp_val,
-            "ikramiye": tds[17] if len(tds) > 17 else "",
-        })
+    all_races = [race_row_to_dict(tds) for tds in race_rows]
     finished = [r for r in all_races if r["sira"]]
 
     # --- 1.-2.-3.-4.-5.'lik yüzdeleri: resmi özet tablosu, yoksa koşulardan ---
@@ -1199,6 +1298,56 @@ def fetch_horse_bankomat_sheet(at_id, today_weight=57.0, target_dist=1200, is_ar
         fav_surface_verdict = f"En Sevdiği Pist: {b[3].upper()} (Yatkınlık Puanı: {b[0]}/100 • {b[2]} koşuda %{b[1]} İlk 3 başarısı)"
     else:
         fav_surface_verdict = "Henüz pist istatistiği oluşmamış (Genetik/Orijin eğilimine bakınız)."
+
+    # --- Yıllık karne & kazanç: resmi özet (YYYY Yılı) + koşulardan pist dağılımı ---
+    yearly = []
+    for cols in summary_rows:
+        ym = re.match(r'(\d{4})\s*Yılı', cols[0])
+        if not ym:
+            continue
+        y = ym.group(1)
+        blk = build_finish_block(int(cols[1]), [int(c) if c.isdigit() else 0 for c in cols[2:7]])
+        yr_races = [r for r in all_races if r["tarih"].endswith(y)]
+        blk.update({
+            "year": y, "earnings": cols[7] if len(cols) > 7 else "",
+            "surfaces": {sn: sum(1 for r in yr_races if r["p_name"] == sn) for sn in ("Çim", "Kum", "Sentetik")},
+        })
+        yearly.append(blk)
+    if not yearly:  # özet tablosu olmayan genç at: koşulardan hesapla
+        for y in sorted({r["tarih"][-4:] for r in all_races}, reverse=True):
+            yr_races = [r for r in all_races if r["tarih"].endswith(y)]
+            blk = stats_over(yr_races)
+            blk.update({"year": y, "earnings": format_tl(sum(parse_tl(r["ikramiye"]) for r in yr_races)),
+                        "surfaces": {sn: sum(1 for r in yr_races if r["p_name"] == sn) for sn in ("Çim", "Kum", "Sentetik")}})
+            yearly.append(blk)
+    yearly.sort(key=lambda b: b["year"], reverse=True)
+
+    # --- İl (hipodrom) karnesi ---
+    by_city = []
+    for city in sorted({r["sehir"] for r in all_races}):
+        cr = [r for r in all_races if r["sehir"] == city]
+        blk = stats_over(cr)
+        placed = [r["sira"] for r in cr if r["sira"]]
+        blk.update({
+            "city": city,
+            "earnings": format_tl(sum(parse_tl(r["ikramiye"]) for r in cr)),
+            "earnings_value": sum(parse_tl(r["ikramiye"]) for r in cr),
+            "avg_pos": round(sum(placed) / len(placed), 1) if placed else None,
+            "surfaces": {sn: sum(1 for r in cr if r["p_name"] == sn) for sn in ("Çim", "Kum", "Sentetik")},
+        })
+        by_city.append(blk)
+    by_city.sort(key=lambda b: (-b["starts"], b["city"]))
+
+    # --- Pist bazında koşu listeleri (tüm kariyer; yalnız tam görünümde) ---
+    surface_races = {}
+    if not lite:
+        for sn in ("Çim", "Kum", "Sentetik"):
+            surface_races[sn] = [{
+                "tarih": r["tarih"], "sehir": r["sehir"], "msf": r["msf"], "pd": r["pd"],
+                "penetrometre": r["penetrometre"], "sira": r["sira"] or "-", "derece": r["derece_raw"],
+                "sinif": r["cls_label"], "kcins": r["kcins"], "jokey": r["jokey"], "siklet": r["siklet"],
+                "ikramiye": r["ikramiye"], "hp": r["hp"] or "-",
+            } for r in all_races if r["p_name"] == sn]
 
     # --- Koşu sınıfı karnesi (Grup / KV / Şartlı 1-5 / Handikap / Maiden / Satış) ---
     groups = {}
@@ -1295,6 +1444,183 @@ def fetch_horse_bankomat_sheet(at_id, today_weight=57.0, target_dist=1200, is_ar
         "detailed_stats": detailed_stats,
         "total_career_races": len(all_races),
         "official_total": official_total or len(all_races),
+        "yearly": yearly,
+        "by_city": by_city,
+        "breakdowns": build_breakdowns(all_races),
+        # Kartlar (lite) için yalnız bugünkü mesafe; tam görünümde tüm mesafeler
+        "distance_city_times": build_distance_city_times(all_races, only_dist=target_dist if lite else None),
+        "surface_races": surface_races,
+    }
+    cache_set(cache_key, result)
+    return result
+
+
+# ------------------------- AKRABA İSTATİSTİKLERİ (BABA / ANNE / KISRAK BABASI / KARDEŞLER) -------------------------
+RELATIVE_PAGES = {
+    "baba": ("AygirIstatistikleri", "AygirAdi"),
+    "anne": ("KisrakIstatistikleri", "KisrakAdi"),
+    "kisrak_baba": ("KisrakBabasi", "KisrakBabaAdi"),
+}
+SIRE_SURFACES = {"Çim": "1", "Kum": "2", "Sentetik": "4"}  # TJK QueryParameter_PistId
+
+
+def strip_country(name):
+    return re.sub(r'\s*\([A-Z]{2,4}\)\s*$', '', (name or "").strip())
+
+
+def parse_query_table(page_html, wanted_name):
+    """AygirIstatistikleri / KisrakIstatistikleri / KisrakBabasi sonuç tablosu.
+    Arama önek eşleşmesi yaptığı için ('SUPER' -> SUPER SAVER, SUPER ALP...) tam adı seçer."""
+    m = re.search(r'<table[^>]*id="queryTable".*?</table>', page_html, re.S)
+    if not m:
+        return None
+    tbl = m.group(0)
+    headers = [clean_cell(h) for h in re.findall(r'<th[^>]*>(.*?)</th>', tbl, re.S)]
+    rows = []
+    for tr in re.findall(r'<tr[^>]*>(.*?)</tr>', tbl, re.S):
+        vals = [clean_cell(c) for c in re.findall(r'<td[^>]*>(.*?)</td>', tr, re.S)]
+        if len(vals) >= len(headers) - 1 and len(vals) > 8:
+            rows.append(dict(zip(headers, vals)))
+    if not rows:
+        return None
+    target = tr_upper(strip_country(wanted_name))
+    rec = next((r for r in rows if tr_upper(strip_country(list(r.values())[0])) == target), rows[0])
+
+    def num(*keys):
+        for k in keys:
+            v = rec.get(k, "")
+            if v and v.replace(".", "").isdigit():
+                return int(v.replace(".", ""))
+        return 0
+
+    starts = num("Koşu")
+    counts = [num(f"{i}.") for i in range(1, 6)]
+    blk = build_finish_block(starts, counts)
+    blk.update({
+        "name": list(rec.values())[0],
+        "country": rec.get("Ülke Adı") or rec.get("Ülke", ""),
+        "breed": rec.get("Irk Adı") or rec.get("Irk", ""),
+        "runners": num("Koşan Tay Adet", "Koşan Tay"),
+        "winners": num("Kazanan Yavru Adet"),
+        "earnings": rec.get("Kazanç", ""),
+    })
+    blk["winners_pct"] = round(blk["winners"] / blk["runners"] * 100.0, 1) if blk["runners"] and blk["winners"] else None
+    return blk
+
+
+def fetch_horse_relatives(at_id):
+    """Babası (pist kırılımlı), annesi, kısrak babası ve kardeşlerinin TJK istatistikleri."""
+    cache_key = f"relatives_{at_id}"
+    cached = cache_get(cache_key, 24 * 3600)
+    if cached is not None:
+        return cached
+    page = fetch_cached(f"https://www.tjk.org/TR/YarisSever/Query/ConnectedPage/AtKosuBilgileri?1=1&QueryParameter_AtId={at_id}", TTL_HISTORY)
+    names = {}
+    for key, (_, param) in RELATIVE_PAGES.items():
+        m = re.search(r'QueryParameter_' + param + r'=([^"&\']+)', page)
+        if m:
+            names[key] = urllib.parse.unquote_plus(html_lib.unescape(m.group(1))).strip()
+
+    base = "https://www.tjk.org/TR/YarisSever/Query/Page/"
+    jobs = {}
+    for key, name in names.items():
+        page_name, param = RELATIVE_PAGES[key]
+        url = f"{base}{page_name}?QueryParameter_{param}={urllib.parse.quote(name)}"
+        jobs[key] = url
+        if key == "baba":
+            for sn, pid in SIRE_SURFACES.items():
+                jobs[f"baba_{sn}"] = f"{url}&QueryParameter_PistId={pid}"
+    jobs["kardes"] = f"https://www.tjk.org/TR/YarisSever/Query/Kardes/Kardes?Atkodu={at_id}"
+
+    def load(item):
+        key, url = item
+        try:
+            return key, fetch_cached(url, 24 * 3600)
+        except Exception:
+            return key, None
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        pages = dict(pool.map(load, jobs.items()))
+
+    result = {"names": names}
+    for key in RELATIVE_PAGES:
+        if key in names and pages.get(key):
+            result[key] = parse_query_table(pages[key], names[key])
+    if result.get("baba"):
+        result["baba"]["by_surface"] = {}
+        for sn in SIRE_SURFACES:
+            pg = pages.get(f"baba_{sn}")
+            blk = parse_query_table(pg, names["baba"]) if pg else None
+            if blk:
+                result["baba"]["by_surface"][sn] = blk
+
+    siblings = []
+    kp = pages.get("kardes")
+    if kp:
+        for tr in re.findall(r'<tr[^>]*>(.*?)</tr>', kp, re.S):
+            c = [clean_cell(x) for x in re.findall(r'<td[^>]*>(.*?)</td>', tr, re.S)]
+            if len(c) >= 8 and c[2].isdigit():
+                blk = build_finish_block(int(c[2]), [int(x) if x.isdigit() else 0 for x in c[3:7]] + [0])
+                blk.update({"name": c[0], "sire": c[1], "earnings": c[7]})
+                siblings.append(blk)
+    tot_starts = sum(b["starts"] for b in siblings)
+    tot = build_finish_block(tot_starts, [sum(b[f"w{i}"] for b in siblings) for i in range(1, 5)] + [0])
+    tot["count"] = len(siblings)
+    tot["winners"] = sum(1 for b in siblings if b["w1"] > 0)
+    tot["earnings"] = format_tl(sum(parse_tl(b["earnings"]) for b in siblings))
+    result["kardesler"] = {"list": siblings, "total": tot}
+    cache_set(cache_key, result)
+    return result
+
+
+OFFSPRING_SAMPLE = 20  # baba / kısrak babası için örneklem (TJK'ya yük bindirmemek için)
+
+
+def fetch_offspring_breakdown(kind, name):
+    """
+    Bir aygırın (baba / kısrak babası) ya da kısrağın (anne) yavrularının koşu kayıtlarından
+    pist, zemin, mevsim ve mesafe kırılımı. Anne için tüm yavrular; aygır için örneklem.
+    """
+    cache_key = f"offspring_{kind}_{name}"
+    cached = cache_get(cache_key, 24 * 3600)
+    if cached is not None:
+        return cached
+    param = "AnneAdi" if kind == "anne" else "BabaAdi"
+    page = fetch_cached(f"https://www.tjk.org/TR/YarisSever/Query/Page/Orijin?QueryParameter_{param}={urllib.parse.quote(name)}", 24 * 3600)
+    m = re.search(r'<table[^>]*id="queryTable".*?</table>', page, re.S)
+    offspring = []
+    total_m = re.search(r'Toplam\s*(\d+)\s*sonuçtan', clean_cell(page))
+    if m:
+        headers = [clean_cell(h) for h in re.findall(r'<th[^>]*>(.*?)</th>', m.group(0), re.S)]
+        target = tr_upper(strip_country(name))
+        for tr in re.findall(r'<tr[^>]*>(.*?)</tr>', m.group(0), re.S):
+            ids = re.findall(r'QueryParameter_AtId=(\d+)', tr)
+            vals = dict(zip(headers, [clean_cell(c) for c in re.findall(r'<td[^>]*>(.*?)</td>', tr, re.S)]))
+            if not ids or not vals.get("Son 6 Y."):
+                continue  # hiç koşmamış tay
+            parent = vals.get("Anne", "").split(" - ")[0] if kind == "anne" else vals.get("Baba", "")
+            if tr_upper(strip_country(parent)) != target:
+                continue  # önek eşleşmesi: başka aygırın tayı
+            offspring.append({"at_id": ids[0], "name": vals.get("At İsmi", ""), "earnings": vals.get("Kazanç", "")})
+    sample = offspring if kind == "anne" else offspring[:OFFSPRING_SAMPLE]
+
+    def races_of(o):
+        try:
+            html_page = fetch_cached(f"https://www.tjk.org/TR/YarisSever/Query/ConnectedPage/AtKosuBilgileri?1=1&QueryParameter_AtId={o['at_id']}", TTL_HISTORY)
+            return [race_row_to_dict(t) for tb in re.findall(r'<tbody.*?</tbody>', html_page, re.S) for t in parse_horse_race_rows(tb)]
+        except Exception:
+            return []
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        per = list(pool.map(races_of, sample))
+    all_races = [r for rr in per for r in rr]
+    result = {
+        "kind": kind, "name": name,
+        "offspring_listed": int(total_m.group(1)) if total_m else len(offspring),
+        "offspring_raced_on_page": len(offspring),
+        "sample_size": len(sample), "is_sample": kind != "anne" and len(offspring) > len(sample),
+        "sample_names": [o["name"] for o in sample],
+        "breakdowns": build_breakdowns(all_races),
     }
     cache_set(cache_key, result)
     return result
@@ -1809,6 +2135,53 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
             self.send_json(200, {"ok": True, "time": tr_now().strftime("%Y-%m-%d %H:%M:%S")})
             return
 
+        if parsed.path == "/api/horse_relatives":
+            params = urllib.parse.parse_qs(parsed.query)
+            at_id = params.get("at_id", [""])[0]
+            try:
+                if not at_id.isdigit():
+                    raise ValueError("Geçersiz safkan kimliği")
+                self.send_json(200, {"ok": True, "data": fetch_horse_relatives(at_id)})
+            except Exception as e:
+                self.send_json(500, {"ok": False, "error": str(e)})
+            return
+
+        if parsed.path == "/api/relative_breakdown":
+            params = urllib.parse.parse_qs(parsed.query)
+            at_id = params.get("at_id", [""])[0]
+            kind = params.get("kind", [""])[0]
+            try:
+                if not at_id.isdigit() or kind not in ("baba", "anne", "kisrak_baba"):
+                    raise ValueError("Geçersiz parametre")
+                names = fetch_horse_relatives(at_id).get("names", {})
+                if kind not in names:
+                    raise ValueError("TJK kaydında bu akraba bulunamadı")
+                # Kısrak babası: aygır olarak kendi taylarının başarısı
+                self.send_json(200, {"ok": True, "data": fetch_offspring_breakdown("anne" if kind == "anne" else "aygir", names[kind])})
+            except Exception as e:
+                self.send_json(500, {"ok": False, "error": str(e)})
+            return
+
+        if parsed.path == "/api/dates":
+            try:
+                days = []
+                today = tr_now().date()
+                for i in range(0, 4):
+                    d = today + timedelta(days=i)
+                    ds = d.strftime("%d/%m/%Y")
+                    try:
+                        cities = get_available_cities(ds)
+                    except Exception:
+                        cities = []
+                    if cities or i == 0:
+                        days.append({"date": ds, "offset": i, "cities": len(cities),
+                                     "domestic": [c["name"] for c in cities if c["is_domestic"]],
+                                     "weekday": ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"][d.weekday()]})
+                self.send_json(200, {"ok": True, "data": days})
+            except Exception as e:
+                self.send_json(500, {"ok": False, "error": str(e)})
+            return
+
         if parsed.path == "/api/race_idman":
             params = urllib.parse.parse_qs(parsed.query)
             kosu = params.get("kosu", [""])[0]
@@ -1828,6 +2201,8 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
             params = urllib.parse.parse_qs(parsed.query)
             today_str = tr_now().strftime("%d/%m/%Y")
             date_str = params.get("date", [today_str])[0]
+            if not re.match(r'^\d{2}/\d{2}/\d{4}$', date_str or ""):
+                date_str = today_str
             city_id = params.get("city_id", [None])[0]
             city_name = params.get("city", [None])[0]
             if params.get("refresh", ["0"])[0] == "1":
