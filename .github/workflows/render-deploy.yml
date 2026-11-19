@@ -13,9 +13,10 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Testleri çalıştır
+      - name: Depoyu al
         uses: actions/checkout@v4
-      - run: python -m unittest discover -s tests
+      - name: Testleri çalıştır
+        run: python -m unittest discover -s tests
       - name: Render deploy hook'unu çağır
         env:
           RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
