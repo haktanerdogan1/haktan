@@ -1668,6 +1668,72 @@ function updateAltiliCost() {
   `;
 }
 
+// At penceresi: üstte özet + kırmızı "aynı koşu biçimi" alanı, altta sekmeler
+const HORSE_TABS = [
+  { key: 'ozet', label: '📋 Özet' },
+  { key: 'kosular', label: '🏁 Koşular' },
+  { key: 'pist', label: '🏟️ Pist & Mesafe' },
+  { key: 'idman', label: '⏱️ İdman' },
+  { key: 'aile', label: '🧬 Aile' },
+];
+const SECTION_TAB = {
+  sameFormatSection: 'top',
+  careerKarneSection: 'ozet',
+  surfaceRacesSection: 'kosular', yearlySection: 'kosular', classKarneSection: 'kosular', hpHistorySection: 'kosular',
+  surfacePrefSection: 'pist', surfaceAffinitySection: 'pist', breakdownSection: 'pist', distanceCitySection: 'pist', citySection: 'pist',
+  idmanSection: 'idman',
+  pedigreeTreeSection: 'aile', relativesSection: 'aile',
+};
+// Sekme içi sıra (yukarıdan aşağı)
+const TAB_ORDER = {
+  kosular: ['kosular', 'surfaceRacesSection', 'yearlySection', 'classKarneSection', 'hpHistorySection'],
+  pist: ['surfacePrefSection', 'surfaceAffinitySection', 'distanceCitySection', 'breakdownSection', 'citySection'],
+};
+
+function organizeHorseModal(content) {
+  const kids = [...content.children];
+  const header = kids[0];
+  const top = document.createElement('div');
+  const bar = document.createElement('div');
+  bar.className = 'sticky -top-4 z-10 -mx-1 px-1 py-1.5 mb-3 bg-[#FAF8F3] border-b border-[#D8D2C5] flex gap-1 overflow-x-auto hscroll';
+  const panes = {};
+  HORSE_TABS.forEach(t => {
+    const b = document.createElement('button');
+    b.dataset.tabBtn = t.key;
+    b.className = 'px-3 py-1.5 rounded-lg text-[12px] font-bold whitespace-nowrap';
+    b.textContent = t.label;
+    b.onclick = () => showHorseTab(t.key);
+    bar.appendChild(b);
+    const pane = document.createElement('div');
+    pane.dataset.tabPane = t.key;
+    panes[t.key] = pane;
+  });
+  const placed = {};
+  kids.slice(1).forEach(el => {
+    const tab = el.dataset.tab || SECTION_TAB[el.id] || 'ozet';
+    (placed[tab] = placed[tab] || []).push(el);
+  });
+  const sortKey = (tab, el) => {
+    const order = TAB_ORDER[tab];
+    if (!order) return 0;
+    const i = order.indexOf(el.id || el.dataset.tab);
+    return i < 0 ? 99 : i;
+  };
+  (placed.top || []).sort((a, b) => (a.id === 'sameFormatSection') - (b.id === 'sameFormatSection')).forEach(el => top.appendChild(el));
+  HORSE_TABS.forEach(t => (placed[t.key] || []).sort((a, b) => sortKey(t.key, a) - sortKey(t.key, b)).forEach(el => panes[t.key].appendChild(el)));
+  content.replaceChildren(header, top, bar, ...HORSE_TABS.map(t => panes[t.key]));
+  showHorseTab(STATE.horseTab || 'ozet');
+}
+
+function showHorseTab(key) {
+  STATE.horseTab = key;
+  document.querySelectorAll('#horseModalContent [data-tab-pane]').forEach(p => { p.style.display = p.dataset.tabPane === key ? '' : 'none'; });
+  document.querySelectorAll('#horseModalContent [data-tab-btn]').forEach(b => {
+    const on = b.dataset.tabBtn === key;
+    b.className = `px-3 py-1.5 rounded-lg text-[12px] font-bold whitespace-nowrap ${on ? 'bg-[#0F291E] text-[#F9F6F0]' : 'bg-[#EFECE4] text-[#44403C]'}`;
+  });
+}
+
 function openHorseModal(horseNo) {
   let race = STATE.program.races[STATE.currentRaceIndex];
   let h = race && race.horses.find(x => x.no === horseNo);
@@ -1705,7 +1771,7 @@ function openHorseModal(horseNo) {
     </div>
 
     <!-- Key Summary Boxes -->
-    <div class="grid grid-cols-4 gap-2 mb-3.5 text-center">
+    <div data-tab="top" class="grid grid-cols-4 gap-2 mb-3 text-center">
       <div class="bg-[#0F291E] text-[#F9F6F0] rounded-lg p-2">
         <div class="text-[9px] text-[#D4AF37] font-bold">BÜLTEN PUANI</div>
         <div class="text-base font-extrabold mono">${h.quant_score}</div>
@@ -1725,7 +1791,7 @@ function openHorseModal(horseNo) {
     </div>
 
     <!-- Künye Bilgileri -->
-    <div class="bg-white rounded-xl p-3 border border-[#D8D2C5] mb-3.5 grid grid-cols-2 gap-2 text-xs">
+    <div data-tab="ozet" class="bg-white rounded-xl p-3 border border-[#D8D2C5] mb-3.5 grid grid-cols-2 gap-2 text-xs">
       <div><span class="text-[#57534E]">Jokey:</span> <strong class="text-[#18181B]">${h.jockey}</strong>${jockeyModalHTML(h)}</div>
       <div><span class="text-[#57534E]">Sıklet / Kulvar:</span> <strong class="text-[#18181B]">${h.weight} kg / St: ${h.start_no}</strong></div>
       <div><span class="text-[#57534E]">Antrenör:</span> <strong class="text-[#18181B]">${h.trainer}</strong></div>
@@ -1736,7 +1802,7 @@ function openHorseModal(horseNo) {
 
     <!-- Koşu Stili Gerekçesi -->
     ${(h.running_style.factors && h.running_style.factors.length) ? `
-      <div class="bg-white rounded-xl p-3 border border-[#D8D2C5] mb-3.5">
+      <div data-tab="ozet" class="bg-white rounded-xl p-3 border border-[#D8D2C5] mb-3.5">
         <div class="flex items-center justify-between mb-1.5">
           <h4 class="serif-title text-sm font-bold text-[#0F291E] uppercase">🏁 Koşu Stili: ${h.running_style.label}</h4>
           <span class="text-[10px] mono text-[#57534E] font-bold">Erken Hız Endeksi ${h.running_style.index} • Sahada ${h.running_style.field_rank}.</span>
@@ -1748,7 +1814,7 @@ function openHorseModal(horseNo) {
     ` : ''}
 
     <!-- Komiser / Başhandikapçı Değerlendirmesi -->
-    <div class="bg-[#F7F1E3] border border-[#A67C37]/50 rounded-xl p-3 mb-3.5">
+    <div data-tab="ozet" class="bg-[#F7F1E3] border border-[#A67C37]/50 rounded-xl p-3 mb-3.5">
       <h4 class="serif-title text-sm font-bold text-[#0F291E] uppercase mb-1">✒️ Başhandikapçı &amp; Bülten Notu</h4>
       <ul class="space-y-1 text-xs text-[#18181B] list-disc pl-4 font-medium">
         ${h.xai_notes.map(n => `<li>${cleanXaiNote(n)}</li>`).join('')}
@@ -1826,7 +1892,7 @@ function openHorseModal(horseNo) {
     </div>
 
     <!-- 3. ÖZEL PERFORMANS VE DERECE BÜLTENİ TABLOSU -->
-    <div class="bg-white border border-[#D8D2C5] rounded-xl p-3.5 mb-3.5">
+    <div data-tab="kosular" class="bg-white border border-[#D8D2C5] rounded-xl p-3.5 mb-3.5">
       <div class="mb-2">
         <h4 class="serif-title text-base font-bold text-[#0F291E] uppercase">📑 Özel Performans ve Derece Bülteni (Geçmiş Koşular)</h4>
         <p class="text-[10px] text-[#57534E]">Pist Durumu (P.D), Koşu Zorluğu, Harf Formu (A-E), Bugünkü Kiloya (${h.weight}kg) Göre Performans ve 1200m Normalize Derece</p>
@@ -1837,7 +1903,7 @@ function openHorseModal(horseNo) {
     </div>
 
     <!-- 6-Dimension Bar Breakdown -->
-    <div class="bg-white border border-[#D8D2C5] rounded-xl p-3.5 space-y-2">
+    <div data-tab="ozet" class="bg-white border border-[#D8D2C5] rounded-xl p-3.5 space-y-2">
       <h4 class="serif-title text-sm font-bold text-[#0F291E] uppercase">📊 Handikap Terazi Dağılımı</h4>
       ${metricBar('Kronometre & Derece Puanı', h.metrics.speed_figure, 'bg-[#0F291E]')}
       ${metricBar('Son 6 Koşu Form & Pist Uyumu', h.metrics.form_rating, 'bg-[#1B4332]')}
@@ -1847,6 +1913,7 @@ function openHorseModal(horseNo) {
     </div>
   `;
 
+  organizeHorseModal(content);
   modal.classList.remove('hidden');
 
   const token = ++HORSE_MODAL_TOKEN;
