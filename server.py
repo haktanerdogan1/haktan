@@ -1421,7 +1421,8 @@ def surface_preferences(races):
         for msf, rr in by_msf.items():
             b = min(rr, key=lambda x: x["sec"])
             best.append({"msf": msf, "best": format_seconds_to_time_str(b["sec"]), "city": b["sehir"],
-                         "date": b["tarih"], "sira": b["sira"] or "-", "pd": b["pd"], "count": len(rr)})
+                         "date": b["tarih"], "sira": b["sira"] or "-", "pd": b["pd"], "count": len(rr),
+                         "kg": b["siklet"], "jokey": b["jokey"]})
         best.sort(key=lambda x: (-x["count"], x["msf"]))
         out[sn] = {"verdict": verdict, "label": label, "starts": blk["starts"], "w1": blk["w1"],
                    "win_pct": blk["win_pct"], "top3_pct": top3, "top5_pct": blk["top5_pct"],
@@ -1447,6 +1448,7 @@ def build_distance_city_times(races, only_dist=None):
                 "city": city, "count": len(rr),
                 "best": format_seconds_to_time_str(best["sec"]), "best_sec": round(best["sec"], 2),
                 "best_date": best["tarih"], "best_pd": best["pd"], "best_sira": best["sira"] or "-",
+                "best_kg": best["siklet"], "best_jokey": best["jokey"],
                 "avg": format_seconds_to_time_str(sum(x["sec"] for x in rr) / len(rr)),
             })
         rows.sort(key=lambda x: x["best_sec"])
@@ -1478,7 +1480,7 @@ def fetch_horse_bankomat_sheet(at_id, today_weight=57.0, target_dist=1200, is_ar
     if not at_id:
         return {"races": [], "summary": None, "pedigree": None, "surface_summary": {}}
 
-    cache_key = f"history_v4_{at_id}_{today_weight}_{target_dist}_{int(bool(is_arab))}_{int(bool(lite))}"
+    cache_key = f"history_v5_{at_id}_{today_weight}_{target_dist}_{int(bool(is_arab))}_{int(bool(lite))}"
     cached = cache_get(cache_key, TTL_HISTORY)
     if cached is not None:
         return cached

@@ -1318,7 +1318,7 @@ function renderDistanceCompare(race) {
       <h3 class="serif-title text-base font-bold text-[#0F291E] uppercase">📏 ${race.distance_m}m ${surf}: İl İl Dereceler</h3>
       ${pending ? `<span class="text-[10px] text-[#57534E] whitespace-nowrap">⏳ ${pending} at yükleniyor</span>` : ''}
     </div>
-    <p class="text-[11px] text-[#57534E] mb-3">Koşudaki atların bugünkü mesafe ve pistte, farklı hipodromlarda koştuğu en iyi dereceler (parantezde koşu sayısı). Sütundaki en hızlı derece vurgulanır.</p>
+    <p class="text-[11px] text-[#57534E] mb-3">Koşudaki atların bugünkü mesafe ve pistte, farklı hipodromlarda koştuğu en iyi dereceler (parantezde koşu sayısı) ve o dereceyi yaptığı kilo; <span class="text-[#7A1C1C] font-bold">+</span> bugün daha ağır, <span class="text-[#0F291E] font-bold">−</span> daha hafif. Sütundaki en hızlı derece vurgulanır.</p>
     ${cityList.length ? `
       <div class="overflow-x-auto -mx-1">
         <table class="w-full text-[11px] whitespace-nowrap mono">
@@ -1329,12 +1329,12 @@ function renderDistanceCompare(race) {
           <tbody class="divide-y divide-[#E8E3D8]">
             ${rows.map(r => `
               <tr onclick="openHorseModal(${r.h.no})" class="cursor-pointer hover:bg-[#F6F3EC]">
-                <td class="py-1.5 px-1 font-sans font-bold text-[#18181B]">#${r.h.no} ${r.h.name}</td>
+                <td class="py-1.5 px-1 font-sans font-bold text-[#18181B]">#${r.h.no} ${r.h.name}<div class="text-[9px] font-semibold text-[#57534E]">bugün ${r.h.weight} kg</div></td>
                 ${cityList.map(c => {
                   const cell = r.grp && r.grp.cities.find(x => x.city === c);
                   if (!cell) return `<td class="py-1.5 px-1 text-right text-[#C8C1B2]">${r.loaded ? '—' : '…'}</td>`;
                   const top = Math.abs(cell.best_sec - bestBy[c]) < 0.001;
-                  return `<td class="py-1.5 px-1 text-right ${top ? 'font-extrabold text-[#7A1C1C]' : 'font-semibold text-[#18181B]'}" title="En iyi: ${cell.best_date} • ${cell.best_sira}. • ${cell.best_pd} | Ortalama ${cell.avg}">${cell.best}<span class="text-[9px] text-[#78716C]"> (${cell.count})</span></td>`;
+                  return `<td class="py-1.5 px-1 text-right ${top ? 'font-extrabold text-[#7A1C1C]' : 'font-semibold text-[#18181B]'}" title="En iyi: ${cell.best_date} • ${cell.best_sira}. • ${cell.best_pd} | Ortalama ${cell.avg}">${cell.best}<span class="text-[9px] text-[#78716C]"> (${cell.count})</span>${cell.best_kg ? `<div class="text-[9px] font-normal text-[#57534E]">${cell.best_kg} kg${kgDiffHTML(cell.best_kg, r.h.weight)}</div>` : ''}</td>`;
                 }).join('')}
               </tr>`).join('')}
           </tbody>
@@ -2123,7 +2123,7 @@ function openHorseModal(horseNo) {
         const cEl = document.getElementById('citySection');
         if (cEl) cEl.innerHTML = cityHTML(d);
         const spEl = document.getElementById('surfacePrefSection');
-        if (spEl) spEl.innerHTML = surfacePrefModalHTML(d.surface_pref, race);
+        if (spEl) spEl.innerHTML = surfacePrefModalHTML(d.surface_pref, race, h);
         const bEl = document.getElementById('breakdownSection');
         if (bEl) bEl.innerHTML = `
           <div class="mb-2">
@@ -2131,7 +2131,7 @@ function openHorseModal(horseNo) {
             <p class="text-[10px] text-[#57534E]">Tüm kariyer (${d.breakdowns ? d.breakdowns.races : 0} koşu) • yarış başına yüzdeler</p>
           </div>${breakdownHTML(d.breakdowns, race)}`;
         const dEl = document.getElementById('distanceCitySection');
-        if (dEl) dEl.innerHTML = distanceCityHTML(d, race);
+        if (dEl) dEl.innerHTML = distanceCityHTML(d, race, h);
         STATE.modalSurfaceRaces = d.surface_races || {};
         STATE.modalWeight = h.weight;
         STATE.sameFormatOpen = true;
@@ -2611,7 +2611,8 @@ function breakdownHTML(b, race) {
   `;
 }
 
-function distanceCityHTML(d, race) {
+function distanceCityHTML(d, race, h) {
+  const todayKg = h && h.weight;
   const groups = d.distance_city_times || [];
   const head = `<h4 class="serif-title text-base font-bold text-[#0F291E] uppercase">📏 Aynı Mesafe, Farklı İller</h4>`;
   if (!groups.length) return head + '<div class="text-xs text-[#78716C] mt-1">Derece kaydı yok.</div>';
@@ -2626,11 +2627,12 @@ function distanceCityHTML(d, race) {
           <div class="rounded-lg p-2 border ${isToday ? 'border-[#0F291E] bg-[#0F291E]/5' : 'border-[#E2DDD2] bg-[#FAF8F3]'}">
             <div class="text-[10px] font-extrabold uppercase mb-1 ${isToday ? 'text-[#0F291E]' : 'text-[#8C5A3C]'}">${g.msf}m ${g.surface}${isToday ? ' • BUGÜNKÜ MESAFE' : ''} <span class="text-[#78716C] font-bold">(${g.count} koşu)</span></div>
             <table class="w-full text-[11px] mono">
-              <thead><tr class="text-[8px] text-[#78716C] uppercase font-sans"><th class="text-left">Hipodrom</th><th class="text-right">En İyi</th><th class="text-right">Tarih / Sıra / P.D</th><th class="text-right">Ortalama</th><th class="text-right">K</th></tr></thead>
+              <thead><tr class="text-[8px] text-[#78716C] uppercase font-sans"><th class="text-left">Hipodrom</th><th class="text-right">En İyi</th><th class="text-right" title="En iyi dereceyi yaptığı kilo; yanında bugünkü kiloya göre fark">Kilo</th><th class="text-right">Tarih / Sıra / P.D</th><th class="text-right">Ortalama</th><th class="text-right">K</th></tr></thead>
               <tbody>
                 ${g.cities.map((c, i) => `<tr>
                   <td class="py-0.5 font-sans font-bold text-[#18181B]">${c.city}</td>
                   <td class="py-0.5 text-right ${i === 0 ? 'font-extrabold text-[#7A1C1C]' : 'font-bold'}">${c.best}</td>
+                  <td class="py-0.5 text-right whitespace-nowrap" title="${c.best_jokey || ''}">${c.best_kg ? c.best_kg : '-'}${kgDiffHTML(c.best_kg, todayKg)}</td>
                   <td class="py-0.5 text-right text-[#57534E] text-[10px]">${c.best_date.slice(0, 5)}.${c.best_date.slice(8)} • ${c.best_sira}. • ${c.best_pd}</td>
                   <td class="py-0.5 text-right text-[#44403C]">${c.avg}</td>
                   <td class="py-0.5 text-right text-[#57534E]">${c.count}</td>
@@ -2769,13 +2771,14 @@ function relativesHTML(rel, h, race) {
   `;
 }
 
-function surfacePrefModalHTML(sp, race) {
+function surfacePrefModalHTML(sp, race, h) {
+  const todayKg = h && h.weight;
   const head = `<h4 class="serif-title text-base font-bold text-[#0F291E] uppercase">🏟️ Pist Tercihi ve Dereceleri</h4>`;
   if (!sp || !sp.overall_starts) return head + '<div class="text-xs text-[#78716C] mt-1">Henüz koşu kaydı yok.</div>';
   const today = raceSurfaceName(race);
   const tone = v => v === 'loves' ? 'border-[#0F291E] bg-[#0F291E]/5' : v === 'dislikes' ? 'border-[#7A1C1C] bg-[#7A1C1C]/5' : 'border-[#E2DDD2] bg-[#FAF8F3]';
   return `
-    <div class="mb-2">${head}<p class="text-[10px] text-[#57534E]">Karar atın kendi genel İlk 3 oranına (%${sp.overall_top3}, ${sp.overall_starts} koşu) göre verilir; en az 3 koşu gerekir.</p></div>
+    <div class="mb-2">${head}<p class="text-[10px] text-[#57534E]">Karar atın kendi genel İlk 3 oranına (%${sp.overall_top3}, ${sp.overall_starts} koşu) göre verilir; en az 3 koşu gerekir. Kilo: dereceyi yaptığı sıklet${todayKg ? ` (bugün ${todayKg} kg; <span class="text-[#7A1C1C] font-bold">+</span> bugün daha ağır, <span class="text-[#0F291E] font-bold">−</span> daha hafif)` : ''}.</p></div>
     <div class="space-y-2">
       ${['Kum', 'Çim', 'Sentetik'].map(k => {
         const p = sp[k];
@@ -2788,10 +2791,11 @@ function surfacePrefModalHTML(sp, race) {
             </div>
             ${p.best_times && p.best_times.length ? `
               <table class="w-full text-[11px] mono mt-1.5">
-                <thead><tr class="text-[8px] text-[#78716C] uppercase font-sans"><th class="text-left">Mesafe</th><th class="text-right">En İyi Derece</th><th class="text-right">Nerede / Ne Zaman / Sıra / P.D</th><th class="text-right">K</th></tr></thead>
+                <thead><tr class="text-[8px] text-[#78716C] uppercase font-sans"><th class="text-left">Mesafe</th><th class="text-right">En İyi Derece</th><th class="text-right" title="Dereceyi yaptığı kilo; yanında bugünkü kiloya göre fark">Kilo</th><th class="text-right">Nerede / Ne Zaman / Sıra / P.D</th><th class="text-right">K</th></tr></thead>
                 <tbody>${p.best_times.map(b => `<tr${b.msf === race.distance_m && k === today ? ' class="bg-[#A67C37]/10 font-bold"' : ''}>
                   <td class="py-0.5">${b.msf}m${b.msf === race.distance_m && k === today ? ' ◀' : ''}</td>
                   <td class="py-0.5 text-right text-[#7A1C1C] font-bold">${b.best}</td>
+                  <td class="py-0.5 text-right whitespace-nowrap" title="${b.jokey || ''}">${b.kg ? b.kg : '-'}${kgDiffHTML(b.kg, todayKg)}</td>
                   <td class="py-0.5 text-right text-[10px] text-[#57534E]">${b.city} • ${b.date} • ${b.sira}. • ${b.pd}</td>
                   <td class="py-0.5 text-right text-[#57534E]">${b.count}</td></tr>`).join('')}</tbody>
               </table>` : ''}
