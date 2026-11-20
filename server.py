@@ -53,6 +53,15 @@ TTL_PROGRAM = 300
 TTL_HISTORY = 6 * 3600
 
 
+def cache_peek(key, ttl):
+    """Süresi dolmuş olsa da (ttl'e kadar) önbellekteki değeri döndürür, silmez."""
+    with CACHE_LOCK:
+        item = CACHE.get(key)
+    if item and time.time() - item[0] <= ttl:
+        return item[1]
+    return None
+
+
 def cache_get(key, ttl):
     with CACHE_LOCK:
         item = CACHE.get(key)
@@ -60,7 +69,8 @@ def cache_get(key, ttl):
             return None
         ts, value = item
         if time.time() - ts > ttl:
-            CACHE.pop(key, None)
+            if not key.startswith("prog_"):  # bültenin eski kopyası yenilenirken gösterilebilsin
+                CACHE.pop(key, None)
             return None
         return value
 
@@ -2799,6 +2809,191 @@ def reweight_program(program_data, weights):
     return data
 
 
+# ---------------- KOŞU EKLERİ (Maiden, aile, antrenör) — uç noktalar ve ön hazırlık ortak kullanır ----------------
+def _race_of(date_str, city_id, race_no, fresh=True):
+    """fresh=False: antrenör ve aile gibi gün içinde değişmeyen bilgiler için bültenin eski kopyası yeter
+    (bülten 2 dk'da bir yenilenir; yeniden indirmek 4–8 sn sürer)."""
+    prog = None
+    if not fresh:
+        prog = cache_peek(f"prog_{date_str}_{city_id}_1", 12 * 3600) or cache_peek(f"prog_{date_str}_{city_id}_0", 12 * 3600)
+    prog = prog or fetch_city_program(date_str, city_id=city_id)
+    race = next((r for r in prog["races"] if r["race_no"] == int(race_no)), None)
+    if not race:
+        raise ValueError("Koşu bulunamadı")
+    return prog, race
+
+
+def race_maiden(date_str, city_id, race_no):
+    import maiden as MD  # geç yükleme (döngüsel içe aktarma)
+    key = f"maiden_{date_str}_{city_id}_{race_no}"
+    data = cache_get(key, 300)  # AGF değiştikçe yenilenir; atların geçmişi ayrıca önbellekte
+    if data is None:
+        is_today = date_str == tr_now().strftime("%d/%m/%Y")
+        prog, race = _race_of(date_str, city_id, race_no, fresh=is_today)
+        if not MD.is_maiden_race(race):
+            raise ValueError("Bu koşu Maiden / Şartlı 1 / Şartlı 19 değil")
+        data = MD.analyze_race(race, prog["date"])
+        cache_set(key, data)
+    return data
+
+
+def race_family(date_str, city_id, race_no):
+    import maiden as MD
+    key = f"maidenfam_{date_str}_{city_id}_{race_no}"
+    data = cache_get(key, 24 * 3600)
+    if data is None:
+        _, race = _race_of(date_str, city_id, race_no, fresh=False)
+        irk = "Arap" if "arap" in (race.get("age_group") or "").lower() else "İngiliz"
+        data = {"race_no": race["race_no"], "irk": irk, "rows": MD.family_debuts(race["horses"], irk)}
+        cache_set(key, data)
+    return data
+
+
+def race_trainers(date_str, city_id, race_no):
+    prog, race = _race_of(date_str, city_id, race_no, fresh=False)
+    return fetch_race_trainers(race, prog["date"], prog.get("city_id") or city_id)
+
+
+PROG_REFRESHING = set()
+STALE_PROGRAM_MAX_S = 30 * 60
+
+
+def stale_program(date_str, city_id):
+    """Bültenin süresi (5 dk) dolmuş ama 30 dk'dan yeni kopyası varsa onu döndürür ve arka planda yeniler.
+    Kullanıcı 4–8 sn beklemez; AGF/ganyan en fazla bir yenileme turu geride kalır (↻ her zaman tazeler)."""
+    key = f"prog_{date_str}_{city_id}_1"
+    if cache_peek(key, TTL_PROGRAM) is not None:
+        return None  # taze kopya var: normal yol zaten anında döner
+    stale = cache_peek(key, STALE_PROGRAM_MAX_S)
+    if stale is None:
+        return None
+    with USER_REQ_LOCK:
+        if key in PROG_REFRESHING:
+            return stale
+        PROG_REFRESHING.add(key)
+
+    def refresh():
+        try:
+            fetch_city_program(date_str, city_id=city_id)
+        except Exception:
+            pass
+        finally:
+            with USER_REQ_LOCK:
+                PROG_REFRESHING.discard(key)
+
+    threading.Thread(target=refresh, daemon=True).start()
+    return stale
+
+
+# ---------------- ÖN HAZIRLIK: site uyanınca bugünün ve yarının verisi arka planda hazırlanır ----------------
+USER_REQUESTS = 0                 # süren kullanıcı isteği sayısı (ön hazırlık bunlar bitene kadar bekler)
+USER_REQ_LOCK = threading.Lock()
+WARM_STATE = {"running": False, "last_done": None, "step": ""}
+WARM_INTERVAL_S = 15 * 60
+
+
+def _wait_for_users(max_wait=60):
+    t0 = time.time()
+    while USER_REQUESTS > 0 and time.time() - t0 < max_wait:
+        time.sleep(0.3)
+
+
+def warm_once(days=2):
+    import maiden as MD
+    today = tr_now().date()
+    for i in range(days):
+        date_str = (today + timedelta(days=i)).strftime("%d/%m/%Y")
+        try:
+            cities = get_available_cities(date_str)
+        except Exception:
+            continue
+        for c in cities:
+            _wait_for_users()
+            WARM_STATE["step"] = f"{date_str} {c['name']} bülten"
+            try:
+                prog = fetch_city_program(date_str, city_id=c["id"], city_name=c["name"])
+            except Exception:
+                continue
+            for r in prog["races"]:
+                jobs = [("antrenör", race_trainers)]
+                if MD.is_maiden_race(r):
+                    jobs += [("maiden", race_maiden), ("aile", race_family)]
+                for label, fn in jobs:
+                    _wait_for_users()
+                    WARM_STATE["step"] = f"{date_str} {c['name']} {r['race_no']}. koşu {label}"
+                    try:
+                        fn(date_str, c["id"], r["race_no"])
+                    except Exception:
+                        pass
+    # Son olarak bugünün at karneleri (kartlardaki pist / mevsim bilgisi); en çok istek bunlar
+    date_str = today.strftime("%d/%m/%Y")
+    try:
+        cities = get_available_cities(date_str)
+    except Exception:
+        cities = []
+    for c in cities:
+        try:
+            prog = fetch_city_program(date_str, city_id=c["id"], city_name=c["name"])
+        except Exception:
+            continue
+        for r in prog["races"]:
+            is_arab = "arap" in (r.get("age_group") or "").lower()
+            for h in r["horses"]:
+                if not h.get("at_id"):
+                    continue
+                _wait_for_users()
+                WARM_STATE["step"] = f"{date_str} {c['name']} {r['race_no']}. koşu karneler"
+                try:
+                    fetch_horse_bankomat_sheet(h["at_id"], today_weight=float(h.get("weight") or 57),
+                                               target_dist=int(r.get("distance_m") or 1400), is_arab=is_arab, lite=True)
+                except Exception:
+                    pass
+    WARM_STATE["step"] = ""
+    WARM_STATE["last_done"] = tr_now().strftime("%d.%m.%Y %H:%M")
+
+
+PROGRAM_REFRESH_S = 4 * 60
+
+
+def refresh_today_programs():
+    """Bugünün bültenlerini (AGF, ganyan, koşmazlar) taze tutar: bülten açılışı beklemesiz olsun."""
+    date_str = tr_now().strftime("%d/%m/%Y")
+    try:
+        cities = get_available_cities(date_str)
+    except Exception:
+        return
+    for c in cities:
+        _wait_for_users()
+        if cache_peek(f"prog_{date_str}_{c['id']}_1", TTL_PROGRAM - 60) is None:
+            try:
+                fetch_city_program(date_str, city_id=c["id"], city_name=c["name"])
+            except Exception:
+                pass
+
+
+def warm_loop():
+    time.sleep(3)  # sunucu açılsın
+    next_full = 0
+    while True:
+        if time.time() >= next_full:
+            WARM_STATE["running"] = True
+            try:
+                warm_once()
+            except Exception as e:
+                print(f"Ön hazırlık hatası: {e}", flush=True)
+            WARM_STATE["running"] = False
+            next_full = time.time() + WARM_INTERVAL_S
+        else:
+            refresh_today_programs()
+        time.sleep(PROGRAM_REFRESH_S)
+
+
+def start_warmer():
+    if os.environ.get("NO_WARM") == "1":
+        return
+    threading.Thread(target=warm_loop, name="warmer", daemon=True).start()
+
+
 class TurfQuantHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=STATIC_DIR, **kwargs)
@@ -2826,6 +3021,19 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
         self.send_body(status, json.dumps(payload, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
 
     def do_GET(self):
+        global USER_REQUESTS
+        is_api = self.path.startswith("/api/")
+        if is_api:
+            with USER_REQ_LOCK:
+                USER_REQUESTS += 1
+        try:
+            self._do_get()
+        finally:
+            if is_api:
+                with USER_REQ_LOCK:
+                    USER_REQUESTS -= 1
+
+    def _do_get(self):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/api/horse_history":
             params = urllib.parse.parse_qs(parsed.query)
@@ -2850,7 +3058,8 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
             # Platform sağlık kontrolü: TJK'ya gitmeden anında yanıt verir
             # Render çalışan sürümün commit kodunu RENDER_GIT_COMMIT ile verir: yayındaki sürüm buradan görülür
             self.send_json(200, {"ok": True, "time": tr_now().strftime("%Y-%m-%d %H:%M:%S"),
-                                 "commit": (os.environ.get("RENDER_GIT_COMMIT") or "")[:7] or None})
+                                 "commit": (os.environ.get("RENDER_GIT_COMMIT") or "")[:7] or None,
+                                 "warm": WARM_STATE})
             return
 
         if parsed.path == "/api/horse_relatives":
@@ -2894,7 +3103,7 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
                 self.send_json(500, {"ok": False, "error": str(e)})
             return
 
-        if parsed.path == "/api/maiden":
+        if parsed.path in ("/api/maiden", "/api/maiden_family", "/api/race_trainers"):
             params = urllib.parse.parse_qs(parsed.query)
             date_str = params.get("date", [tr_now().strftime("%d/%m/%Y")])[0]
             city_id = params.get("city_id", [""])[0]
@@ -2902,58 +3111,8 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
             try:
                 if not (re.match(r'^\d{2}/\d{2}/\d{4}$', date_str) and city_id.isdigit() and race_no.isdigit()):
                     raise ValueError("Geçersiz parametre")
-                import maiden as MD  # geç yükleme (döngüsel içe aktarma)
-                key = f"maiden_{date_str}_{city_id}_{race_no}"
-                data = cache_get(key, 300)
-                if data is None:
-                    prog = fetch_city_program(date_str, city_id=city_id)
-                    race = next((r for r in prog["races"] if r["race_no"] == int(race_no)), None)
-                    if not race or not MD.is_maiden_race(race):
-                        raise ValueError("Bu koşu Maiden / Şartlı 1 / Şartlı 19 değil")
-                    data = MD.analyze_race(race, prog["date"])
-                    cache_set(key, data)
-                self.send_json(200, {"ok": True, "data": data})
-            except Exception as e:
-                self.send_json(500, {"ok": False, "error": str(e)})
-            return
-
-        if parsed.path == "/api/race_trainers":
-            params = urllib.parse.parse_qs(parsed.query)
-            date_str = params.get("date", [tr_now().strftime("%d/%m/%Y")])[0]
-            city_id = params.get("city_id", [""])[0]
-            race_no = params.get("race_no", [""])[0]
-            try:
-                if not (re.match(r'^\d{2}/\d{2}/\d{4}$', date_str) and city_id.isdigit() and race_no.isdigit()):
-                    raise ValueError("Geçersiz parametre")
-                prog = fetch_city_program(date_str, city_id=city_id)
-                race = next((r for r in prog["races"] if r["race_no"] == int(race_no)), None)
-                if not race:
-                    raise ValueError("Koşu bulunamadı")
-                self.send_json(200, {"ok": True, "data": fetch_race_trainers(race, prog["date"], prog.get("city_id") or city_id)})
-            except Exception as e:
-                self.send_json(500, {"ok": False, "error": str(e)})
-            return
-
-        if parsed.path == "/api/maiden_family":
-            params = urllib.parse.parse_qs(parsed.query)
-            date_str = params.get("date", [tr_now().strftime("%d/%m/%Y")])[0]
-            city_id = params.get("city_id", [""])[0]
-            race_no = params.get("race_no", [""])[0]
-            try:
-                if not (re.match(r'^\d{2}/\d{2}/\d{4}$', date_str) and city_id.isdigit() and race_no.isdigit()):
-                    raise ValueError("Geçersiz parametre")
-                import maiden as MD
-                key = f"maidenfam_{date_str}_{city_id}_{race_no}"
-                data = cache_get(key, 24 * 3600)
-                if data is None:
-                    prog = fetch_city_program(date_str, city_id=city_id)
-                    race = next((r for r in prog["races"] if r["race_no"] == int(race_no)), None)
-                    if not race:
-                        raise ValueError("Koşu bulunamadı")
-                    irk = "Arap" if "arap" in (race.get("age_group") or "").lower() else "İngiliz"
-                    data = {"race_no": race["race_no"], "irk": irk, "rows": MD.family_debuts(race["horses"], irk)}
-                    cache_set(key, data)
-                self.send_json(200, {"ok": True, "data": data})
+                fn = {"/api/maiden": race_maiden, "/api/maiden_family": race_family, "/api/race_trainers": race_trainers}[parsed.path]
+                self.send_json(200, {"ok": True, "data": fn(date_str, city_id, int(race_no))})
             except Exception as e:
                 self.send_json(500, {"ok": False, "error": str(e)})
             return
@@ -3029,7 +3188,10 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
                         CACHE.pop(k, None)
 
             try:
-                data = fetch_city_program(date_str, city_id=city_id, city_name=city_name)
+                data = None
+                if city_id and params.get("refresh", ["0"])[0] != "1":
+                    data = stale_program(date_str, city_id)  # eskiyse anında göster, arkada yenile
+                data = data or fetch_city_program(date_str, city_id=city_id, city_name=city_name)
                 weights = parse_weights_param(params.get("w", [None])[0])
                 if weights and weights != DEFAULT_WEIGHTS:
                     data = reweight_program(data, weights)
@@ -3068,6 +3230,7 @@ if __name__ == "__main__":
     # Çok iş parçacıklı: safkan geçmişi çekilirken (3 TJK isteği) diğer istekler beklemez
     server = ThreadingHTTPServer(("0.0.0.0", port), TurfQuantHandler)
     server.daemon_threads = True  # Ctrl+C'de yarım kalan TJK isteklerini beklemeden kapan
+    start_warmer()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -309,6 +309,7 @@ def collect_day(date_str):
                     "weight": h["weight"], "apprentice": h.get("jockey", "").upper().endswith(" AP"),
                     # Not: geçmiş günler için jokeyin 'bu yıl' istatistiği o günden sonraki koşuları da içerir
                     "jockey": h.get("jockey"), "jokey_id": h.get("jokey_id"),
+                    "trainer": h.get("trainer"), "trainer_id": h.get("trainer_id"),
                     "jockey_win_adj": (h.get("jockey_stats") or {}).get("win_adj"),
                     "kgs": h.get("kgs"), "equipment": h.get("equipment", []),
                     "pos": r["pos"], "won": r["pos"] == 1, "ganyan": r["ganyan"], "agf_final": r["agf_final"],
@@ -543,6 +544,41 @@ def analyze():
     return stats
 
 
+def backfill_ids():
+    """Eski arşiv günlerine jokey/antrenör adı ve kodunu ekler (bülten sayfasından; sonuçlara dokunmaz)."""
+    for name in sorted(os.listdir(RECORDS_DIR)):
+        if not name.endswith(".jsonl.gz"):
+            continue
+        path = os.path.join(RECORDS_DIR, name)
+        with gzip.open(path, "rt", encoding="utf-8") as f:
+            recs = [json.loads(l) for l in f]
+        if not recs or all(r.get("jokey_id") and r.get("trainer_id") for r in recs):
+            continue
+        date_str = recs[0]["date"]
+        cities = {c["name"]: c["id"] for c in S.get_available_cities(date_str)}
+        ids = {}
+        for city in sorted({r["city"] for r in recs}):
+            if city not in cities:
+                continue
+            try:
+                prog = S.fetch_city_program(date_str, city_id=cities[city], with_jockeys=False)
+            except Exception as e:
+                log(f"  ! {date_str} {city}: {e}")
+                continue
+            for race in prog["races"]:
+                for h in race["horses"]:
+                    ids[(city, race["race_no"], h["name"])] = h
+        n = 0
+        for r in recs:
+            h = ids.get((r["city"], r["race_no"], r["name"]))
+            if h:
+                r.update({"jockey": h.get("jockey"), "jokey_id": h.get("jokey_id"),
+                          "trainer": h.get("trainer"), "trainer_id": h.get("trainer_id")})
+                n += 1
+        write_day(date_str, recs)
+        log(f"{date_str}: {n}/{len(recs)} kayda jokey/antrenör eklendi")
+
+
 IDMAN_DIR = os.path.join(DATA_DIR, "idman")   # yarış günü sabahı idman kaydı (TJK geçmiş idmanı saklamıyor)
 IDMAN_KEEP = ("tarih", "pist", "tur", "hipodrom", "galop_durumu", "durum_rank", "son_400", "son_400_rank", "pace_200", "days_before")
 
@@ -590,12 +626,15 @@ if __name__ == "__main__":
     sub.add_parser("analyze")
     r = sub.add_parser("recollect", help="Bir günü arşivde yeniden topla (GG/AA/YYYY)")
     r.add_argument("date")
+    sub.add_parser("backfill-ids", help="Eski arşive jokey/antrenör kodlarını ekle")
     si = sub.add_parser("snapshot-idman", help="Bugünün Maiden/Şartlı 1/19 koşularının idmanını kaydet")
     si.add_argument("--date", help="GG/AA/YYYY (varsayılan: bugün)")
     si.add_argument("--all", action="store_true", help="Tüm koşular")
     a = ap.parse_args()
     if a.cmd == "collect":
         collect(a.days, a.end)
+    elif a.cmd == "backfill-ids":
+        backfill_ids()
     elif a.cmd == "snapshot-idman":
         snapshot_idman(a.date, only_maiden=not a.all)
     elif a.cmd == "recollect":

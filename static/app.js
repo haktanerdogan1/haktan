@@ -761,7 +761,7 @@ function renderMaidenCard(race) {
     </div>`;
   if (race._maiden) return paintMaiden(el, race, race._maiden, head);
   el.innerHTML = head('⏳ atların geçmişi ve baba istatistikleri yükleniyor…') +
-    '<div class="text-[11px] text-[#57534E]">Geçmişi az atlarda derece, baba taylarının başarısı ve start bilgisi taranıyor (15–25 sn).</div>';
+    '<div class="text-[11px] text-[#57534E]">Geçmişi az atlarda form, derece, baba taylarının başarısı ve start bilgisi taranıyor.</div>';
   fetchJSON(url).then(d => {
     race._maiden = d;
     if (isCurrentRace(race)) paintMaiden(el, race, d, head);

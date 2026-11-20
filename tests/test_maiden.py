@@ -85,3 +85,30 @@ class FormAndSpecialistTests(unittest.TestCase):
         # Az koşu: işaret yok
         few = S.jockey_city_profile(blk(2239, 441), blk(10, 5))
         self.assertFalse(few["city_strong"] or few["city_weak"])
+
+
+class StaleProgramTests(unittest.TestCase):
+    def test_stale_program_served_and_refreshed(self):
+        import time as _t
+        S = MD.S
+        key = "prog_01/01/2030_99_1"
+        old = {"date": "01/01/2030", "races": [], "v": "eski"}
+        with S.CACHE_LOCK:
+            S.CACHE[key] = (_t.time() - S.TTL_PROGRAM - 10, old)
+        calls = []
+
+        def fake_fetch(date_str, city_id=None, **kw):
+            calls.append(city_id)
+            S.cache_set(key, {"v": "yeni"})
+            return {"v": "yeni"}
+
+        with mock.patch.object(S, "fetch_city_program", fake_fetch):
+            self.assertEqual(S.stale_program("01/01/2030", "99")["v"], "eski")
+            for _ in range(50):
+                if calls and not S.PROG_REFRESHING:
+                    break
+                _t.sleep(0.02)
+            self.assertEqual(calls, ["99"])
+            self.assertIsNone(S.stale_program("01/01/2030", "99"))  # artık taze
+        with S.CACHE_LOCK:
+            S.CACHE.pop(key, None)
