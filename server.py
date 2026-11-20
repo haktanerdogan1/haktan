@@ -1622,7 +1622,8 @@ def fetch_horse_bankomat_sheet(at_id, today_weight=57.0, target_dist=1200, is_ar
                 "tarih": r["tarih"], "sehir": r["sehir"], "msf": r["msf"], "pd": r["pd"],
                 "penetrometre": r["penetrometre"], "sira": r["sira"] or "-", "derece": r["derece_raw"],
                 "sinif": r["cls_label"], "kcins": r["kcins"], "jokey": r["jokey"], "siklet": r["siklet"],
-                "ikramiye": r["ikramiye"], "hp": r["hp"] or "-",
+                "ikramiye": r["ikramiye"], "hp": r["hp"] or "-", "gny": r["gny"], "taki": r["taki"],
+                "kulvar": r["kulvar"],
             } for r in all_races if r["p_name"] == sn]
 
     # --- Koşu sınıfı karnesi (Grup / KV / Şartlı 1-5 / Handikap / Maiden / Satış) ---

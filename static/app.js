@@ -1800,6 +1800,11 @@ function openHorseModal(horseNo) {
       <div class="text-xs text-[#57534E] py-2 text-center">⏳ Handikap puanı seyri yükleniyor...</div>
     </div>
 
+    <!-- AYNI KOŞU BİÇİMİ: bugünkü mesafe + pistteki son koşular (kırmızı alan) -->
+    <div id="sameFormatSection" class="border-2 border-[#7A1C1C] bg-[#7A1C1C]/[0.04] rounded-xl p-3.5 mb-3.5">
+      <div class="text-xs text-[#7A1C1C] py-1 text-center font-bold">⏳ ${race.distance_m} m ${raceSurfaceName(race)} koşuları yükleniyor...</div>
+    </div>
+
     <!-- 1. PİST SEVGİSİ (KUM vs ÇİM vs SENTETİK) & MESAFE KARNESİ -->
     <div id="surfaceAffinitySection" class="bg-white border border-[#D8D2C5] rounded-xl p-3.5 mb-3.5">
       <div class="text-xs text-[#57534E] py-2 text-center">⏳ Çim / Kum / Sentetik pist karnesi ve mesafe istatistikleri yükleniyor...</div>
@@ -1848,7 +1853,7 @@ function openHorseModal(horseNo) {
   const showHistoryError = (msg) => {
     if (token !== HORSE_MODAL_TOKEN) return;
     const errHTML = `<div class="text-xs text-[#7A1C1C] py-2 text-center">⚠️ ${esc(msg)}</div>`;
-    ['surfaceAffinitySection', 'pedigreeTreeSection', 'bankomatHistoryTable', 'careerKarneSection', 'classKarneSection', 'hpHistorySection', 'yearlySection', 'citySection', 'surfaceRacesSection', 'relativesSection', 'breakdownSection', 'distanceCitySection', 'surfacePrefSection'].forEach(id => {
+    ['sameFormatSection', 'surfaceAffinitySection', 'pedigreeTreeSection', 'bankomatHistoryTable', 'careerKarneSection', 'classKarneSection', 'hpHistorySection', 'yearlySection', 'citySection', 'surfaceRacesSection', 'relativesSection', 'breakdownSection', 'distanceCitySection', 'surfacePrefSection'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.innerHTML = errHTML;
     });
@@ -1933,6 +1938,9 @@ function openHorseModal(horseNo) {
         const dEl = document.getElementById('distanceCitySection');
         if (dEl) dEl.innerHTML = distanceCityHTML(d, race);
         STATE.modalSurfaceRaces = d.surface_races || {};
+        STATE.modalWeight = h.weight;
+        STATE.sameFormatOpen = true;
+        renderSameFormat(race, h);
         const todaySurf = (race.surface || '').includes('Çim') ? 'Çim' : (race.surface || '').includes('Sentetik') ? 'Sentetik' : 'Kum';
         renderSurfaceRaces(STATE.modalSurfaceRaces[todaySurf] && STATE.modalSurfaceRaces[todaySurf].length ? todaySurf
           : (['Çim', 'Kum', 'Sentetik'].find(k => (STATE.modalSurfaceRaces[k] || []).length) || todaySurf));
@@ -2149,6 +2157,7 @@ function openHorseModal(horseNo) {
                   <th class="pb-1.5 px-1 text-right">Perf.</th>
                   <th class="pb-1.5 px-1 text-right">Zorluk</th>
                   <th class="pb-1.5 px-1 text-center">Form</th>
+                  <th class="pb-1.5 px-1 text-right" title="O koşudaki kilosu ve bugünkü kiloya göre farkı">Kilo</th>
                   <th class="pb-1.5 px-1 text-right">Kiloya G.</th>
                   <th class="pb-1.5 px-1 text-right" title="1200m Normalize Derece">Norm.Der</th>
                   <th class="pb-1.5 px-1 text-right">Poz%</th>
@@ -2166,6 +2175,7 @@ function openHorseModal(horseNo) {
                     <td class="py-1.5 px-1 text-right font-bold text-[#18181B]">${r.performans.toFixed(2)}</td>
                     <td class="py-1.5 px-1 text-right text-[#57534E]">${r.zorluk.toFixed(1)}</td>
                     <td class="py-1.5 px-1 text-center">${gradeBadge(r.form)}</td>
+                    <td class="py-1.5 px-1 text-right">${r.siklet ?? '-'}${kgDiffHTML(r.siklet, h.weight)}</td>
                     <td class="py-1.5 px-1 text-right font-bold text-[#0F291E]">${r.kiloya_gore.toFixed(2)}</td>
                     <td class="py-1.5 px-1 text-right text-[#7A1C1C] font-bold" title="Gerçek Derece: ${r.gercek_derece}">${r.norm_1200_derece}</td>
                     <td class="py-1.5 px-1 text-right text-[#44403C]">%${r.poz_pct}</td>
@@ -2257,6 +2267,74 @@ function cityHTML(d) {
   `;
 }
 
+// Bugünkü kilo ile o koşudaki kilo farkı: bugün daha ağırsa kırmızı (+), daha hafifse yeşil (−)
+function kgDiffHTML(past, today) {
+  const p = parseFloat(past), t = parseFloat(today);
+  if (!p || !t) return '';
+  const d = Math.round((t - p) * 10) / 10;
+  if (!d) return '<span class="text-[9px] text-[#78716C]"> =</span>';
+  return `<span class="text-[9px] font-bold ${d > 0 ? 'text-[#7A1C1C]' : 'text-[#0F291E]'}" title="Bugün ${t} kg: o koşuya göre ${d > 0 ? d + ' kg daha ağır' : -d + ' kg daha hafif'}"> ${d > 0 ? '+' : ''}${d}</span>`;
+}
+
+function parseDMY(s) { const [d, m, y] = (s || '').split('.'); return new Date(+y, +m - 1, +d).getTime() || 0; }
+
+// AYNI KOŞU BİÇİMİ: bugünkü mesafe ve pistteki son koşular (en yeni üstte)
+function renderSameFormat(race, h) {
+  const el = document.getElementById('sameFormatSection');
+  if (!el) return;
+  const surf = raceSurfaceName(race);
+  const dist = race.distance_m;
+  const today = parseFloat(h.weight);
+  const raceDay = parseDMY((STATE.program.date || '').replace(/\//g, '.'));
+  const list = ((STATE.modalSurfaceRaces || {})[surf] || []).filter(r => r.msf === dist && (!raceDay || parseDMY(r.tarih) < raceDay))
+    .sort((a, b) => parseDMY(b.tarih) - parseDMY(a.tarih));
+  const fin = list.filter(r => r.sira !== '-');
+  const wins = fin.filter(r => r.sira === 1).length;
+  const top3 = fin.filter(r => r.sira <= 3).length;
+  const kgs = list.map(r => parseFloat(r.siklet)).filter(Boolean);
+  const best = list.filter(r => r.derece).map(r => r.derece).sort()[0];
+  const ow = h.over_weight ? ` <span class="text-[#7A1C1C]">(fazla kilo +${h.over_weight} dahil)</span>` : '';
+  const head = `
+    <div class="flex items-center justify-between gap-2 flex-wrap">
+      <button onclick="STATE.sameFormatOpen = !STATE.sameFormatOpen; renderSameFormat(STATE.program.races[STATE.currentRaceIndex], STATE.program.races[STATE.currentRaceIndex].horses.find(x => x.no === ${h.no}))"
+        class="px-3 py-1.5 rounded-lg bg-[#7A1C1C] text-white text-[12px] font-extrabold shadow-sm">
+        🔴 Son ${dist} m ${surf} koşuları (${list.length}) ${STATE.sameFormatOpen ? '▲' : '▼'}
+      </button>
+      <div class="text-[11px] text-[#18181B]">⚖️ Bugün <strong class="mono">${h.weight} kg</strong>${ow}${kgs.length ? ` • bu koşularda ort. <span class="mono">${(kgs.reduce((a, b) => a + b, 0) / kgs.length).toFixed(1)} kg</span>` : ''}</div>
+    </div>`;
+  if (!list.length) {
+    el.innerHTML = head + `<div class="text-xs text-[#7A1C1C] mt-2">Bu safkan daha önce ${dist} m ${surf} pistte koşmadı.</div>`;
+    return;
+  }
+  const summary = `<div class="text-[11px] text-[#44403C] mt-2">${list.length} koşu • <strong>${wins}</strong> birincilik • İlk 3: <strong>${top3}</strong> (%${fin.length ? Math.round(top3 / fin.length * 100) : 0})${best ? ` • en iyi derece <span class="mono text-[#7A1C1C] font-bold">${best}</span>` : ''}</div>`;
+  el.innerHTML = head + summary + (STATE.sameFormatOpen ? `
+    <div class="overflow-x-auto -mx-1 mt-2 max-h-80 overflow-y-auto">
+      <table class="w-full text-[11px] whitespace-nowrap mono">
+        <thead class="sticky top-0 bg-[#FBF5F3]"><tr class="text-[9px] text-[#7A1C1C] border-b border-[#7A1C1C]/30 uppercase font-sans">
+          <th class="pb-1 px-1 text-left">Tarih</th><th class="pb-1 px-1 text-left">Şehir</th><th class="pb-1 px-1">P.D</th>
+          <th class="pb-1 px-1 text-center">Sıra</th><th class="pb-1 px-1 text-right">Derece</th>
+          <th class="pb-1 px-1 text-right" title="O koşudaki kilo; yanında bugüne göre fark">Kilo</th>
+          <th class="pb-1 px-1 text-left">Jokey</th><th class="pb-1 px-1 text-left">Sınıf</th><th class="pb-1 px-1 text-right">St</th><th class="pb-1 px-1 text-right">Gny</th>
+        </tr></thead>
+        <tbody class="divide-y divide-[#7A1C1C]/15">
+          ${list.map(r => `<tr>
+            <td class="py-1 px-1">${r.tarih}</td>
+            <td class="py-1 px-1 font-sans">${r.sehir}</td>
+            <td class="py-1 px-1 text-[#8C5A3C] font-bold">${r.pd}</td>
+            <td class="py-1 px-1 text-center font-extrabold ${r.sira !== '-' && r.sira <= 3 ? 'text-[#0F291E]' : 'text-[#57534E]'}">${r.sira}</td>
+            <td class="py-1 px-1 text-right text-[#7A1C1C] font-bold">${r.derece || '-'}</td>
+            <td class="py-1 px-1 text-right">${r.siklet ?? '-'}${kgDiffHTML(r.siklet, today)}</td>
+            <td class="py-1 px-1 font-sans">${r.jokey}</td>
+            <td class="py-1 px-1 font-sans" title="${r.kcins}">${r.sinif}</td>
+            <td class="py-1 px-1 text-right">${r.kulvar || '-'}</td>
+            <td class="py-1 px-1 text-right">${r.gny || '-'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div class="text-[9px] text-[#78716C] mt-1">Kilo farkı: <span class="text-[#7A1C1C] font-bold">+</span> bugün daha ağır, <span class="text-[#0F291E] font-bold">−</span> bugün daha hafif. Bugünkü kilo bültenden anlık alınır.</div>` : '');
+}
+
 function renderSurfaceRaces(active) {
   const el = document.getElementById('surfaceRacesSection');
   if (!el) return;
@@ -2291,7 +2369,7 @@ function renderSurfaceRaces(active) {
                 <td class="py-1 px-1 text-center font-extrabold ${r.sira !== '-' && r.sira <= 3 ? 'text-[#0F291E]' : 'text-[#57534E]'}">${r.sira}</td>
                 <td class="py-1 px-1 text-right text-[#7A1C1C] font-bold">${r.derece || '-'}</td>
                 <td class="py-1 px-1 font-sans" title="${r.kcins}">${r.sinif}</td>
-                <td class="py-1 px-1 text-right">${r.siklet ?? '-'}</td>
+                <td class="py-1 px-1 text-right">${r.siklet ?? '-'}${kgDiffHTML(r.siklet, STATE.modalWeight)}</td>
                 <td class="py-1 px-1 font-sans">${r.jokey}</td>
                 <td class="py-1 px-1 text-right font-bold text-[#8C5A3C]">${r.ikramiye || '-'}</td>
               </tr>`).join('')}
