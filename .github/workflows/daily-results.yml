@@ -29,6 +29,10 @@ jobs:
       - name: Dünün sonuçlarını topla
         run: python backtest.py collect --days "${{ github.event.inputs.days || '4' }}"
 
+      - name: Bugünün Maiden koşularının idmanını kaydet
+        # TJK geçmiş idmanı saklamıyor; ileride Maiden modeline idman eklemek için her sabah kaydediyoruz
+        run: python backtest.py snapshot-idman || echo "İdman kaydı alınamadı (sonraki gece tekrar denenir)."
+
       - name: Karneyi yeniden hesapla
         run: python backtest.py analyze
 
@@ -40,7 +44,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/records static/data/surprise_stats.json
+          git add data/records data/idman static/data/surprise_stats.json
           if git diff --cached --quiet; then
             echo "Yeni veri yok."
             echo "changed=false" >> "$GITHUB_OUTPUT"

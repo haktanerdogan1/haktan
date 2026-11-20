@@ -730,7 +730,73 @@ function renderCurrentRace() {
   renderPaceAndSimulationView(race);
   renderDistanceCompare(race);
   renderRaceWarnings(race);
+  renderMaidenCard(race);
   loadRaceExtras(race);
+}
+
+// ------------------------------------------------------------------
+// MAİDEN ANALİZİ — Maiden, Şartlı 1, Şartlı 19 (geçmişi az atlar)
+// Bu koşularda genel model halkın tahmininden (AGF) zayıf kaldı; geçmiş veri çalışmasında
+// en iyi derece (1200 m karşılığı), babanın taylarının birincilik oranı, ilk kez koşma ve
+// start numarası AGF'ye anlamlı katkı yaptı. Ayrıntı: maiden.py
+// ------------------------------------------------------------------
+function isMaidenRace(race) {
+  const c = (race.condition || '').toLocaleUpperCase('tr-TR');
+  return /MAIDEN|MAİDEN/.test(c) || /ŞARTLI\s*(1|19)(?!\d)/.test(c);
+}
+
+function renderMaidenCard(race) {
+  const el = document.getElementById('maidenCard');
+  if (!el) return;
+  if (!isMaidenRace(race)) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+  el.classList.remove('hidden');
+  const p = STATE.program;
+  const url = `/api/maiden?date=${encodeURIComponent(p.date)}&city_id=${encodeURIComponent(p.city_id)}&race_no=${race.race_no}`;
+  const head = sub => `
+    <div class="flex items-center justify-between mb-1.5">
+      <span class="serif-title text-sm font-bold text-[#8C5A3C] uppercase">🐣 Maiden Analizi</span>
+      <span class="text-[10px] text-[#57534E]">${sub}</span>
+    </div>`;
+  if (race._maiden) return paintMaiden(el, race, race._maiden, head);
+  el.innerHTML = head('⏳ atların geçmişi ve baba istatistikleri yükleniyor…') +
+    '<div class="text-[11px] text-[#57534E]">Geçmişi az atlarda derece, baba taylarının başarısı ve start bilgisi taranıyor (15–25 sn).</div>';
+  fetchJSON(url).then(d => {
+    race._maiden = d;
+    if (isCurrentRace(race)) paintMaiden(el, race, d, head);
+  }).catch(e => {
+    if (isCurrentRace(race)) el.innerHTML = head('') + `<div class="text-[11px] text-[#7A1C1C]">Maiden analizi alınamadı: ${e.message}. <button class="underline font-bold" onclick="renderMaidenCard(STATE.program.races[STATE.currentRaceIndex])">Tekrar dene</button></div>`;
+  });
+}
+
+function paintMaiden(el, race, d, head) {
+  const pct = v => (v === null || v === undefined) ? '—' : `%${v}`;
+  const rows = d.rows.map(r => {
+    const diff = d.has_agf ? r.maiden_prob - r.agf_pct : 0;
+    const tags = [];
+    if (!r.n_prev) tags.push('<span class="text-[#7A1C1C]">ilk koşu</span>');
+    if (r.speed_rank === 1) tags.push('<span class="text-[#0F291E] font-bold">en iyi derece</span>');
+    if (r.sire_stats && r.sire_stats.win >= 15) tags.push('<span class="text-[#0F291E] font-bold">güçlü baba</span>');
+    if (r.last_pos === 2 || r.last_pos === 3) tags.push(`<span class="text-[#8C5A3C]">son koşu ${r.last_pos}.</span>`);
+    const tone = diff >= 4 ? 'text-[#0F291E]' : diff <= -4 ? 'text-[#7A1C1C]' : 'text-[#57534E]';
+    return `
+      <tr onclick="openHorseModal(${r.no})" class="cursor-pointer border-t border-[#E8E3D8]">
+        <td class="py-1 pr-1 mono font-extrabold text-[#0F291E]">#${r.no}</td>
+        <td class="py-1 pr-1"><div class="font-bold text-[#18181B] leading-tight">${r.name}</div>
+          <div class="text-[9px] text-[#57534E] leading-tight">${r.sire || '—'}${r.sire_stats ? ` • tayları 1. ${pct(r.sire_stats.win)}` : ''}${tags.length ? ' • ' + tags.join(' • ') : ''}</div></td>
+        <td class="py-1 pr-1 mono text-center">${r.n_prev ?? '—'}</td>
+        <td class="py-1 pr-1 mono text-center" title="${r.best_from || ''}">${r.best_norm_str ? `${r.best_norm_str}<span class="text-[9px] text-[#78716C]"> (${r.speed_rank}.)</span>` : '—'}</td>
+        <td class="py-1 pr-1 mono text-center">${r.start || '—'}</td>
+        <td class="py-1 mono text-right font-extrabold text-[#0F291E]">%${r.maiden_prob}
+          ${d.has_agf ? `<div class="text-[9px] font-semibold ${tone}">AGF %${Math.round(r.agf_pct)}</div>` : ''}</td>
+      </tr>`;
+  }).join('');
+  el.innerHTML = head(`${d.class} • ${d.has_agf ? 'AGF + bilgiler' : 'AGF henüz yok: yalnız bilgiler'}`) + `
+    <div class="overflow-x-auto"><table class="w-full text-[11px]">
+      <thead><tr class="text-[9px] uppercase text-[#8C5A3C] font-extrabold">
+        <th class="text-left pb-1">No</th><th class="text-left pb-1">At / Baba</th><th class="pb-1">Koşu</th>
+        <th class="pb-1">En iyi (1200 m)</th><th class="pb-1">St</th><th class="text-right pb-1">Maiden şansı</th>
+      </tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="text-[9px] text-[#78716C] mt-1.5 leading-snug">Derece: önceki koşulardaki en iyi derecenin 1200 m karşılığı (parantezde koşudaki sırası). Bu koşularda halkın en çok oynadığı at yalnız ~%30 kazanıyor; en güçlü ek bilgi babanın taylarının birincilik oranı, ilk kez koşan atlar ise halkça fazla oynanıyor. Son 2 ayın 297 koşusundan öğrenildi, örnek küçük: şans sırası için kullanın, tek başına bahis kuralı değildir.</div>`;
 }
 
 // ------------------------------------------------------------------

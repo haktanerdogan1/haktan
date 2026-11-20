@@ -1,0 +1,37 @@
+{
+ "features": [
+  "speed",
+  "no_time",
+  "first_time",
+  "sire_win",
+  "draw",
+  "last_23"
+ ],
+ "with_agf": {
+  "speed": 0.15,
+  "no_time": -0.3184,
+  "first_time": -0.3078,
+  "sire_win": 0.1659,
+  "draw": 0.2988,
+  "last_23": -0.1674,
+  "agf": 0.8556
+ },
+ "without_agf": {
+  "speed": 0.4022,
+  "no_time": -0.3975,
+  "first_time": -0.352,
+  "sire_win": 0.2398,
+  "draw": 0.3124,
+  "last_23": 0.9301
+ },
+ "test": {
+  "agf": -1.9297,
+  "agf_plus": -1.8942,
+  "features_only": -2.1791,
+  "model": -2.2115
+ },
+ "races": {
+  "train": 192,
+  "test": 105
+ }
+}

@@ -543,6 +543,44 @@ def analyze():
     return stats
 
 
+IDMAN_DIR = os.path.join(DATA_DIR, "idman")   # yarış günü sabahı idman kaydı (TJK geçmiş idmanı saklamıyor)
+IDMAN_KEEP = ("tarih", "pist", "tur", "hipodrom", "galop_durumu", "durum_rank", "son_400", "son_400_rank", "pace_200", "days_before")
+
+
+def snapshot_idman(date_str=None, only_maiden=True):
+    """Bugünün koşularındaki atların idmanlarını kaydeder: ileride Maiden çalışmasına idman eklemek için."""
+    date_str = date_str or S.tr_now().strftime("%d/%m/%Y")
+    d, m, y = date_str.split("/")
+    path = os.path.join(IDMAN_DIR, f"{y}-{m}-{d}.json.gz")
+    if os.path.exists(path):
+        log(f"{date_str} idmanı zaten kayıtlı")
+        return path
+    out = []
+    for c in S.get_available_cities(date_str):
+        try:
+            prog = S.fetch_city_program(date_str, city_id=c["id"], city_name=c["name"], with_jockeys=False)
+        except Exception as e:
+            log(f"  {c['name']} bülten alınamadı: {e}")
+            continue
+        for r in prog["races"]:
+            key = S.classify_race(r.get("condition", ""))[0]
+            if (only_maiden and key not in ("maiden", "sartli1", "sartli19")) or not r.get("kosu_kodu"):
+                continue
+            try:
+                data = S.fetch_race_idman(r["kosu_kodu"], r["idman_at_kodu"], date_str)
+            except Exception as e:
+                log(f"  {c['name']} {r['race_no']}. koşu idmanı alınamadı: {e}")
+                continue
+            out.append({"date": date_str, "city": c["name"], "race_no": r["race_no"], "cls": key,
+                        "rows": [{"no": x.get("no"), "at": x.get("name"), **{k: x.get(k) for k in IDMAN_KEEP}}
+                                 for x in data["rows"]]})
+    os.makedirs(IDMAN_DIR, exist_ok=True)
+    with gzip.open(path, "wt", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False)
+    log(f"{date_str}: {len(out)} koşunun idmanı kaydedildi")
+    return path
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -552,9 +590,14 @@ if __name__ == "__main__":
     sub.add_parser("analyze")
     r = sub.add_parser("recollect", help="Bir günü arşivde yeniden topla (GG/AA/YYYY)")
     r.add_argument("date")
+    si = sub.add_parser("snapshot-idman", help="Bugünün Maiden/Şartlı 1/19 koşularının idmanını kaydet")
+    si.add_argument("--date", help="GG/AA/YYYY (varsayılan: bugün)")
+    si.add_argument("--all", action="store_true", help="Tüm koşular")
     a = ap.parse_args()
     if a.cmd == "collect":
         collect(a.days, a.end)
+    elif a.cmd == "snapshot-idman":
+        snapshot_idman(a.date, only_maiden=not a.all)
     elif a.cmd == "recollect":
         write_day(a.date, collect_day(a.date))
         log(f"{a.date} yeniden toplandı")

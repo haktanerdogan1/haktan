@@ -2791,6 +2791,29 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
                 self.send_json(500, {"ok": False, "error": str(e)})
             return
 
+        if parsed.path == "/api/maiden":
+            params = urllib.parse.parse_qs(parsed.query)
+            date_str = params.get("date", [tr_now().strftime("%d/%m/%Y")])[0]
+            city_id = params.get("city_id", [""])[0]
+            race_no = params.get("race_no", [""])[0]
+            try:
+                if not (re.match(r'^\d{2}/\d{2}/\d{4}$', date_str) and city_id.isdigit() and race_no.isdigit()):
+                    raise ValueError("Geçersiz parametre")
+                import maiden as MD  # geç yükleme (döngüsel içe aktarma)
+                key = f"maiden_{date_str}_{city_id}_{race_no}"
+                data = cache_get(key, 300)
+                if data is None:
+                    prog = fetch_city_program(date_str, city_id=city_id)
+                    race = next((r for r in prog["races"] if r["race_no"] == int(race_no)), None)
+                    if not race or not MD.is_maiden_race(race):
+                        raise ValueError("Bu koşu Maiden / Şartlı 1 / Şartlı 19 değil")
+                    data = MD.analyze_race(race, prog["date"])
+                    cache_set(key, data)
+                self.send_json(200, {"ok": True, "data": data})
+            except Exception as e:
+                self.send_json(500, {"ok": False, "error": str(e)})
+            return
+
         if parsed.path == "/api/jockey_recent":
             params = urllib.parse.parse_qs(parsed.query)
             jid = params.get("jokey_id", [""])[0]
