@@ -654,6 +654,7 @@ function renderCurrentRace() {
                 <strong class="text-[#18181B]">${h.jockey}</strong> • ${h.weight}kg • Kulvar:${h.start_no} ${h.handicap ? `• HP:${h.handicap}` : ''}${h.hp_weight ? ` <span class="text-[#8C5A3C] font-bold" title="Kilo Ayarlı HP: HP + (ortanca kilo − kilo) × ${(race.hp_weight || {}).hp_per_kg || 3} HP/kg">(K.A. ${h.hp_weight.eff_hp})</span>` : ''}
               </div>
               ${jockeyLineHTML(h, true)}
+              <div id="trn-${h.no}">${trainerLineHTML(race, h)}</div>
               <div class="text-[10px] text-[#57534E] truncate">
                 ${h.age} • <strong class="text-[#44403C]">${h.sire}</strong> - ${h.dam}${h.damsire ? ` / <span class="text-[#7A1C1C] font-semibold">${h.damsire}</span>` : ''}
               </div>
@@ -731,6 +732,7 @@ function renderCurrentRace() {
   renderDistanceCompare(race);
   renderRaceWarnings(race);
   renderMaidenCard(race);
+  loadRaceTrainers(race);
   loadRaceExtras(race);
 }
 
@@ -768,6 +770,46 @@ function renderMaidenCard(race) {
   });
 }
 
+const FORM_TONE = { 'Formda': 'bg-[#0F291E] text-[#F9F6F0]', 'Yükselişte': 'bg-[#A67C37] text-white', 'Orta': 'bg-[#E8E3D8] text-[#18181B]',
+  'Durgun': 'bg-[#7A1C1C] text-white', 'Derecesiz': 'bg-[#7A1C1C] text-white', 'İlk koşu': 'bg-[#F6F3EC] text-[#57534E] border border-[#D6CFC0]' };
+function formBadge(r) {
+  const seq = (r.last3 || []).map(p => p || '–').join('-');
+  return `<span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold whitespace-nowrap ${FORM_TONE[r.form] || ''}">${r.form || '—'}</span>
+    ${seq ? `<div class="mono text-[9px] text-[#57534E] mt-0.5">${seq}</div>` : ''}
+    ${r.days_since != null ? `<div class="text-[9px] text-[#78716C]">${r.days_since} gün</div>` : ''}`;
+}
+
+function famLine(race, no) {
+  const f = race._maidenFam;
+  if (!f) return race._maidenFamErr ? '' : '<span class="text-[#78716C]">⏳ aile ilk koşuları…</span>';
+  const row = f.rows.find(x => x.no === no);
+  if (!row || !row.family.length) return '';
+  const short = { 'Baba': 'Baba', 'Baba babası': 'B.babası', 'Anne': 'Anne', 'Anne babası': 'A.babası' };
+  const chip = m => {
+    const d = m.debut;
+    const lbl = short[m.role] || m.role;
+    if (!d) return `<span class="text-[#A8A29E]" title="${m.name}: ${m.found ? 'TJK\'da koşusu yok' : 'yurt dışı at, TJK kaydı yok'}">${lbl} –</span>`;
+    const tip = `${m.name} • ilk koşu ${d.tarih} ${d.sehir} ${d.kosu} ${d.sinif}: ${d.sira || '–'}.`;
+    return d.won
+      ? `<span class="text-[#0F291E] font-bold" title="${tip}">${lbl} ✓</span>`
+      : `<span class="text-[#7A1C1C]" title="${tip}">${lbl} ✗${d.sira || ''}</span>`;
+  };
+  return '🧬 İlk koşu: ' + row.family.map(chip).join(' • ') + (row.debut_known ? ` <span class="font-extrabold text-[#8C5A3C]">(${row.debut_wins}/${row.debut_known})</span>` : '');
+}
+
+function loadMaidenFamily(race) {
+  if (race._maidenFam || race._famLoading) return;
+  race._famLoading = true;
+  const p = STATE.program;
+  fetchJSON(`/api/maiden_family?date=${encodeURIComponent(p.date)}&city_id=${encodeURIComponent(p.city_id)}&race_no=${race.race_no}`)
+    .then(f => { race._maidenFam = f; }).catch(() => { race._maidenFamErr = true; })
+    .finally(() => {
+      race._famLoading = false;
+      if (!isCurrentRace(race)) return;
+      race.horses.forEach(h => { const el = document.getElementById(`mfam-${h.no}`); if (el) el.innerHTML = famLine(race, h.no); });
+    });
+}
+
 function paintMaiden(el, race, d, head) {
   const pct = v => (v === null || v === undefined) ? '—' : `%${v}`;
   const rows = d.rows.map(r => {
@@ -776,13 +818,14 @@ function paintMaiden(el, race, d, head) {
     if (!r.n_prev) tags.push('<span class="text-[#7A1C1C]">ilk koşu</span>');
     if (r.speed_rank === 1) tags.push('<span class="text-[#0F291E] font-bold">en iyi derece</span>');
     if (r.sire_stats && r.sire_stats.win >= 15) tags.push('<span class="text-[#0F291E] font-bold">güçlü baba</span>');
-    if (r.last_pos === 2 || r.last_pos === 3) tags.push(`<span class="text-[#8C5A3C]">son koşu ${r.last_pos}.</span>`);
     const tone = diff >= 4 ? 'text-[#0F291E]' : diff <= -4 ? 'text-[#7A1C1C]' : 'text-[#57534E]';
     return `
       <tr onclick="openHorseModal(${r.no})" class="cursor-pointer border-t border-[#E8E3D8]">
         <td class="py-1 pr-1 mono font-extrabold text-[#0F291E]">#${r.no}</td>
         <td class="py-1 pr-1"><div class="font-bold text-[#18181B] leading-tight">${r.name}</div>
-          <div class="text-[9px] text-[#57534E] leading-tight">${r.sire || '—'}${r.sire_stats ? ` • tayları 1. ${pct(r.sire_stats.win)}` : ''}${tags.length ? ' • ' + tags.join(' • ') : ''}</div></td>
+          <div class="text-[9px] text-[#57534E] leading-tight">${r.sire || '—'}${r.sire_stats ? ` • tayları 1. ${pct(r.sire_stats.win)}` : ''}${tags.length ? ' • ' + tags.join(' • ') : ''}</div>
+          <div id="mfam-${r.no}" class="text-[9px] leading-tight mt-0.5">${famLine(race, r.no)}</div></td>
+        <td class="py-1 pr-1 text-center">${formBadge(r)}</td>
         <td class="py-1 pr-1 mono text-center">${r.n_prev ?? '—'}</td>
         <td class="py-1 pr-1 mono text-center" title="${r.best_from || ''}">${r.best_norm_str ? `${r.best_norm_str}<span class="text-[9px] text-[#78716C]"> (${r.speed_rank}.)</span>` : '—'}</td>
         <td class="py-1 pr-1 mono text-center">${r.start || '—'}</td>
@@ -790,13 +833,14 @@ function paintMaiden(el, race, d, head) {
           ${d.has_agf ? `<div class="text-[9px] font-semibold ${tone}">AGF %${Math.round(r.agf_pct)}</div>` : ''}</td>
       </tr>`;
   }).join('');
-  el.innerHTML = head(`${d.class} • ${d.has_agf ? 'AGF + bilgiler' : 'AGF henüz yok: yalnız bilgiler'}`) + `
+  loadMaidenFamily(race);
+  el.innerHTML = head(`${d.class} • ${d.has_agf ? 'AGF + bilgiler' : 'AGF henüz yok: form + bilgiler'}`) + `
     <div class="overflow-x-auto"><table class="w-full text-[11px]">
       <thead><tr class="text-[9px] uppercase text-[#8C5A3C] font-extrabold">
-        <th class="text-left pb-1">No</th><th class="text-left pb-1">At / Baba</th><th class="pb-1">Koşu</th>
+        <th class="text-left pb-1">No</th><th class="text-left pb-1">At / Baba</th><th class="pb-1">Form</th><th class="pb-1">Koşu</th>
         <th class="pb-1">En iyi (1200 m)</th><th class="pb-1">St</th><th class="text-right pb-1">Maiden şansı</th>
       </tr></thead><tbody>${rows}</tbody></table></div>
-    <div class="text-[9px] text-[#78716C] mt-1.5 leading-snug">Derece: önceki koşulardaki en iyi derecenin 1200 m karşılığı (parantezde koşudaki sırası). Bu koşularda halkın en çok oynadığı at yalnız ~%30 kazanıyor; en güçlü ek bilgi babanın taylarının birincilik oranı, ilk kez koşan atlar ise halkça fazla oynanıyor. Son 2 ayın 297 koşusundan öğrenildi, örnek küçük: şans sırası için kullanın, tek başına bahis kuralı değildir.</div>`;
+    <div class="text-[9px] text-[#78716C] mt-1.5 leading-snug">Derece: önceki koşulardaki en iyi derecenin 1200 m karşılığı (parantezde koşudaki sırası). Bu koşularda halkın en çok oynadığı at yalnız ~%30 kazanıyor; en güçlü ek bilgi babanın taylarının birincilik oranı, ilk kez koşan atlar ise halkça fazla oynanıyor. Form (son 3 koşunun sırası): AGF yokken en güçlü bilgi; AGF varken halk formu zaten fiyatlıyor. 🧬 Aile: baba, baba babası, anne ve anne babasının kendi ilk koşusunu kazanıp kazanmadığı (bilgi amaçlı, modele katılmadı). Son 2 ayın 297 koşusundan öğrenildi, örnek küçük: şans sırası için kullanın, tek başına bahis kuralı değildir.</div>`;
 }
 
 // ------------------------------------------------------------------
@@ -1051,11 +1095,51 @@ function jockeyLineHTML(h, compact) {
   const strong = !!(rc && rc.form);   // son 10 koşuda en az 1 galibiyet ve 5 tabela
   const weak = rc && rc.n >= 10 && rc.wins === 0 && rc.tabela <= 2;
   const tone = strong ? 'text-[#0F291E] font-extrabold' : weak ? 'text-[#7A1C1C] font-bold' : 'text-[#44403C] font-bold';
-  const city = c && c.starts ? ` • ${STATE.program.city_name}'de <span class="mono">%${c.win_pct}</span> <span class="opacity-70">(${c.starts}K)</span>` : '';
+  const c2 = js.city_two_years;
+  const city = c2 && c2.starts
+    ? ` • ${cityIn(STATE.program.city_name)} son 2 yıl <span class="mono">%${c2.win_pct}</span> <span class="opacity-70">(${c2.starts}K)</span>`
+    : (c && c.starts ? ` • ${cityIn(STATE.program.city_name)} <span class="mono">%${c.win_pct}</span> <span class="opacity-70">(${c.starts}K)</span>` : '');
+  const badges = (js.elite ? ' <span class="px-1 rounded bg-[#A67C37] text-white text-[9px] font-extrabold" title="Son 2 yıl düzeltilmiş birincilik oranı %' + js.win_adj2 + '">HER YERDE ETKİLİ</span>' : '')
+    + (js.city_strong && !js.elite ? ` <span class="px-1 rounded bg-[#0F291E] text-[#F9F6F0] text-[9px] font-extrabold" title="${STATE.program.city_name}: son 2 yıl düzeltilmiş %${js.city_win_adj2}">BU İLDE ETKİLİ</span>` : '')
+    + (js.city_weak ? ` <span class="px-1 rounded bg-[#7A1C1C] text-white text-[9px] font-extrabold" title="${STATE.program.city_name}: %${js.city_win_adj2}, genelde %${js.win_adj2}">BU İLDE ZAYIF</span>` : '');
   const recent = rc && rc.n ? ` • <span class="${strong ? 'text-[#0F291E] font-extrabold' : 'text-[#44403C] font-bold'} underline decoration-dotted">Son ${rc.n}: ${rc.wins} galibiyet, ${rc.tabela} tabela</span>` : '';
   return apprenticeHTML(h) + `<div onclick="event.stopPropagation(); openJockeyModal(${h.no})" class="cursor-pointer text-[10px] mt-0.5 ${compact ? '' : 'leading-snug'}" title="Jokeyin son koşularını görmek için dokunun">
     🏇 <span class="${tone}">Jokey ${js.year_label}: <span class="mono">%${y.win_pct}</span> 1. • İlk3 <span class="mono">%${y.top3_pct}</span></span>
-    <span class="text-[#57534E]">(${y.starts} koşu)${city}</span>${recent}${strong ? ' <span class="px-1 rounded bg-[#0F291E] text-[#E6C762] text-[9px] font-extrabold">FORMDA JOKEY</span>' : ''}</div>`;
+    <span class="text-[#57534E]">(${y.starts} koşu)${city}</span>${recent}${strong ? ' <span class="px-1 rounded bg-[#0F291E] text-[#E6C762] text-[9px] font-extrabold">FORMDA JOKEY</span>' : ''}${badges}</div>`;
+}
+
+// ---------------- ANTRENÖR: genel ve bu ildeki başarı (son 2 yıl) ----------------
+// Türkçe bulunma eki: Antalya'da, İzmir'de, Şanlıurfa'da, Elazığ'da
+function cityIn(name) {
+  const n = (name || '').toLocaleLowerCase('tr-TR');
+  const vowels = n.match(/[aeıioöuü]/g) || ['e'];
+  const back = 'aıou'.includes(vowels[vowels.length - 1]);
+  const hard = 'çfhkpsşt'.includes(n.slice(-1));
+  return `${name}'${hard ? 't' : 'd'}${back ? 'a' : 'e'}`;
+}
+
+function trainerLineHTML(race, h) {
+  const t = race._trainers && race._trainers.horses.find(x => x.no === h.no);
+  const st = t && t.stats;
+  if (!st || !st.two_years) return '';
+  const c2 = st.city_two_years;
+  const badge = st.city_strong ? ' <span class="px-1 rounded bg-[#0F291E] text-[#F9F6F0] text-[9px] font-extrabold">BU İLDE ETKİLİ</span>'
+    : st.city_weak ? ' <span class="px-1 rounded bg-[#7A1C1C] text-white text-[9px] font-extrabold">BU İLDE GALİBİYETSİZ</span>' : '';
+  return `<div class="text-[10px] mt-0.5 text-[#44403C]">🎓 <span class="font-bold">Antrenör ${h.trainer || t.trainer}:</span>
+    son 2 yıl <span class="mono">%${st.two_years.win_pct}</span> <span class="opacity-70">(${st.two_years.starts}K)</span>${c2 && c2.starts ? ` • ${cityIn(STATE.program.city_name)} <span class="mono">%${c2.win_pct}</span> <span class="opacity-70">(${c2.starts}K)</span>` : ''}${badge}</div>`;
+}
+
+function loadRaceTrainers(race) {
+  if (race._trainers || race._trnLoading || !race.horses.some(h => h.trainer_id)) return;
+  race._trnLoading = true;
+  const p = STATE.program;
+  fetchJSON(`/api/race_trainers?date=${encodeURIComponent(p.date)}&city_id=${encodeURIComponent(p.city_id)}&race_no=${race.race_no}`)
+    .then(d => { race._trainers = d; }).catch(() => {})
+    .finally(() => {
+      race._trnLoading = false;
+      if (!isCurrentRace(race)) return;
+      race.horses.forEach(h => { const el = document.getElementById(`trn-${h.no}`); if (el) el.innerHTML = trainerLineHTML(race, h); });
+    });
 }
 
 function openJockeyModal(horseNo, loaded) {

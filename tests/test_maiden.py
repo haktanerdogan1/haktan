@@ -56,3 +56,32 @@ class MaidenTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FormAndSpecialistTests(unittest.TestCase):
+    def test_form_label(self):
+        self.assertEqual(MD.form_label([], 0), "İlk koşu")
+        self.assertEqual(MD.form_label([2, 3], 2), "Formda")
+        self.assertEqual(MD.form_label([4, 7], 2), "Yükselişte")
+        self.assertEqual(MD.form_label([9, 8, 10], 3), "Durgun")
+
+    def test_clean_name(self):
+        self.assertEqual(MD._clean_name("AY İNCİSİ (T)"), "AY İNCİSİ")
+        self.assertEqual(MD._clean_name("SATONO ARES (JPN)%"), "SATONO ARES")
+        self.assertEqual(MD._clean_name("LOMITAS*"), "LOMITAS")
+
+    def test_jockey_city_profile(self):
+        S = MD.S
+        blk = lambda n, w: S.build_finish_block(n, [w, 0, 0, 0, 0])
+        # N. Avcı örneği: genel %19,7; İzmir %24 → ilde etkili; İstanbul %10 → ilde zayıf
+        izmir = S.jockey_city_profile(blk(2239, 441), blk(1071, 261))
+        self.assertTrue(izmir["city_strong"])
+        self.assertFalse(izmir["elite"])
+        ist = S.jockey_city_profile(blk(2239, 441), blk(281, 29))
+        self.assertTrue(ist["city_weak"])
+        self.assertFalse(ist["city_strong"])
+        # V. Abiş: her yerde etkili
+        self.assertTrue(S.jockey_city_profile(blk(2159, 454), blk(191, 54))["elite"])
+        # Az koşu: işaret yok
+        few = S.jockey_city_profile(blk(2239, 441), blk(10, 5))
+        self.assertFalse(few["city_strong"] or few["city_weak"])

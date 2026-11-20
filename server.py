@@ -285,6 +285,7 @@ def extract_horse_extras_from_html(html):
         kb_m = re.search(r'QueryParameter_KisrakBabaAdi=[^"\'>]+["\'][^>]*>\s*([^<]+)', row)
         idm_m = re.search(r'idmanpisti/Kosu\?KosuKodu=(\d+)', row)
         jk_m = re.search(r'QueryParameter_JokeyId=(\d+)', row)
+        tr_m = re.search(r'QueryParameter_AntrenorId=(\d+)', row)
         jk_cell = re.search(r'gunluk-GunlukYarisProgrami-JokeAdi[^>]*>(.*?)</td>', row, re.S)
         is_apranti = bool(jk_cell and "Apranti" in clean_cell(jk_cell.group(1)))
         gny_m = re.search(r'gunluk-GunlukYarisProgrami-Gny[^>]*>(.*?)</td>', row, re.S)
@@ -301,6 +302,7 @@ def extract_horse_extras_from_html(html):
                 "damsire": damsire,
                 "idman_kosu_kodu": idm_m.group(1) if idm_m else None,
                 "jokey_id": jk_m.group(1) if jk_m else None,
+                "trainer_id": tr_m.group(1) if tr_m else None,
                 "apranti": is_apranti,
                 # Bahis açıkken TJK'nın gösterdiği güncel ganyan oranı (yarıştan sonra kapanış oranı)
                 "ganyan_live": float(gny_num.group(1).replace(",", ".")) if gny_num else None,
@@ -2401,6 +2403,7 @@ def parse_tjk_csv(csv_text, html_extras=None):
                     "jockey_stats": extra.get("jockey_stats"),
                     "owner": owner,
                     "trainer": trainer,
+                    "trainer_id": extra.get("trainer_id"),
                     "start_no": start_no,
                     "start_raw": st_raw,
                     "agf_raw": agf_raw,
@@ -2465,6 +2468,97 @@ JOCKEY_AVG_WIN, JOCKEY_AVG_TOP3 = 10.0, 30.0
 
 
 JOCKEY_FORM_RIDES, JOCKEY_FORM_MIN_WINS, JOCKEY_FORM_MIN_TABELA = 10, 1, 5
+JOCKEY_CITY_STRONG_WIN = 17.0   # ildeki düzeltilmiş birincilik oranı (son 2 yıl) → "BU İLDE ETKİLİ"
+JOCKEY_ELITE_WIN = 20.0         # genel düzeltilmiş oran (son 2 yıl) → "HER YERDE ETKİLİ"
+JOCKEY_CITY_MIN_STARTS = 30
+JOCKEY_CITY_WEAK_RATIO = 0.65   # ilde kendi ortalamasının %65'inin altında → "bu ilde zayıf"
+
+
+def jockey_city_profile(two, city_two):
+    """Son 2 yılın genel ve il istatistiğinden jokeyin il uzmanlığı.
+    Doğrulama (2025–26): N.Avcı İzmir %24 / Bursa %17 / İstanbul %10; M.M.Bilgin İzmir %21 / Bursa %19;
+    M.S. ve A. Çelik Adana–Antalya %20–22; V.Abiş ve S.Kaya her ilde ≥%18."""
+    shrink = lambda b: round((b["w1"] + JOCKEY_PRIOR_STARTS * JOCKEY_AVG_WIN / 100) / (b["starts"] + JOCKEY_PRIOR_STARTS) * 100, 1) if b and b.get("starts") else None
+    gen, cty = shrink(two), shrink(city_two)
+    enough = bool(city_two and city_two["starts"] >= JOCKEY_CITY_MIN_STARTS)
+    return {
+        "two_years": two, "city_two_years": city_two, "win_adj2": gen, "city_win_adj2": cty,
+        "elite": bool(gen and gen >= JOCKEY_ELITE_WIN),
+        "city_strong": bool(enough and cty >= JOCKEY_CITY_STRONG_WIN),
+        "city_weak": bool(enough and gen and cty <= gen * JOCKEY_CITY_WEAK_RATIO),
+    }
+
+
+# ---------------- ANTRENÖR: genel ve il bazında başarı ----------------
+TRAINER_PRIOR_STARTS = 30          # az koşulu antrenörün oranı ortalamaya doğru çekilir
+TRAINER_AVG_WIN = 10.0
+TRAINER_CITY_STRONG = 1.5          # ildeki düzeltilmiş birincilik oranı ortalamanın en az 1,5 katı
+TRAINER_CITY_MIN_STARTS = 15
+
+
+def _shrunk_win(blk):
+    if not blk or not blk.get("starts"):
+        return None
+    return round((blk["w1"] + TRAINER_PRIOR_STARTS * TRAINER_AVG_WIN / 100) / (blk["starts"] + TRAINER_PRIOR_STARTS) * 100, 1)
+
+
+def _merge_blocks(blocks):
+    blocks = [b for b in blocks if b and b.get("starts")]
+    if not blocks:
+        return None
+    return build_finish_block(sum(b["starts"] for b in blocks), [sum(b[f"w{i}"] for b in blocks) for i in range(1, 6)])
+
+
+def fetch_trainer_stats(trainer_id, year, city_id):
+    """TJK AntrenorIstatistikleri: bu yıl (tüm iller) ve bu ilde bu yıl + geçen yıl."""
+    cache_key = f"trainer_{trainer_id}_{year}_{city_id}"
+    cached = cache_get(cache_key, 12 * 3600)
+    if cached is not None:
+        return cached
+    base = f"https://www.tjk.org/TR/YarisSever/Query/Page/AntrenorIstatistikleri?1=1&QueryParameter_AntrenorId={trainer_id}"
+    jobs = {"year": f"{base}&QueryParameter_YIL={year}",
+            "prev": f"{base}&QueryParameter_YIL={int(year) - 1}",
+            "city": f"{base}&QueryParameter_YIL={year}&QueryParameter_SehirId={city_id}",
+            "city_prev": f"{base}&QueryParameter_YIL={int(year) - 1}&QueryParameter_SehirId={city_id}"}
+    failed = []
+
+    def load(item):
+        try:
+            return item[0], parse_query_table(fetch_cached(item[1], 24 * 3600), "")
+        except Exception:
+            failed.append(item[0])
+            return item[0], None
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        got = dict(pool.map(load, jobs.items()))
+    two = _merge_blocks([got.get("year"), got.get("prev")])
+    city2 = _merge_blocks([got.get("city"), got.get("city_prev")])
+    out = {"year_label": str(year), "year": got.get("year"), "two_years": two, "city_two_years": city2,
+           "win_adj": _shrunk_win(two), "city_win_adj": _shrunk_win(city2)}
+    out["city_strong"] = bool(city2 and city2["starts"] >= TRAINER_CITY_MIN_STARTS and out["city_win_adj"]
+                              and out["city_win_adj"] >= TRAINER_AVG_WIN * TRAINER_CITY_STRONG
+                              and out["city_win_adj"] >= (out["win_adj"] or 0))
+    out["city_weak"] = bool(city2 and city2["starts"] >= TRAINER_CITY_MIN_STARTS and city2["w1"] == 0)
+    if not failed:
+        cache_set(cache_key, out)
+    return out
+
+
+def fetch_race_trainers(race, date_str, city_id):
+    year = date_str.split("/")[-1]
+    ids = {h["trainer_id"]: h.get("trainer", "") for h in race["horses"] if h.get("trainer_id")}
+
+    def load(tid):
+        try:
+            return tid, fetch_trainer_stats(tid, year, city_id)
+        except Exception:
+            return tid, None
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        stats = dict(pool.map(load, ids))
+    return {"race_no": race["race_no"],
+            "horses": [{"no": h["no"], "trainer": h.get("trainer", ""), "trainer_id": h.get("trainer_id"),
+                        "stats": stats.get(h.get("trainer_id"))} for h in race["horses"]]}
 
 
 # TJK 2026 Genel Hükümler 4/ı ve 7/c: yamak sınıfları ve sıklet indirimi uygulanan koşular
@@ -2537,7 +2631,7 @@ def fetch_jockey_recent(jokey_id, year):
 
 def fetch_jockey_stats(jokey_id, year, city_id=None, apranti=False):
     """TJK JokeyIstatistikleri: bu yıl (tüm hipodromlar) ve bu yıl bu hipodromda koşu/1.-5./yüzdeler."""
-    cache_key = f"jockey_{jokey_id}_{year}_{city_id or '-'}_{int(bool(apranti))}"
+    cache_key = f"jockey2_{jokey_id}_{year}_{city_id or '-'}_{int(bool(apranti))}"
     cached = cache_get(cache_key, 6 * 3600)  # son koşular gün içinde değişir
     if cached is not None:
         return cached
@@ -2550,6 +2644,15 @@ def fetch_jockey_stats(jokey_id, year, city_id=None, apranti=False):
             out["city"] = parse_query_table(fetch_cached(base + f"&QueryParameter_SehirId={city_id}", 24 * 3600), "")
         except Exception:
             out["city"] = None
+    # İl uzmanlığı: bu yıl + geçen yıl (tek yıl az koşu verir). Ör. bir jokey İzmir'de %24, İstanbul'da %10.
+    try:
+        prev_base = base.replace(f"QueryParameter_YIL={year}", f"QueryParameter_YIL={int(year) - 1}")
+        prev = parse_query_table(fetch_cached(prev_base, 7 * 24 * 3600), "")
+        prev_city = parse_query_table(fetch_cached(prev_base + f"&QueryParameter_SehirId={city_id}", 7 * 24 * 3600), "") if city_id else None
+        out.update(jockey_city_profile(_merge_blocks([out.get("year"), prev]),
+                                       _merge_blocks([out.get("city"), prev_city]) if city_id else None))
+    except Exception:
+        pass
     y = out.get("year")
     if y and y.get("starts"):
         n = y["starts"]
@@ -2808,6 +2911,47 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
                     if not race or not MD.is_maiden_race(race):
                         raise ValueError("Bu koşu Maiden / Şartlı 1 / Şartlı 19 değil")
                     data = MD.analyze_race(race, prog["date"])
+                    cache_set(key, data)
+                self.send_json(200, {"ok": True, "data": data})
+            except Exception as e:
+                self.send_json(500, {"ok": False, "error": str(e)})
+            return
+
+        if parsed.path == "/api/race_trainers":
+            params = urllib.parse.parse_qs(parsed.query)
+            date_str = params.get("date", [tr_now().strftime("%d/%m/%Y")])[0]
+            city_id = params.get("city_id", [""])[0]
+            race_no = params.get("race_no", [""])[0]
+            try:
+                if not (re.match(r'^\d{2}/\d{2}/\d{4}$', date_str) and city_id.isdigit() and race_no.isdigit()):
+                    raise ValueError("Geçersiz parametre")
+                prog = fetch_city_program(date_str, city_id=city_id)
+                race = next((r for r in prog["races"] if r["race_no"] == int(race_no)), None)
+                if not race:
+                    raise ValueError("Koşu bulunamadı")
+                self.send_json(200, {"ok": True, "data": fetch_race_trainers(race, prog["date"], prog.get("city_id") or city_id)})
+            except Exception as e:
+                self.send_json(500, {"ok": False, "error": str(e)})
+            return
+
+        if parsed.path == "/api/maiden_family":
+            params = urllib.parse.parse_qs(parsed.query)
+            date_str = params.get("date", [tr_now().strftime("%d/%m/%Y")])[0]
+            city_id = params.get("city_id", [""])[0]
+            race_no = params.get("race_no", [""])[0]
+            try:
+                if not (re.match(r'^\d{2}/\d{2}/\d{4}$', date_str) and city_id.isdigit() and race_no.isdigit()):
+                    raise ValueError("Geçersiz parametre")
+                import maiden as MD
+                key = f"maidenfam_{date_str}_{city_id}_{race_no}"
+                data = cache_get(key, 24 * 3600)
+                if data is None:
+                    prog = fetch_city_program(date_str, city_id=city_id)
+                    race = next((r for r in prog["races"] if r["race_no"] == int(race_no)), None)
+                    if not race:
+                        raise ValueError("Koşu bulunamadı")
+                    irk = "Arap" if "arap" in (race.get("age_group") or "").lower() else "İngiliz"
+                    data = {"race_no": race["race_no"], "irk": irk, "rows": MD.family_debuts(race["horses"], irk)}
                     cache_set(key, data)
                 self.send_json(200, {"ok": True, "data": data})
             except Exception as e:

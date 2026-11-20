@@ -10,6 +10,8 @@ tahminine (AGF) şu bilgilerin anlamlı katkı yaptığını gösterdi (öğrenm
   • sire_win   : babanın taylarının birincilik oranı (koşu içinde standartlaştırılmış; en güçlü bilgi)
   • draw       : start numarası (iç kulvar küçük avantaj)
   • last_23    : son koşusunu 2. ya da 3. bitirdi (halk biraz abartıyor)
+  • form_avg / last_speed : son 3 koşunun ortalama sırası ve son koşu derecesi. AGF yokken en güçlü
+    bilgi (test −2,18 → −2,09); AGF varken katkısı yok, çünkü halk formu zaten fiyatlıyor.
 Test isabet skoru (ortalama log-olabilirlik): mevcut model −2,21 • yalnız AGF −1,93 • AGF+bilgi −1,89.
 Ağırlıklar static/data/maiden_model.json dosyasındadır.
 """
@@ -67,10 +69,31 @@ def sire_stats(name):
     return {"win": blk["win_pct"], "top3": blk["top3_pct"], "runners": blk["runners"], "starts": blk["starts"]}
 
 
-def horse_prior(at_id, race_date):
-    """Yarıştan önceki koşular: en iyi 1200 m karşılığı derece, koşu sayısı, son derece."""
+def _history_rows(at_id):
     page = S.fetch_cached(f"https://www.tjk.org/TR/YarisSever/Query/ConnectedPage/AtKosuBilgileri?1=1&QueryParameter_AtId={at_id}", S.TTL_HISTORY)
-    rows = [S.race_row_to_dict(t) for tb in re.findall(r'<tbody.*?</tbody>', page, re.S) for t in S.parse_horse_race_rows(tb)]
+    return page, [S.race_row_to_dict(t) for tb in re.findall(r'<tbody.*?</tbody>', page, re.S) for t in S.parse_horse_race_rows(tb)]
+
+
+def form_label(positions, n_prev):
+    """Son 3 koşunun derecelerinden kısa form yorumu."""
+    ps = [p for p in positions if p]
+    if not n_prev:
+        return "İlk koşu"
+    if not ps:
+        return "Derecesiz"
+    avg = sum(ps) / len(ps)
+    if ps[0] <= 3 and avg <= 3.5:
+        return "Formda"
+    if len(ps) >= 2 and ps[0] < ps[1] and ps[0] <= 5:
+        return "Yükselişte"
+    if avg <= 5:
+        return "Orta"
+    return "Durgun"
+
+
+def horse_prior(at_id, race_date):
+    """Yarıştan önceki koşular: en iyi ve son 1200 m karşılığı derece, son 3 sıra, form, dinlenme."""
+    _, rows = _history_rows(at_id)
     hist = []
     for r in rows:
         try:
@@ -80,15 +103,127 @@ def horse_prior(at_id, race_date):
         if d < race_date:
             hist.append((d, r))
     hist.sort(key=lambda x: x[0], reverse=True)
-    secs = [(r["sec"] * ((1200.0 / r["msf"]) ** 1.055), r) for _, r in hist if r.get("sec") and r.get("msf")]
+    norm = lambda r: r["sec"] * ((1200.0 / r["msf"]) ** 1.055) if r.get("sec") and r.get("msf") else None
+    secs = [(norm(r), r) for _, r in hist if norm(r)]
     best = min(secs, key=lambda x: x[0]) if secs else None
+    last_norm = norm(hist[0][1]) if hist else None
+    last3 = [r["sira"] for _, r in hist[:3]]
     return {
         "n_prev": len(hist),
         "last_pos": hist[0][1]["sira"] if hist else None,
+        "last3": last3,
+        "days_since": (race_date - hist[0][0]).days if hist else None,
+        "form": form_label(last3, len(hist)),
+        "last_norm": round(last_norm, 2) if last_norm else None,
+        "last_norm_str": S.format_seconds_to_time_str(last_norm) if last_norm else None,
         "best_norm": round(best[0], 2) if best else None,
         "best_norm_str": S.format_seconds_to_time_str(best[0]) if best else None,
         "best_from": f"{best[1]['msf']}m {best[1]['p_name']} {best[1]['derece_raw']} ({best[1]['tarih']})" if best else None,
     }
+
+
+# ---------------- AİLE: anne, baba ve dedeler ilk koşularını kazanmış mı? ----------------
+def _clean_name(n):
+    return S.tr_upper(re.sub(r'\s*\((?:T|[A-Z]{2,3})\)|[%*]', '', n or '')).strip()
+
+
+def find_horse(name, sex=None, irk="İngiliz"):
+    """TJK at aramasından (Atlar) ada göre at kodu ve orijini (baba - anne)."""
+    target = _clean_name(S.strip_country(name))
+    if not target or target == "-":
+        return None
+    page = S.fetch_cached("https://www.tjk.org/TR/YarisSever/Query/Page/Atlar?QueryParameter_AtIsmi=" + urllib.parse.quote(target), 7 * 24 * 3600)
+    m = re.search(r'<table[^>]*id="queryTable".*?</table>', page, re.S)
+    if not m:
+        return None
+    heads = [S.clean_cell(h) for h in re.findall(r'<th[^>]*>(.*?)</th>', m.group(0), re.S)]
+    best = None
+    for tr in re.findall(r'<tr[^>]*>(.*?)</tr>', m.group(0), re.S):
+        ids = re.findall(r'QueryParameter_AtId=(\d+)', tr)
+        v = dict(zip(heads, [S.clean_cell(c).replace("\xa0", " ") for c in re.findall(r'<td[^>]*>(.*?)</td>', tr, re.S)]))
+        raw = v.get("At İsmi", "")
+        if not ids or "Tayı" in raw or _clean_name(raw) != target:
+            continue
+        if irk and v.get("Irk") and v["Irk"] != irk:
+            continue
+        if sex and v.get("Cinsiyet") and v["Cinsiyet"] != sex:
+            continue
+        orj = [x.strip() for x in v.get("Orijin(Baba-Anne)", "").split(" - ")]
+        cand = {"at_id": ids[0], "name": raw.replace("%", "").strip(), "sire": orj[0] if orj else "",
+                "dam": orj[1] if len(orj) > 1 else "", "imported": bool(re.search(r'\([A-Z]{2,3}\)', raw))}
+        if best is None:
+            best = cand
+    return best
+
+
+def horse_debut(at_id):
+    """Atın TJK'daki ilk koşusu (en eski koşu). Kariyer 50 koşudan uzunsa ilk yılın sayfasına bakılır."""
+    page, rows = _history_rows(at_id)
+    years = sorted(set(re.findall(r'QueryParameter_Yil=(\d{4})', page)))
+    if years and rows:
+        oldest = min(datetime.strptime(r["tarih"], "%d.%m.%Y") for r in rows if re.match(r'\d{2}\.\d{2}\.\d{4}$', r["tarih"]))
+        if int(years[0]) < oldest.year:
+            p2 = S.fetch_cached(f"https://www.tjk.org/TR/YarisSever/Query/ConnectedPage/AtKosuBilgileri?1=1&QueryParameter_AtId={at_id}&QueryParameter_Yil={years[0]}", S.TTL_HISTORY)
+            rows = rows + [S.race_row_to_dict(t) for tb in re.findall(r'<tbody.*?</tbody>', p2, re.S) for t in S.parse_horse_race_rows(tb)]
+    dated = [(datetime.strptime(r["tarih"], "%d.%m.%Y"), r) for r in rows if re.match(r'\d{2}\.\d{2}\.\d{4}$', r["tarih"])]
+    if not dated:
+        return None
+    dated.sort(key=lambda x: x[0])
+    d, r = dated[0]
+    wins = sum(1 for _, x in dated if x["sira"] == 1)
+    return {"tarih": r["tarih"], "sira": r["sira"], "sehir": r["sehir"], "kosu": f"{r['msf']}m {r['p_name']}",
+            "sinif": r["cls_label"], "won": r["sira"] == 1, "starts": len(dated), "wins": wins}
+
+
+def relative_debut(name, sex, irk):
+    key = f"debut_{_clean_name(name)}_{sex}_{irk}"
+    cached = S.cache_get(key, 7 * 24 * 3600)
+    if cached is not None:
+        return cached
+    h = find_horse(name, sex, irk)
+    out = {"name": S.strip_country(name), "found": bool(h)}
+    if h:
+        out.update({"name": h["name"], "sire": h["sire"], "dam": h["dam"], "imported": h["imported"]})
+        out["debut"] = horse_debut(h["at_id"])
+    S.cache_set(key, out)
+    return out
+
+
+def family_debuts(horses, irk="İngiliz"):
+    """Koşudaki her at için baba, baba babası, anne ve anne babasının ilk koşu sonucu."""
+    names = {}
+    for h in horses:
+        if h.get("sire"):
+            names[("baba", h["sire"])] = ("Erkek", h["sire"])
+        if h.get("dam"):
+            names[("anne", h["dam"])] = ("Dişi", h["dam"])
+
+    def load(item):
+        try:
+            return item[0], relative_debut(item[1][1], item[1][0], irk)
+        except Exception:
+            return item[0], {"name": item[1][1], "found": False, "error": True}
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        first = dict(pool.map(load, names.items()))
+    # Dedeler: babanın babası ve annenin babası (orijinden)
+    grand = {}
+    for (kind, _), info in first.items():
+        if info.get("sire"):
+            grand[("dede", info["sire"])] = ("Erkek", info["sire"])
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        second = dict(pool.map(load, grand.items()))
+    out = []
+    for h in horses:
+        sire = first.get(("baba", h.get("sire")), {})
+        dam = first.get(("anne", h.get("dam")), {})
+        members = [("Baba", sire), ("Baba babası", second.get(("dede", sire.get("sire")), {}) if sire.get("sire") else {}),
+                   ("Anne", dam), ("Anne babası", second.get(("dede", dam.get("sire")), {}) if dam.get("sire") else {})]
+        fam = [dict(info, role=role) for role, info in members if info]
+        known = [m for m in fam if m.get("debut")]
+        out.append({"no": h["no"], "name": h["name"], "family": fam,
+                    "debut_wins": sum(1 for m in known if m["debut"]["won"]), "debut_known": len(known)})
+    return out
 
 
 def analyze_race(race, race_date_str):
@@ -112,6 +247,12 @@ def analyze_race(race, race_date_str):
 
     speed = _z([-(r["best_norm"]) if r.get("best_norm") else None for r in rows])
     sire = _z([(r.get("sire_stats") or {}).get("win") for r in rows])
+    last_speed = _z([-(r["last_norm"]) if r.get("last_norm") else None for r in rows])
+
+    def avgpos(r):
+        ps = [p for p in (r.get("last3") or []) if p]
+        return -sum(ps) / len(ps) if ps else None
+    form_avg = _z([avgpos(r) for r in rows])
     timed = sorted([r for r in rows if r.get("best_norm")], key=lambda r: r["best_norm"])
     for rank, r in enumerate(timed):
         r["speed_rank"] = rank + 1
@@ -123,6 +264,8 @@ def analyze_race(race, race_date_str):
             "sire_win": sire[i] if sire[i] is not None else 0.0,
             "draw": -(r.get("start") or 6) / 10.0,
             "last_23": 1.0 if r.get("last_pos") in (2, 3) else 0.0,
+            "last_speed": last_speed[i] if last_speed[i] is not None else 0.0,
+            "form_avg": form_avg[i] if form_avg[i] is not None else 0.0,
         }
 
     has_agf = sum(r["agf_pct"] for r in rows) > 10
