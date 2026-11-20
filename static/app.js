@@ -276,6 +276,7 @@ function switchTab(tabName) {
   });
   window.scrollTo({ top: 0, behavior: 'smooth' });
   if (tabName === 'surprise') loadSurprise(false);
+  if (tabName === 'altili') { showDayiPopup(); loadSurprise(false); loadDayiMaiden(); renderDayi(); }
 }
 
 // ---------------- SÜRPRİZ TERCİHLERİ ----------------
@@ -312,6 +313,7 @@ function signalChip(key, d) {
 }
 
 function renderSurprise() {
+  renderDayi();
   const d = SURPRISE.data;
   const listEl = document.getElementById('surpriseList');
   if (!d) return;
@@ -1516,7 +1518,133 @@ function renderAltiliGroupPicker() {
   }
 }
 
+// ------------------------------------------------------------------
+// KIRAATHANECİ DAYI — "Bülent Ustama Sevgilerle"
+// Tahminler sitenin kendi istatistiklerinden: AGF açıklandıysa halkın kalibre şansı (araştırmada en iyi
+// tahminci), yoksa modelin şansı. Sürprizler: Sürpriz sekmesinin puanı ve şans × canlı ganyan değeri.
+// ------------------------------------------------------------------
+const DAYI_LINES = [
+  'Gel yeğenim, otur bir çay iç; bugünkü işleri anlatayım.',
+  'Kırk yıldır bu masada oturuyorum, atın gözünden anlarım.',
+  'Ocakçı! Bülent Ustama bir tavşan kanı çay!',
+  'Kuponu acele yazma evladım, önce dayını dinle.',
+  'Bugün hipodromda rüzgâr bizden yana esiyor, hissediyorum.',
+];
+const DAYI_TEK = ['Bu at tek gider, gönlün rahat olsun.', 'Bunu bankoya yaz, gerisini dert etme.', 'Buna tek atmayan pişman olur.'];
+const DAYI_SURP = ['Kimse bakmıyor ama ben bu ata gönül verdim.', 'İşaretleri yerinde, sessiz sedasız gelir.', 'Bunu kuponun kenarına yaz, şaşırtır.', 'Halk görmüyor, dayın görüyor.'];
+const pickLine = (arr, n) => arr[Math.abs(n) % arr.length];
+
+function showDayiPopup() {
+  const el = document.getElementById('dayiPopup');
+  if (!el) return;
+  const line = document.getElementById('dayiPopupLine');
+  if (line) line.textContent = `“${DAYI_LINES[Math.floor(Math.random() * DAYI_LINES.length)]}”`;
+  el.classList.remove('hidden');
+  el.style.display = 'flex';
+}
+
+function closeDayiPopup() {
+  const el = document.getElementById('dayiPopup');
+  if (el) { el.classList.add('hidden'); el.style.display = 'none'; }
+}
+
+function dayiProb(h, race) {
+  // Maiden / Şartlı 1 / Şartlı 19: Maiden analizinin şansı (bu koşularda genel modelden isabetli)
+  const m = race && race._maiden && race._maiden.rows.find(x => x.no === h.no);
+  if (m) return m.maiden_prob;
+  const s = h.simulation || {};
+  return s.market_prob != null ? s.market_prob : s.win_prob;
+}
+
+function loadDayiMaiden() {
+  const p = STATE.program;
+  (p.races || []).filter(r => isMaidenRace(r) && !r._maiden && !r._dayiMaidenTried).forEach(r => {
+    r._dayiMaidenTried = true;
+    fetchJSON(`/api/maiden?date=${encodeURIComponent(p.date)}&city_id=${encodeURIComponent(p.city_id)}&race_no=${r.race_no}`)
+      .then(d => { r._maiden = d; if (STATE.program === p && STATE.activeTab === 'altili') renderDayi(); }).catch(() => {});
+  });
+}
+
+function renderDayi() {
+  const el = document.getElementById('dayiPanel');
+  const p = STATE.program;
+  if (!el || !p) return;
+  const races = p.races || [];
+  const hasAgf = r => r.horses.reduce((a, h) => a + (h.agf_pct || 0), 0) > 10;
+  const ranked = races.map(r => {
+    const hs = [...r.horses].sort((a, b) => dayiProb(b, r) - dayiProb(a, r));
+    return { r, hs, agf: hasAgf(r) };
+  });
+  // Tek atılacaklar: en güçlü at %40+ ve ikincinin en az 2 katı
+  const tekler = ranked.filter(x => x.hs.length > 1 && dayiProb(x.hs[0], x.r) >= 40 && dayiProb(x.hs[0], x.r) >= 2 * dayiProb(x.hs[1], x.r));
+  // Sürprizler: sürpriz puanı eşiği geçenler + değerli ganyanlar (şans × ganyan ≥ eşik, ganyan ≥ 6)
+  const d = SURPRISE.data && SURPRISE.key === `${p.date}|${p.city_id}` ? SURPRISE.data : null;
+  const surp = [];
+  if (d) {
+    d.candidates.filter(c => c.score >= d.threshold).slice(0, 4).forEach(c => surp.push({ race_no: c.race_no, no: c.no, name: c.name, why: `Sürpriz puanı ${c.score}`, extra: c.has_agf ? `AGF ${c.agf_rank}.` : '' }));
+    (d.value || []).filter(v => v.ganyan_live >= 6 && !surp.some(s => s.race_no === v.race_no && s.no === v.no)).slice(0, 3)
+      .forEach(v => surp.push({ race_no: v.race_no, no: v.no, name: v.name, why: `Ganyan ${v.ganyan_live}, eder ${v.fair_market_ganyan}`, extra: '' }));
+  }
+  const raceIdx = no => races.findIndex(r => r.race_no === no);
+  const horseLink = (raceNo, no, inner) => `<span class="cursor-pointer underline decoration-dotted" onclick="selectRace(${raceIdx(raceNo)}); switchTab('race'); openHorseModal(${no});">${inner}</span>`;
+  const bubble = html => `<div class="dayi-bubble flex-1 bg-[#FFFDF7] border border-[#E2D3B0] rounded-xl px-3 py-2 text-[12px] text-[#18181B] leading-snug">${html}</div>`;
+
+  el.innerHTML = `
+    <div class="rounded-2xl overflow-hidden border-2 border-[#A67C37] bg-[#FBF6EA] shadow-sm">
+      <div class="flex items-center gap-3 p-3 bg-gradient-to-r from-[#0F291E] to-[#1B4332]">
+        <img src="/img/dayi.svg" alt="Dayı" style="width:80px;height:88px" class="w-20 h-[88px] rounded-xl border-2 border-[#D4AF37] flex-shrink-0 cursor-pointer" onclick="showDayiPopup()" />
+        <div class="min-w-0">
+          <div class="serif-title text-xl font-bold text-[#E6C762] leading-tight">Bülent Ustama Sevgilerle…</div>
+          <div class="text-[11px] text-[#F9F6F0]/90 mt-0.5">Kıraathaneci Dayı • ${p.city_name} • ${p.date}</div>
+          <div class="text-[11px] text-[#F9F6F0] italic mt-1">“${pickLine(DAYI_LINES, (p.date || '').length + races.length)}”</div>
+        </div>
+      </div>
+
+      <div class="p-3 space-y-3">
+        <div>
+          <div class="serif-title text-base font-bold text-[#7A1C1C] uppercase mb-1.5">🎯 Benim en çok güvendiğim sürprizler</div>
+          ${!d ? '<div class="text-[11px] text-[#57534E]">⏳ Dayı sürprizleri tartıyor (ilk açılışta biraz sürebilir)…</div>'
+            : surp.length ? surp.map((s, i) => `
+              <div class="flex items-start gap-2 mb-1.5">
+                <span class="mono font-extrabold text-white bg-[#7A1C1C] rounded px-1.5 py-0.5 text-[11px] flex-shrink-0">${s.race_no}. K</span>
+                ${bubble(`${horseLink(s.race_no, s.no, `<strong>#${s.no} ${s.name}</strong>`)} — ${pickLine(DAYI_SURP, s.no + i)} <span class="text-[10px] text-[#57534E]">(${s.why}${s.extra ? ' • ' + s.extra : ''})</span>`)}
+              </div>`).join('')
+            : bubble('Bugün içime sinen sürpriz yok yeğenim; zorlamayalım, favorilerle gidelim.')}
+        </div>
+
+        <div>
+          <div class="serif-title text-base font-bold text-[#0F291E] uppercase mb-1.5">🔒 Tek atılacak atlar</div>
+          ${tekler.length ? tekler.map(x => `
+            <div class="flex items-start gap-2 mb-1.5">
+              <span class="mono font-extrabold text-[#E6C762] bg-[#0F291E] rounded px-1.5 py-0.5 text-[11px] flex-shrink-0">${x.r.race_no}. K</span>
+              ${bubble(`${horseLink(x.r.race_no, x.hs[0].no, `<strong>#${x.hs[0].no} ${x.hs[0].name}</strong>`)} — ${pickLine(DAYI_TEK, x.hs[0].no)} <span class="text-[10px] text-[#57534E]">(şans %${dayiProb(x.hs[0], x.r)}, en yakın rakibi %${dayiProb(x.hs[1], x.r)})</span>`)}
+            </div>`).join('')
+          : bubble('Bugün gözü kapalı tek atılacak at yok; her ayağa en az iki at yaz.')}
+        </div>
+
+        <div>
+          <div class="serif-title text-base font-bold text-[#0F291E] uppercase mb-1.5">🏇 Dayının ilk 5 tahmini</div>
+          <div class="space-y-1.5">
+            ${ranked.map(x => `
+              <div class="bg-white border border-[#E2D3B0] rounded-lg px-2.5 py-1.5">
+                <div class="flex items-center justify-between text-[10px] font-bold text-[#8C5A3C]">
+                  <span>${x.r.race_no}. Koşu • ${x.r.time} • ${x.r.distance_m}m ${x.r.surface}</span>
+                  <span class="text-[#78716C] font-semibold">${x.r._maiden ? '🐣 Maiden analizi' : x.agf ? 'AGF + model' : 'AGF yok: model'}</span>
+                </div>
+                <div class="flex flex-wrap gap-1 mt-1">
+                  ${x.hs.slice(0, 5).map((h, i) => `<span onclick="selectRace(${raceIdx(x.r.race_no)}); switchTab('race'); openHorseModal(${h.no});"
+                    class="cursor-pointer px-1.5 py-0.5 rounded text-[11px] ${i === 0 ? 'bg-[#0F291E] text-[#F9F6F0] font-extrabold' : 'bg-[#F6F3EC] text-[#18181B] font-bold border border-[#E2D3B0]'}">${i + 1}. #${h.no} ${h.name.split(' ')[0]} <span class="mono opacity-80">%${dayiProb(h, x.r)}</span></span>`).join('')}
+                </div>
+              </div>`).join('')}
+          </div>
+        </div>
+        <div class="text-[9px] text-[#78716C] leading-snug">Dayının sözleri eğlence içindir. Tahminler sitenin istatistiklerinden gelir: AGF açıklanınca halkın düzeltilmiş şansı (geçmiş testlerde en iyi tahminci), yoksa modelin şansı. Kazanç garantisi yoktur.</div>
+      </div>
+    </div>`;
+}
+
 function generateAltiliTicket() {
+  renderDayi();
   const p = STATE.program;
   if (!p || !p.races.length) return;
 

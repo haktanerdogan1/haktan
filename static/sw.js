@@ -4,8 +4,8 @@
  * - Canlı TJK verisi (/api/*) her zaman ağdan gelir; ağ yoksa son başarılı bülten gösterilir.
  * - Tailwind ve Google Fonts gibi CDN dosyaları çevrimdışı kullanım için saklanır.
  */
-const VERSION = 'padok-v6';
-const SHELL = ['/', '/index.html', '/app.js', '/manifest.json', '/icon.svg', '/icon-192.png', '/icon-512.png'];
+const VERSION = 'padok-v7';
+const SHELL = ['/', '/index.html', '/app.js', '/manifest.json', '/icon.svg', '/icon-192.png', '/icon-512.png', '/img/dayi.svg'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

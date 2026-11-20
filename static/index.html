@@ -91,7 +91,11 @@
     .pb-safe {
       padding-bottom: calc(5.2rem + env(safe-area-inset-bottom, 0px));
     }
-  </style>
+      .dayi-pop { animation: dayiIn .35s cubic-bezier(.2,1.4,.4,1); }
+    @keyframes dayiIn { from { transform: scale(.7) rotate(-4deg); opacity: 0 } to { transform: none; opacity: 1 } }
+    .dayi-bubble { position: relative; }
+    .dayi-bubble:before { content: ""; position: absolute; left: -9px; top: 18px; border: 9px solid transparent; border-right-color: #FFFDF7; border-left: 0; }
+</style>
 </head>
 <body class="min-h-screen flex justify-center">
 
@@ -218,11 +222,12 @@
         <div id="surpriseKarne" class="club-card rounded-xl p-4"></div>
       </section>
 
-      <!-- VIEW 4: ALTILI GANYAN KUPON KURGUSU -->
+      <!-- VIEW 4: KIRAATHANECİ DAYI (+ dayının 6'lı kuponu) -->
       <section id="view-altili" class="hidden space-y-3">
+        <div id="dayiPanel"></div>
         <div class="club-card rounded-xl p-4">
           <div class="mb-3">
-            <h2 class="serif-title text-lg font-bold text-[#0F291E]">Altılı Ganyan Kupon Kurgusu</h2>
+            <h2 class="serif-title text-lg font-bold text-[#0F291E]">☕ Dayının 6'lı Kuponu</h2>
             <p class="text-[11px] text-[#57534E]">Bütçenize ve oyun tarzınıza göre ayaklardaki Banko, Plase ve Sürpriz dağılımı.</p>
           </div>
 
@@ -278,6 +283,18 @@
     </main>
 
     <!-- SAFKAN KÜNYESİ & SOYAĞACI BOTTOM SHEET MODAL -->
+    <!-- Bülent Ustama Sevgilerle: Dayı sekmesine her girişte -->
+    <div id="dayiPopup" class="fixed inset-0 z-[60] hidden bg-black/60 flex items-center justify-center p-4" onclick="if (event.target === this) closeDayiPopup()">
+      <div class="dayi-pop w-full max-w-[340px] rounded-2xl overflow-hidden shadow-2xl border-4 border-[#A67C37] bg-[#FBF6EA] text-center">
+        <img src="/img/dayi.svg" alt="Kıraathaneci Dayı" class="w-full aspect-[220/240] object-cover" />
+        <div class="p-4">
+          <div class="serif-title text-2xl font-bold text-[#7A1C1C] leading-tight">Bülent Ustama Sevgilerle ❤️</div>
+          <p id="dayiPopupLine" class="text-[13px] text-[#44403C] mt-1.5 italic"></p>
+          <button onclick="closeDayiPopup()" class="mt-3 w-full py-2.5 rounded-xl bg-[#0F291E] text-[#F9F6F0] font-extrabold text-sm">Sağ ol dayı, kapat ✕</button>
+        </div>
+      </div>
+    </div>
+
     <div id="horseModal" class="fixed inset-0 z-50 hidden bg-black/60 backdrop-blur-xs flex items-end justify-center">
       <div class="w-full max-w-[480px] bg-[#FAF8F3] border-t-4 border-[#0F291E] rounded-t-2xl p-4 max-h-[90vh] overflow-y-auto shadow-2xl">
         <div class="w-10 h-1 bg-[#C8C1B2] rounded-full mx-auto mb-3"></div>
@@ -354,8 +371,8 @@
         <span class="text-[10px] font-medium mt-0.5">Sürpriz</span>
       </button>
       <button onclick="switchTab('altili')" id="nav-altili" class="flex flex-col items-center py-1 px-1.5 rounded-lg text-[#57534E] hover:text-[#0F291E]">
-        <span class="text-base">🎫</span>
-        <span class="text-[10px] font-medium mt-0.5">6'lı Kurgu</span>
+        <span class="text-base">☕</span>
+        <span class="text-[10px] font-medium mt-0.5">Dayı</span>
       </button>
       <button onclick="switchTab('xray')" id="nav-xray" class="flex flex-col items-center py-1 px-1.5 rounded-lg text-[#57534E] hover:text-[#0F291E]">
         <span class="text-base">⚖️</span>
