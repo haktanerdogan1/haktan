@@ -98,6 +98,28 @@
 </style>
 </head>
 <body class="min-h-screen flex justify-center">
+    <!-- AÇILIŞ EKRANI: 5 sn fotoğraf (dokununca geçer); bu sırada bülten arkada yüklenir -->
+    <div id="splash" onclick="hideSplash()" style="position:fixed;inset:0;z-index:100;background:#0B1F17;display:flex;align-items:center;justify-content:center;transition:opacity .7s ease;cursor:pointer">
+      <img src="/img/giris.jpg" alt="" style="max-width:100%;max-height:100%;width:auto;height:100%;object-fit:contain;animation:splashZoom 5s ease-out forwards" />
+      <div style="position:absolute;left:0;right:0;bottom:0;height:4px;background:rgba(255,255,255,.15)">
+        <div style="height:100%;background:#D4AF37;animation:splashBar 5s linear forwards"></div>
+      </div>
+    </div>
+    <style>
+      @keyframes splashZoom { from { transform: scale(1.04) } to { transform: scale(1) } }
+      @keyframes splashBar { from { width: 0 } to { width: 100% } }
+    </style>
+    <script>
+      function hideSplash() {
+        var el = document.getElementById('splash');
+        if (!el || el.dataset.gone) return;
+        el.dataset.gone = '1';
+        el.style.opacity = '0';
+        setTimeout(function () { el.remove(); }, 700);
+      }
+      setTimeout(hideSplash, 5000);
+    </script>
+
 
   <!-- Mobile App Shell (480px max on desktop, native full screen on mobile) -->
   <div class="w-full max-w-[480px] min-h-screen bg-[#F6F3EC] relative flex flex-col shadow-2xl border-x border-[#D5CFC2] pb-safe">
