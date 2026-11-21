@@ -1,89 +1,89 @@
 {
- "generated_at": "20/11/2026 12:10",
+ "generated_at": "21/11/2026 11:45",
  "period": {
   "from": "20/09/2026",
-  "to": "19/11/2026",
-  "test_from": "30/10/2026",
-  "days": 61
+  "to": "20/11/2026",
+  "test_from": "31/10/2026",
+  "days": 62
  },
  "counts": {
-  "runners": 11134,
-  "races": 1085,
-  "overlooked": 7904
+  "runners": 11256,
+  "races": 1099,
+  "overlooked": 7978
  },
  "baseline": {
   "all_runners": {
-   "n": 11134,
-   "wins": 1082,
+   "n": 11256,
+   "wins": 1096,
    "win_pct": 9.7,
-   "avg_win_ganyan": 6.34,
-   "roi_pct": -38.4
+   "avg_win_ganyan": 6.36,
+   "roi_pct": -38.1
   },
   "overlooked": {
-   "n": 7904,
-   "wins": 367,
-   "win_pct": 4.6,
-   "avg_win_ganyan": 12.15,
-   "roi_pct": -43.6
+   "n": 7978,
+   "wins": 371,
+   "win_pct": 4.7,
+   "avg_win_ganyan": 12.21,
+   "roi_pct": -43.2
   },
   "overlooked_train": {
-   "n": 5255,
-   "wins": 245,
-   "win_pct": 4.7,
-   "avg_win_ganyan": 12.39,
-   "roi_pct": -42.3
+   "n": 5383,
+   "wins": 247,
+   "win_pct": 4.6,
+   "avg_win_ganyan": 12.38,
+   "roi_pct": -43.2
   },
   "overlooked_test": {
-   "n": 2649,
-   "wins": 122,
-   "win_pct": 4.6,
-   "avg_win_ganyan": 11.67,
-   "roi_pct": -46.3
+   "n": 2595,
+   "wins": 124,
+   "win_pct": 4.8,
+   "avg_win_ganyan": 11.88,
+   "roi_pct": -43.2
   }
  },
  "signals": {
   "model_value": {
    "label": "Model şansı halkın 1,5 katı",
    "all": {
-    "n": 2413,
-    "wins": 97,
+    "n": 2424,
+    "wins": 98,
     "win_pct": 4.0,
-    "avg_win_ganyan": 13.05,
-    "roi_pct": -47.5
+    "avg_win_ganyan": 13.03,
+    "roi_pct": -47.3
    },
    "train": {
-    "n": 1626,
+    "n": 1665,
     "wins": 72,
-    "win_pct": 4.4,
+    "win_pct": 4.3,
     "avg_win_ganyan": 13.66,
-    "roi_pct": -39.5
+    "roi_pct": -40.9
    },
    "test": {
-    "n": 787,
-    "wins": 25,
-    "win_pct": 3.2,
-    "avg_win_ganyan": 11.32,
-    "roi_pct": -64.0
+    "n": 759,
+    "wins": 26,
+    "win_pct": 3.4,
+    "avg_win_ganyan": 11.29,
+    "roi_pct": -61.3
    }
   },
   "hp_light": {
    "label": "Puanına göre 2 kg+ hafif",
    "all": {
-    "n": 146,
+    "n": 148,
     "wins": 5,
     "win_pct": 3.4,
     "avg_win_ganyan": 10.96,
-    "roi_pct": -62.5
+    "roi_pct": -63.0
    },
    "train": {
-    "n": 110,
+    "n": 111,
     "wins": 5,
     "win_pct": 4.5,
     "avg_win_ganyan": 10.96,
-    "roi_pct": -50.2
+    "roi_pct": -50.6
    },
    "test": {
-    "n": 36,
+    "n": 37,
     "wins": 0,
     "win_pct": 0.0,
     "avg_win_ganyan": null,
@@ -93,186 +93,186 @@
   "apprentice": {
    "label": "Apranti jokey",
    "all": {
-    "n": 2448,
-    "wins": 80,
+    "n": 2481,
+    "wins": 82,
     "win_pct": 3.3,
-    "avg_win_ganyan": 15.46,
-    "roi_pct": -49.5
+    "avg_win_ganyan": 15.61,
+    "roi_pct": -48.4
    },
    "train": {
-    "n": 1651,
+    "n": 1683,
     "wins": 53,
-    "win_pct": 3.2,
+    "win_pct": 3.1,
     "avg_win_ganyan": 16.74,
-    "roi_pct": -46.3
+    "roi_pct": -47.3
    },
    "test": {
-    "n": 797,
-    "wins": 27,
-    "win_pct": 3.4,
-    "avg_win_ganyan": 12.96,
-    "roi_pct": -56.1
+    "n": 798,
+    "wins": 29,
+    "win_pct": 3.6,
+    "avg_win_ganyan": 13.56,
+    "roi_pct": -50.7
    }
   },
   "class_drop": {
    "label": "Sınıf düşüşü (son koşusu daha zor)",
    "all": {
-    "n": 1323,
-    "wins": 65,
-    "win_pct": 4.9,
-    "avg_win_ganyan": 11.49,
-    "roi_pct": -43.5
+    "n": 1326,
+    "wins": 66,
+    "win_pct": 5.0,
+    "avg_win_ganyan": 11.72,
+    "roi_pct": -41.7
    },
    "train": {
-    "n": 886,
+    "n": 909,
     "wins": 46,
-    "win_pct": 5.2,
+    "win_pct": 5.1,
     "avg_win_ganyan": 11.78,
-    "roi_pct": -38.8
+    "roi_pct": -40.4
    },
    "test": {
-    "n": 437,
-    "wins": 19,
-    "win_pct": 4.3,
-    "avg_win_ganyan": 10.8,
-    "roi_pct": -53.1
+    "n": 417,
+    "wins": 20,
+    "win_pct": 4.8,
+    "avg_win_ganyan": 11.59,
+    "roi_pct": -44.4
    }
   },
   "surface_fit": {
    "label": "Bugünkü pistte İlk 3 ≥ %40 (3+ koşu)",
    "all": {
-    "n": 2113,
-    "wins": 120,
+    "n": 2127,
+    "wins": 121,
     "win_pct": 5.7,
-    "avg_win_ganyan": 11.44,
-    "roi_pct": -35.0
+    "avg_win_ganyan": 11.5,
+    "roi_pct": -34.6
    },
    "train": {
-    "n": 1422,
+    "n": 1453,
     "wins": 82,
-    "win_pct": 5.8,
+    "win_pct": 5.6,
     "avg_win_ganyan": 11.73,
-    "roi_pct": -32.4
+    "roi_pct": -33.8
    },
    "test": {
-    "n": 691,
-    "wins": 38,
-    "win_pct": 5.5,
-    "avg_win_ganyan": 10.83,
-    "roi_pct": -40.4
+    "n": 674,
+    "wins": 39,
+    "win_pct": 5.8,
+    "avg_win_ganyan": 11.03,
+    "roi_pct": -36.2
    }
   },
   "distance_fit": {
    "label": "Bu mesafe grubunda İlk 3 ≥ %40 (3+ koşu)",
    "all": {
-    "n": 1930,
-    "wins": 113,
+    "n": 1940,
+    "wins": 114,
     "win_pct": 5.9,
-    "avg_win_ganyan": 10.6,
-    "roi_pct": -37.9
+    "avg_win_ganyan": 10.65,
+    "roi_pct": -37.4
    },
    "train": {
-    "n": 1296,
-    "wins": 78,
-    "win_pct": 6.0,
-    "avg_win_ganyan": 10.97,
-    "roi_pct": -34.0
+    "n": 1344,
+    "wins": 79,
+    "win_pct": 5.9,
+    "avg_win_ganyan": 11.0,
+    "roi_pct": -35.4
    },
    "test": {
-    "n": 634,
+    "n": 596,
     "wins": 35,
-    "win_pct": 5.5,
-    "avg_win_ganyan": 9.77,
-    "roi_pct": -46.1
+    "win_pct": 5.9,
+    "avg_win_ganyan": 9.88,
+    "roi_pct": -42.0
    }
   },
   "season_fit": {
    "label": "Bu mevsimde İlk 3 diğerlerinden 15+ puan iyi",
    "all": {
-    "n": 1006,
-    "wins": 54,
+    "n": 1016,
+    "wins": 55,
     "win_pct": 5.4,
-    "avg_win_ganyan": 10.57,
-    "roi_pct": -43.2
+    "avg_win_ganyan": 10.86,
+    "roi_pct": -41.2
    },
    "train": {
-    "n": 641,
+    "n": 668,
     "wins": 37,
-    "win_pct": 5.8,
+    "win_pct": 5.5,
     "avg_win_ganyan": 11.02,
-    "roi_pct": -36.4
+    "roi_pct": -39.0
    },
    "test": {
-    "n": 365,
-    "wins": 17,
-    "win_pct": 4.7,
-    "avg_win_ganyan": 9.6,
-    "roi_pct": -55.3
+    "n": 348,
+    "wins": 18,
+    "win_pct": 5.2,
+    "avg_win_ganyan": 10.54,
+    "roi_pct": -45.5
    }
   },
   "recent_top3": {
    "label": "Son koşusunda ilk 3",
    "all": {
-    "n": 1365,
+    "n": 1375,
     "wins": 80,
-    "win_pct": 5.9,
+    "win_pct": 5.8,
     "avg_win_ganyan": 9.91,
-    "roi_pct": -41.9
+    "roi_pct": -42.3
    },
    "train": {
-    "n": 900,
+    "n": 934,
     "wins": 54,
-    "win_pct": 6.0,
+    "win_pct": 5.8,
     "avg_win_ganyan": 9.9,
-    "roi_pct": -40.6
+    "roi_pct": -42.8
    },
    "test": {
-    "n": 465,
+    "n": 441,
     "wins": 26,
-    "win_pct": 5.6,
+    "win_pct": 5.9,
     "avg_win_ganyan": 9.95,
-    "roi_pct": -44.4
+    "roi_pct": -41.4
    }
   },
   "improving": {
    "label": "Form grafiği yükselişte",
    "all": {
-    "n": 1649,
+    "n": 1666,
     "wins": 103,
     "win_pct": 6.2,
     "avg_win_ganyan": 11.47,
-    "roi_pct": -28.3
+    "roi_pct": -29.1
    },
    "train": {
-    "n": 1044,
-    "wins": 65,
-    "win_pct": 6.2,
-    "avg_win_ganyan": 10.66,
-    "roi_pct": -33.6
+    "n": 1083,
+    "wins": 66,
+    "win_pct": 6.1,
+    "avg_win_ganyan": 10.7,
+    "roi_pct": -34.8
    },
    "test": {
-    "n": 605,
-    "wins": 38,
+    "n": 583,
+    "wins": 37,
     "win_pct": 6.3,
     "avg_win_ganyan": 12.86,
-    "roi_pct": -19.2
+    "roi_pct": -18.4
    }
   },
   "lone_speed": {
    "label": "Koşunun tek kaçağı",
    "all": {
-    "n": 138,
+    "n": 139,
     "wins": 8,
     "win_pct": 5.8,
     "avg_win_ganyan": 12.44,
-    "roi_pct": -27.9
+    "roi_pct": -28.4
    },
    "train": {
-    "n": 92,
+    "n": 93,
     "wins": 5,
     "win_pct": 5.4,
     "avg_win_ganyan": 12.76,
-    "roi_pct": -30.7
+    "roi_pct": -31.4
    },
    "test": {
     "n": 46,
@@ -285,21 +285,21 @@
   "first_blinkers": {
    "label": "İlk kez kapalı gözlük (KG)",
    "all": {
-    "n": 98,
+    "n": 101,
     "wins": 1,
     "win_pct": 1.0,
     "avg_win_ganyan": 18.05,
-    "roi_pct": -81.6
+    "roi_pct": -82.1
    },
    "train": {
-    "n": 65,
+    "n": 67,
     "wins": 1,
     "win_pct": 1.5,
     "avg_win_ganyan": 18.05,
-    "roi_pct": -72.2
+    "roi_pct": -73.1
    },
    "test": {
-    "n": 33,
+    "n": 34,
     "wins": 0,
     "win_pct": 0.0,
     "avg_win_ganyan": null,
@@ -309,45 +309,45 @@
   "fresh": {
    "label": "Dinlenmiş (14–45 gün)",
    "all": {
-    "n": 3949,
-    "wins": 187,
-    "win_pct": 4.7,
-    "avg_win_ganyan": 12.14,
-    "roi_pct": -42.5
+    "n": 3987,
+    "wins": 190,
+    "win_pct": 4.8,
+    "avg_win_ganyan": 12.19,
+    "roi_pct": -41.9
    },
    "train": {
-    "n": 2664,
-    "wins": 130,
-    "win_pct": 4.9,
-    "avg_win_ganyan": 12.39,
-    "roi_pct": -39.6
+    "n": 2704,
+    "wins": 131,
+    "win_pct": 4.8,
+    "avg_win_ganyan": 12.37,
+    "roi_pct": -40.1
    },
    "test": {
-    "n": 1285,
-    "wins": 57,
-    "win_pct": 4.4,
-    "avg_win_ganyan": 11.59,
-    "roi_pct": -48.6
+    "n": 1283,
+    "wins": 59,
+    "win_pct": 4.6,
+    "avg_win_ganyan": 11.8,
+    "roi_pct": -45.7
    }
   },
   "long_layoff": {
    "label": "Uzun ara (120+ gün)",
    "all": {
-    "n": 251,
+    "n": 253,
     "wins": 4,
     "win_pct": 1.6,
     "avg_win_ganyan": 22.97,
-    "roi_pct": -63.4
+    "roi_pct": -63.7
    },
    "train": {
-    "n": 164,
+    "n": 168,
     "wins": 4,
     "win_pct": 2.4,
     "avg_win_ganyan": 22.97,
-    "roi_pct": -44.0
+    "roi_pct": -45.3
    },
    "test": {
-    "n": 87,
+    "n": 85,
     "wins": 0,
     "win_pct": 0.0,
     "avg_win_ganyan": null,
@@ -357,177 +357,177 @@
   "season_weak": {
    "label": "Bu mevsimde zayıf",
    "all": {
-    "n": 969,
-    "wins": 45,
-    "win_pct": 4.6,
-    "avg_win_ganyan": 12.12,
-    "roi_pct": -43.7
+    "n": 983,
+    "wins": 47,
+    "win_pct": 4.8,
+    "avg_win_ganyan": 12.19,
+    "roi_pct": -41.7
    },
    "train": {
-    "n": 567,
-    "wins": 23,
+    "n": 582,
+    "wins": 24,
     "win_pct": 4.1,
-    "avg_win_ganyan": 12.78,
-    "roi_pct": -48.2
+    "avg_win_ganyan": 12.79,
+    "roi_pct": -47.3
    },
    "test": {
-    "n": 402,
-    "wins": 22,
-    "win_pct": 5.5,
-    "avg_win_ganyan": 11.42,
-    "roi_pct": -37.5
+    "n": 401,
+    "wins": 23,
+    "win_pct": 5.7,
+    "avg_win_ganyan": 11.56,
+    "roi_pct": -33.7
    }
   }
  },
  "weights": {
-  "model_value": -0.17,
-  "hp_light": -0.08,
+  "model_value": -0.18,
+  "hp_light": -0.05,
   "apprentice": -0.93,
-  "class_drop": 0.3,
+  "class_drop": 0.29,
   "surface_fit": 0.67,
   "distance_fit": 0.82,
-  "season_fit": 0.65,
-  "recent_top3": 0.8,
+  "season_fit": 0.59,
+  "recent_top3": 0.75,
   "improving": 0.95,
-  "lone_speed": 0.35,
-  "first_blinkers": -1.38,
-  "fresh": 0.11,
-  "long_layoff": -1.22,
-  "season_weak": -0.39
+  "lone_speed": 0.38,
+  "first_blinkers": -1.4,
+  "fresh": 0.16,
+  "long_layoff": -1.23,
+  "season_weak": -0.3
  },
  "thresholds": [
   {
    "threshold": 0.5,
    "train": {
-    "n": 2295,
-    "wins": 143,
-    "win_pct": 6.2,
-    "avg_win_ganyan": 10.92,
-    "roi_pct": -32.0
+    "n": 2372,
+    "wins": 141,
+    "win_pct": 5.9,
+    "avg_win_ganyan": 10.8,
+    "roi_pct": -35.8
    },
    "test": {
-    "n": 1164,
-    "wins": 63,
-    "win_pct": 5.4,
-    "avg_win_ganyan": 10.68,
-    "roi_pct": -42.2
+    "n": 1142,
+    "wins": 66,
+    "win_pct": 5.8,
+    "avg_win_ganyan": 10.99,
+    "roi_pct": -36.5
    }
   },
   {
    "threshold": 1.0,
    "train": {
-    "n": 1501,
-    "wins": 105,
-    "win_pct": 7.0,
+    "n": 1563,
+    "wins": 107,
+    "win_pct": 6.8,
     "avg_win_ganyan": 10.82,
-    "roi_pct": -24.3
+    "roi_pct": -25.9
    },
    "test": {
-    "n": 762,
+    "n": 742,
     "wins": 51,
-    "win_pct": 6.7,
-    "avg_win_ganyan": 10.6,
-    "roi_pct": -29.1
+    "win_pct": 6.9,
+    "avg_win_ganyan": 10.52,
+    "roi_pct": -27.7
    }
   },
   {
    "threshold": 1.5,
    "train": {
-    "n": 927,
-    "wins": 64,
-    "win_pct": 6.9,
-    "avg_win_ganyan": 9.94,
-    "roi_pct": -31.3
+    "n": 962,
+    "wins": 65,
+    "win_pct": 6.8,
+    "avg_win_ganyan": 9.9,
+    "roi_pct": -33.1
    },
    "test": {
-    "n": 471,
+    "n": 442,
     "wins": 34,
-    "win_pct": 7.2,
+    "win_pct": 7.7,
     "avg_win_ganyan": 10.55,
-    "roi_pct": -23.8
+    "roi_pct": -18.8
    }
   },
   {
    "threshold": 2.0,
    "train": {
-    "n": 506,
-    "wins": 36,
-    "win_pct": 7.1,
-    "avg_win_ganyan": 8.7,
-    "roi_pct": -38.1
+    "n": 513,
+    "wins": 34,
+    "win_pct": 6.6,
+    "avg_win_ganyan": 8.53,
+    "roi_pct": -43.5
    },
    "test": {
-    "n": 258,
-    "wins": 19,
-    "win_pct": 7.4,
+    "n": 237,
+    "wins": 18,
+    "win_pct": 7.6,
     "avg_win_ganyan": 11.19,
-    "roi_pct": -17.6
+    "roi_pct": -15.0
    }
   },
   {
    "threshold": 2.5,
    "train": {
-    "n": 250,
-    "wins": 16,
-    "win_pct": 6.4,
-    "avg_win_ganyan": 9.29,
-    "roi_pct": -40.5
+    "n": 246,
+    "wins": 14,
+    "win_pct": 5.7,
+    "avg_win_ganyan": 9.38,
+    "roi_pct": -46.6
    },
    "test": {
-    "n": 127,
-    "wins": 6,
-    "win_pct": 4.7,
-    "avg_win_ganyan": 8.4,
-    "roi_pct": -60.3
+    "n": 108,
+    "wins": 5,
+    "win_pct": 4.6,
+    "avg_win_ganyan": 9.09,
+    "roi_pct": -57.9
    }
   },
   {
    "threshold": 3.0,
    "train": {
-    "n": 138,
-    "wins": 8,
-    "win_pct": 5.8,
-    "avg_win_ganyan": 9.32,
-    "roi_pct": -45.9
+    "n": 127,
+    "wins": 6,
+    "win_pct": 4.7,
+    "avg_win_ganyan": 7.78,
+    "roi_pct": -63.2
    },
    "test": {
-    "n": 68,
-    "wins": 3,
-    "win_pct": 4.4,
-    "avg_win_ganyan": 7.88,
-    "roi_pct": -65.2
+    "n": 52,
+    "wins": 1,
+    "win_pct": 1.9,
+    "avg_win_ganyan": 3.2,
+    "roi_pct": -93.8
    }
   }
  ],
  "calibration": [
   {
    "bucket": "%0–5",
-   "n": 5335,
+   "n": 5395,
    "model_avg": 1.8,
-   "actual": 4.0
+   "actual": 4.1
   },
   {
    "bucket": "%5–10",
-   "n": 2089,
+   "n": 2110,
    "model_avg": 7.2,
    "actual": 8.8
   },
   {
    "bucket": "%10–20",
-   "n": 2049,
+   "n": 2067,
    "model_avg": 14.3,
-   "actual": 14.4
+   "actual": 14.5
   },
   {
    "bucket": "%20–35",
-   "n": 1114,
+   "n": 1126,
    "model_avg": 26.1,
-   "actual": 21.3
+   "actual": 21.2
   },
   {
    "bucket": "%35–100",
-   "n": 547,
-   "model_avg": 47.1,
+   "n": 558,
+   "model_avg": 47.2,
    "actual": 27.4
   }
  ],
@@ -537,99 +537,99 @@
   "agf_weight": 0.9,
   "model_temperature": 0.6,
   "log_likelihood_test": {
-   "model_only": -2.1772,
-   "model_calibrated": -2.0615,
-   "agf_only": -1.8185,
-   "combined": -1.8202
+   "model_only": -2.1824,
+   "model_calibrated": -2.0607,
+   "agf_only": -1.8345,
+   "combined": -1.8339
   },
   "races_with_agf": {
-   "train": 703,
-   "test": 369
+   "train": 719,
+   "test": 365
   },
   "ev_rule": [
    {
     "threshold": 1.0,
     "train": {
-     "n": 324,
-     "wins": 32,
-     "win_pct": 9.9,
+     "n": 339,
+     "wins": 33,
+     "win_pct": 9.7,
      "avg_win_ganyan": 9.37,
-     "roi_pct": -7.4
+     "roi_pct": -8.8
     },
     "test": {
-     "n": 169,
+     "n": 155,
      "wins": 20,
-     "win_pct": 11.8,
-     "avg_win_ganyan": 7.28,
-     "roi_pct": -13.8
+     "win_pct": 12.9,
+     "avg_win_ganyan": 7.66,
+     "roi_pct": -1.2
     }
    },
    {
     "threshold": 1.1,
     "train": {
-     "n": 163,
+     "n": 176,
      "wins": 17,
-     "win_pct": 10.4,
+     "win_pct": 9.7,
      "avg_win_ganyan": 11.02,
-     "roi_pct": 14.9
+     "roi_pct": 6.4
     },
     "test": {
-     "n": 97,
+     "n": 84,
      "wins": 12,
-     "win_pct": 12.4,
+     "win_pct": 14.3,
      "avg_win_ganyan": 8.34,
-     "roi_pct": 3.2
+     "roi_pct": 19.2
     }
    },
    {
     "threshold": 1.2,
     "train": {
-     "n": 90,
+     "n": 100,
      "wins": 10,
-     "win_pct": 11.1,
+     "win_pct": 10.0,
      "avg_win_ganyan": 11.9,
-     "roi_pct": 32.2
+     "roi_pct": 19.0
     },
     "test": {
-     "n": 46,
+     "n": 36,
      "wins": 6,
-     "win_pct": 13.0,
+     "win_pct": 16.7,
      "avg_win_ganyan": 9.14,
-     "roi_pct": 19.2
+     "roi_pct": 52.4
     }
    },
    {
     "threshold": 1.3,
     "train": {
-     "n": 47,
+     "n": 54,
      "wins": 4,
-     "win_pct": 8.5,
+     "win_pct": 7.4,
      "avg_win_ganyan": 18.93,
-     "roi_pct": 61.1
+     "roi_pct": 40.2
     },
     "test": {
-     "n": 25,
+     "n": 18,
      "wins": 4,
-     "win_pct": 16.0,
+     "win_pct": 22.2,
      "avg_win_ganyan": 10.65,
-     "roi_pct": 70.4
+     "roi_pct": 136.7
     }
    },
    {
     "threshold": 1.5,
     "train": {
-     "n": 17,
+     "n": 22,
      "wins": 1,
-     "win_pct": 5.9,
+     "win_pct": 4.5,
      "avg_win_ganyan": 25.1,
-     "roi_pct": 47.6
+     "roi_pct": 14.1
     },
     "test": {
-     "n": 11,
+     "n": 6,
      "wins": 2,
-     "win_pct": 18.2,
+     "win_pct": 33.3,
      "avg_win_ganyan": 15.55,
-     "roi_pct": 182.7
+     "roi_pct": 418.3
     }
    }
   ],
@@ -648,7 +648,7 @@
     "fresh",
     "improving"
    ],
-   "score": 1.06
+   "score": 1.11
   },
   {
    "date": "11/10/2026",
@@ -661,7 +661,7 @@
     "apprentice",
     "fresh"
    ],
-   "score": -0.82
+   "score": -0.77
   },
   {
    "date": "21/10/2026",
@@ -674,7 +674,7 @@
     "apprentice",
     "fresh"
    ],
-   "score": -0.82
+   "score": -0.77
   },
   {
    "date": "25/10/2026",
@@ -687,7 +687,7 @@
     "apprentice",
     "model_value"
    ],
-   "score": -1.1
+   "score": -1.11
   },
   {
    "date": "30/09/2026",
@@ -700,7 +700,7 @@
     "class_drop",
     "fresh"
    ],
-   "score": 0.41
+   "score": 0.45
   },
   {
    "date": "03/10/2026",
@@ -717,7 +717,7 @@
     "season_weak",
     "surface_fit"
    ],
-   "score": 1.84
+   "score": 1.92
   },
   {
    "date": "22/09/2026",
@@ -739,7 +739,7 @@
    "signals": [
     "model_value"
    ],
-   "score": -0.17
+   "score": -0.18
   },
   {
    "date": "22/09/2026",
@@ -756,7 +756,7 @@
     "improving",
     "surface_fit"
    ],
-   "score": 1.92
+   "score": 1.96
   },
   {
    "date": "05/10/2026",
@@ -768,7 +768,7 @@
    "signals": [
     "fresh"
    ],
-   "score": 0.11
+   "score": 0.16
   },
   {
    "date": "06/11/2026",
@@ -780,7 +780,7 @@
    "signals": [
     "fresh"
    ],
-   "score": 0.11
+   "score": 0.16
   },
   {
    "date": "16/11/2026",
@@ -792,7 +792,7 @@
    "signals": [
     "fresh"
    ],
-   "score": 0.11
+   "score": 0.16
   },
   {
    "date": "11/10/2026",
@@ -805,7 +805,7 @@
     "model_value",
     "season_weak"
    ],
-   "score": -0.56
+   "score": -0.48
   },
   {
    "date": "21/10/2026",
@@ -821,7 +821,7 @@
     "long_layoff",
     "season_fit"
    ],
-   "score": -0.76
+   "score": -0.8
   },
   {
    "date": "06/11/2026",
@@ -860,7 +860,7 @@
     "apprentice",
     "model_value"
    ],
-   "score": -1.1
+   "score": -1.11
   },
   {
    "date": "27/09/2026",
@@ -875,7 +875,7 @@
     "long_layoff",
     "model_value"
    ],
-   "score": -2.02
+   "score": -2.05
   },
   {
    "date": "25/09/2026",
@@ -888,7 +888,7 @@
     "fresh",
     "improving"
    ],
-   "score": 1.06
+   "score": 1.11
   },
   {
    "date": "24/09/2026",
@@ -901,7 +901,7 @@
     "model_value",
     "surface_fit"
    ],
-   "score": 0.5
+   "score": 0.49
   },
   {
    "date": "29/10/2026",
@@ -929,7 +929,7 @@
     "season_fit",
     "surface_fit"
    ],
-   "score": 1.21
+   "score": 1.15
   },
   {
    "date": "05/11/2026",
@@ -943,7 +943,21 @@
     "improving",
     "model_value"
    ],
-   "score": -0.15
+   "score": -0.16
+  },
+  {
+   "date": "20/11/2026",
+   "city": "İzmir",
+   "race_no": 3,
+   "name": "WINGS OF FREEDOM",
+   "ganyan": 26.6,
+   "agf_rank": 10,
+   "signals": [
+    "apprentice",
+    "class_drop",
+    "season_fit"
+   ],
+   "score": -0.05
   },
   {
    "date": "14/10/2026",
@@ -958,21 +972,7 @@
     "model_value",
     "surface_fit"
    ],
-   "score": -0.32
-  },
-  {
-   "date": "27/10/2026",
-   "city": "Adana",
-   "race_no": 4,
-   "name": "SOUTHERN SECRET",
-   "ganyan": 25.95,
-   "agf_rank": 10,
-   "signals": [
-    "apprentice",
-    "fresh",
-    "model_value"
-   ],
-   "score": -0.99
+   "score": -0.28
   }
  ],
  "labels": {
