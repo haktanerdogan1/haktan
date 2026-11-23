@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Oyunsuz deneme: sahte oyun verisiyle web panelini açar. Arayüzü ve kuralları oyunu açmadan görmek içindir. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RollForward>Major</RollForward>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Asistan.Core\Asistan.Core.csproj" />
+    <Compile Include="..\Asistan.Tests\SahteOyun.cs" Link="SahteOyun.cs" />
+  </ItemGroup>
+
+</Project>

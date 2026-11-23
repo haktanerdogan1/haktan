@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Motor oyundan bağımsızdır: BepInEx IL2CPP'nin .NET 6 çalışma ortamında eklentinin içinde,
+       testlerde ise sıradan bir .NET sürecinde çalışır. Dış paket kullanmaz. -->
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Asistan.Core</RootNamespace>
+    <AssemblyName>AntrenmanAsistani.Core</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Arayuz\index.html" LogicalName="Asistan.Core.Arayuz.index.html" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Asistan.Tests" />
+  </ItemGroup>
+
+</Project>

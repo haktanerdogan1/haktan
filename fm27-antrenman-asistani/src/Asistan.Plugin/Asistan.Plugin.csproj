@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- BepInEx'in IL2CPP yükleyicisi eklentileri kendi .NET 6 çalışma ortamında çalıştırır. -->
+    <TargetFramework>net6.0</TargetFramework>
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>AntrenmanAsistani</AssemblyName>
+    <RootNamespace>Asistan.Plugin</RootNamespace>
+    <FM27Dir Condition="'$(FM27Dir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Football Manager 27</FM27Dir>
+    <BepInExDir>$(FM27Dir)\BepInEx</BepInExDir>
+    <!-- Oyun içi IMGUI paneli. Oyunun Unity derlemesinde IMGUI metodları ayıklanmışsa derleme hata verir:
+         o zaman -p:OyunIciPanel=false ile derleyin; yalnızca web paneli (F8 tarayıcıda açar) kullanılır. -->
+    <OyunIciPanel Condition="'$(OyunIciPanel)' == ''">true</OyunIciPanel>
+    <DefineConstants Condition="'$(OyunIciPanel)' == 'true'">$(DefineConstants);IMGUI_PANEL</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Asistan.Core\Asistan.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Oyunun kurulu kopyasından referans alınır, depoya konmaz: interop derlemeleri BepInEx ilk açılışta oyundan üretir. -->
+  <ItemGroup>
+    <Reference Include="BepInEx.Core"><HintPath>$(BepInExDir)\core\BepInEx.Core.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="BepInEx.Unity.IL2CPP"><HintPath>$(BepInExDir)\core\BepInEx.Unity.IL2CPP.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Il2CppInterop.Runtime"><HintPath>$(BepInExDir)\core\Il2CppInterop.Runtime.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Il2Cppmscorlib"><HintPath>$(BepInExDir)\interop\Il2Cppmscorlib.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(BepInExDir)\interop\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.IMGUIModule" Condition="'$(OyunIciPanel)' == 'true'"><HintPath>$(BepInExDir)\interop\UnityEngine.IMGUIModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.TextRenderingModule" Condition="'$(OyunIciPanel)' == 'true'"><HintPath>$(BepInExDir)\interop\UnityEngine.TextRenderingModule.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+  <Target Name="OyunDosyalariGerekli" BeforeTargets="ResolveAssemblyReferences"
+          Condition="!Exists('$(BepInExDir)\core\BepInEx.Core.dll') Or !Exists('$(BepInExDir)\interop\Il2Cppmscorlib.dll')">
+    <Error Text="Eklenti, BepInEx kurulu Football Manager 27'ye karşı derlenir ve $(FM27Dir) içinde bulunamadı. BepInEx'i kurup oyunu bir kez açın (MCPFM kurulumu 1-3. adımlar) ya da -p:FM27Dir=&lt;oyun klasörü&gt; verin." />
+  </Target>
+
+  <!-- Oyun yüklü eklentileri kilitler: kopyalama yalnızca FM kapalıyken çalışır. -p:SkipDeploy=true yalnızca derler. -->
+  <Target Name="OyunaKopyala" AfterTargets="Build" Condition="'$(SkipDeploy)' != 'true'">
+    <ItemGroup>
+      <Dagitim Include="$(TargetDir)AntrenmanAsistani.dll;$(TargetDir)AntrenmanAsistani.Core.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(Dagitim)" DestinationFolder="$(BepInExDir)\plugins\AntrenmanAsistani" SkipUnchangedFiles="true" Retries="0" ContinueOnError="WarnAndContinue" />
+  </Target>
+
+</Project>
