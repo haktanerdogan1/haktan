@@ -54,7 +54,7 @@ public sealed class McpfmBaglantisi : IOyunBaglantisi, IDisposable
 
     public McpfmBaglantisi(string apiAdresi = "http://localhost:5120", string kopruAdresi = "http://localhost:5121", TimeSpan? zamanAsimi = null)
     {
-        _http = new HttpClient { BaseAddress = new Uri(apiAdresi.TrimEnd('/') + "/"), Timeout = zamanAsimi ?? TimeSpan.FromSeconds(30) };
+        _http = new HttpClient { BaseAddress = new Uri(apiAdresi.TrimEnd('/') + "/"), Timeout = zamanAsimi ?? TimeSpan.FromSeconds(90) };
         _kopru = new HttpClient { BaseAddress = new Uri(kopruAdresi.TrimEnd('/') + "/"), Timeout = TimeSpan.FromSeconds(5) };
     }
 

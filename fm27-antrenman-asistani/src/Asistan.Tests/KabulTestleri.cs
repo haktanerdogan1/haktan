@@ -635,4 +635,32 @@ public class KabulTestleri : IDisposable
         Assert.NotEmpty(deniz.Karakteristikler);
         Assert.Contains("gelişim", deniz.GelisimEvresi);
     }
+
+    // ---------------- Yazma testi sağlamlığı ----------------
+
+    [Fact]
+    public async Task YazmaTesti_IlkOdakReddedilirseSonrakiAdayiDener()
+    {
+        var oyun = TekMacliOyun();
+        oyun.ReddedilenOdaklar.UnionWith(new long[] { 1, 2, 3 });
+        var a = Kur(oyun, yazmaDogrulanmis: false);
+        Assert.True(await a.YazmaTestiAsync());
+        Assert.True(Asistan.Core.Uygulama.IslemYoneticisi.TurDogrulandi(a.Surum, a.Ayarlar, DegisiklikTuru.Odak));
+        Assert.Contains(a.YazmaTestiGunlugu, s => s.Contains("ek odak") && s.Contains("geri okundu"));
+    }
+
+    [Fact]
+    public async Task YazmaTesti_OdakHicGecmezseSeansYineAcilir_VeEksikleriGiderCalisir()
+    {
+        var oyun = TekMacliOyun("40");
+        foreach (var o in oyun.Antrenman.FocusOptions) oyun.ReddedilenOdaklar.Add(o.Id);
+        var a = Kur(oyun, yazmaDogrulanmis: false);
+        var rapor = await a.EksikleriGiderAsync(oyuncularDahil: true);
+        Assert.NotNull(rapor);
+        Assert.True(Asistan.Core.Uygulama.IslemYoneticisi.TurDogrulandi(a.Surum, a.Ayarlar, DegisiklikTuru.Seans));
+        Assert.False(Asistan.Core.Uygulama.IslemYoneticisi.TurDogrulandi(a.Surum, a.Ayarlar, DegisiklikTuru.Odak));
+        Assert.All(rapor!.Kalemler.Where(k => k.Degisiklik.Tur == DegisiklikTuru.Seans), k => Assert.Equal(KalemDurumu.Dogrulandi, k.Durum));
+        Assert.All(rapor.Kalemler.Where(k => k.Degisiklik.Tur == DegisiklikTuru.Odak), k => Assert.Equal(KalemDurumu.Atlandi, k.Durum));
+        Assert.Contains(a.YazmaTestiGunlugu, s => s.Contains("reddetti"));
+    }
 }

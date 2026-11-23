@@ -20,6 +20,8 @@ public sealed class SahteOyun : IOyunBaglantisi
     public int? ZamanAsimiCagrisi { get; set; }
     public bool ZamanAsimindaYazildi { get; set; }
     public bool GeriOkumaBozuk { get; set; }
+    /// <summary>Oyunun oyuncuya vermediği odaklar (ör. saha oyuncusuna kaleci odağı).</summary>
+    public HashSet<long> ReddedilenOdaklar { get; } = new();
 
     public int UygulamaSayisi { get; private set; }
     public int KuruSayisi { get; private set; }
@@ -73,7 +75,7 @@ public sealed class SahteOyun : IOyunBaglantisi
             if (o is null) return Ret($"No player {p.PlayerId}");
             if (p.Focus is not null && o.FocusLocked == true) return Ret($"{o.Name}'s focus is set by the staff");
             if (p.Intensity is not null && o.IntensityLocked == true) return Ret($"{o.Name}'s intensity is set by the medical staff while he's injured.");
-            if (p.Focus is { } f && f != -1 && Antrenman.FocusOptions.All(x => x.Id != f)) return Ret("bad focus");
+            if (p.Focus is { } f && f != -1 && (Antrenman.FocusOptions.All(x => x.Id != f) || ReddedilenOdaklar.Contains(f))) return Ret($"{o.Name} can't take focus {f}");
             if (p.Intensity is { } i && i != -1 && Antrenman.IntensityOptions.All(x => x.Id != i)) return Ret("bad intensity");
         }
 

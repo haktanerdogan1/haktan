@@ -20,6 +20,15 @@ public sealed class IslemYoneticisi
     public bool YazmaSuruyor => _yazmaKilidi.CurrentCount == 0;
 
     /// <summary>Yazma bu oyun/bağlantı sürümünde açık mı (K11)?</summary>
+    /// <summary>Doğrulanmış sürüm kaydı: "sürüm" (hepsi) ya da "sürüm#Seans", "sürüm#Odak", "sürüm#Yogunluk" (tek tür).</summary>
+    public static bool TurDogrulandi(string? surum, Ayarlar ayar, DegisiklikTuru tur) =>
+        !string.IsNullOrWhiteSpace(surum) && ayar.DogrulanmisSurumler.Any(s =>
+        {
+            var p = s.Split('#');
+            return surum.Contains(p[0], StringComparison.OrdinalIgnoreCase) && (p.Length == 1 || p[1] == tur.ToString());
+        });
+
+    /// <summary>Yazma bu oyun/bağlantı sürümünde açık mı (K11)? En az bir tür doğrulanmışsa açık sayılır; tür bazında ayrıca bakılır.</summary>
     public static (bool Acik, string Neden) YazmaIzni(string? surum, Ayarlar ayar)
     {
         if (string.IsNullOrWhiteSpace(surum))
@@ -27,9 +36,17 @@ public sealed class IslemYoneticisi
             return (false, "Oyun sürümü okunamadı; sürüm doğrulanmadan oyuna yazılmaz.");
         }
 
-        if (ayar.DogrulanmisSurumler.Any(s => surum.Contains(s, StringComparison.OrdinalIgnoreCase)))
+        var turler = Enum.GetValues<DegisiklikTuru>().Where(t => TurDogrulandi(surum, ayar, t)).ToList();
+
+        if (turler.Count == 3)
         {
-            return (true, "Bu sürümde yazma, yetenek testinde oyun içinde doğrulandı.");
+            return (true, "Bu sürümde yazma, yazma testinde oyun içinde doğrulandı.");
+        }
+
+        if (turler.Count > 0)
+        {
+            var ad = new Dictionary<DegisiklikTuru, string> { [DegisiklikTuru.Seans] = "takım seansı", [DegisiklikTuru.Odak] = "ek odak", [DegisiklikTuru.Yogunluk] = "yoğunluk" };
+            return (true, $"Doğrulanan: {string.Join(", ", turler.Select(t => ad[t]))}. Diğer türler yazılmaz; yazma testini tekrarlayarak açabilirsiniz.");
         }
 
         return (false, "Bu oyun/bağlantı sürümünde yazma henüz doğrulanmadı. Bağlantı ekranındaki \"Yazma testi\" ile doğrulayın; "
@@ -127,6 +144,13 @@ public sealed class IslemYoneticisi
 
         foreach (var k in rapor.Kalemler)
         {
+            if (!TurDogrulandi(surum, ayar, k.Degisiklik.Tur))
+            {
+                k.Durum = KalemDurumu.Atlandi;
+                k.Hata = "Bu değişiklik türünde yazma bu sürümde doğrulanmadı; gönderilmedi.";
+                continue;
+            }
+
             var guncel = k.Degisiklik.Oku(durum.Antrenman);
             k.OncekiOkunan = guncel;
 

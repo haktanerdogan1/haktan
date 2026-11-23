@@ -99,4 +99,20 @@ public class BirimTestleri
     [InlineData("Defensive Positioning", "DefensivePositioning")]
     [InlineData("Free Kick Taking", "FreeKicks")]
     public void OdakGruplari_FM27Adlari(string ad, string kod) => Assert.Equal(kod, OdakGruplari.Bul(ad)?.Kod);
+
+    [Fact]
+    public void TalimatEslestirme_BenzerAdlarKarismaz()
+    {
+        var zaman = DateTimeOffset.Now;
+        var t = Asistan.Core.Veri.Okuma<Asistan.Core.Veri.AktifTaktik>.Var(new Asistan.Core.Veri.AktifTaktik("T", 1, "4-2-3-1", "Control", "Balanced",
+            new Dictionary<string, string?> { ["CrossEngagement"] = "CrossInvite", ["PressingTrap"] = "PressingTrapNone" }), "test", zaman);
+        var (onemHat, aciklamaHat) = Asistan.Core.Analiz.TaktikAnalizi.Onem(TaktikAlan.BaskiHatti, t);
+        var (_, aciklamaPres) = Asistan.Core.Analiz.TaktikAnalizi.Onem(TaktikAlan.PresYogunlugu, t);
+        var (onemTuzak, aciklamaTuzak) = Asistan.Core.Analiz.TaktikAnalizi.Onem(TaktikAlan.PresTuzagi, t);
+        Assert.DoesNotContain("CrossEngagement", aciklamaHat);
+        Assert.Equal(1.0, onemHat);
+        Assert.DoesNotContain("PressingTrap", aciklamaPres);
+        Assert.Contains("PressingTrap", aciklamaTuzak);
+        Assert.True(onemTuzak < 1, "tuzak kapalıysa önem düşer");
+    }
 }

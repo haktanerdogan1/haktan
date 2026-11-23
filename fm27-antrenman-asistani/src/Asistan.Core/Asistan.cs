@@ -303,17 +303,34 @@ public sealed class AntrenmanAsistani
         }
 
         Surum = YetenekTesti.SurumSatiri(surum.Veri!);
-        var (ok, gunluk) = await YetenekTesti.YazmaTestiAsync(_baglanti, ct).ConfigureAwait(false);
         YazmaTestiGunlugu.Clear();
-        YazmaTestiGunlugu.AddRange(gunluk);
-
-        if (ok && !Ayarlar.DogrulanmisSurumler.Contains(Surum))
+        var (sonuc, _) = await YetenekTesti.YazmaTestiAsync(_baglanti, m =>
         {
-            Ayarlar.DogrulanmisSurumler.Add(Surum);
-            _depo.AyarlariYaz(Ayarlar);
+            lock (YazmaTestiGunlugu)
+            {
+                YazmaTestiGunlugu.Add(m);
+            }
+
+            Durum = "Yazma testi: " + m;
+        }, ct).ConfigureAwait(false);
+
+        foreach (var (tur, gecti) in sonuc)
+        {
+            var kayit = sonuc.Values.All(x => x) ? Surum : $"{Surum}#{tur}";
+
+            if (gecti && !Ayarlar.DogrulanmisSurumler.Contains(kayit))
+            {
+                Ayarlar.DogrulanmisSurumler.Add(kayit);
+            }
         }
 
-        Durum = ok ? "Yazma bu sürümde oyun içinde doğrulandı." : "Yazma testi tamamlanamadı; yazma kapalı kalıyor. Günlüğe bakın.";
+        _depo.AyarlariYaz(Ayarlar);
+        var ok = sonuc[DegisiklikTuru.Seans];
+        var hepsi = sonuc.Values.All(x => x);
+
+        Durum = hepsi ? "Yazma bu sürümde oyun içinde doğrulandı (seans, odak, yoğunluk)."
+            : ok ? "Takım seansı yazma doğrulandı; bazı bireysel türler doğrulanamadı (ayrıntı Bağlantı ekranında)."
+            : "Takım seansı yazma doğrulanamadı; yazma kapalı kalıyor. Bağlantı ekranındaki test günlüğüne bakın.";
         return ok;
     }
 
@@ -349,7 +366,7 @@ public sealed class AntrenmanAsistani
                 return null;
             }
 
-            if (!YazmaIzni.Acik && !await YazmaTestiIcAsync(ct).ConfigureAwait(false))
+            if (!IslemYoneticisi.TurDogrulandi(Surum, Ayarlar, DegisiklikTuru.Seans) && !await YazmaTestiIcAsync(ct).ConfigureAwait(false))
             {
                 Durum = "Tek tık durdu: yazma testi geçmedi, oyunda hiçbir plan değişikliği yapılmadı. Bağlantı sekmesindeki günlüğe bakın.";
                 return null;

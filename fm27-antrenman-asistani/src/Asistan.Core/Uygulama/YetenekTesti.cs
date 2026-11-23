@@ -89,85 +89,120 @@ public static class YetenekTesti
     }
 
     /// <summary>
-    /// Oyun içi yazma testi: bir oyuncunun yoğunluğunu ve ek odağını, bir seansı değiştirir, geri okur, eski haline getirir
-    /// ve onu da geri okur. Kullanıcı açıkça başlatır. Hepsi doğrulanırsa sürüm "yazma doğrulandı" listesine eklenir.
+    /// Oyun içi yazma testi: yoğunluk, ek odak ve seans için ayrı ayrı bir değişikliği yazar, geri okur, eski haline getirir ve
+    /// onu da geri okur. Denenecek değer körlemesine seçilmez: oyunun kendi ön kontrolünden (kuru çalıştırma) geçen ilk aday
+    /// kullanılır (ör. saha oyuncusuna kaleci odağı denenmez). Her tür ayrı doğrulanır; biri geçmezse diğerleri yine açılır.
+    /// İlerleme <paramref name="ilerleme"/> ile anında bildirilir.
     /// </summary>
-    public static async Task<(bool Basarili, List<string> Gunluk)> YazmaTestiAsync(IOyunBaglantisi b, CancellationToken ct = default)
+    public static async Task<(Dictionary<DegisiklikTuru, bool> Sonuc, List<string> Gunluk)> YazmaTestiAsync(
+        IOyunBaglantisi b, Action<string>? ilerleme = null, CancellationToken ct = default)
     {
         var gunluk = new List<string>();
+        void Yaz(string m) { gunluk.Add(m); ilerleme?.Invoke(m); }
+        var sonuc = new Dictionary<DegisiklikTuru, bool> { [DegisiklikTuru.Seans] = false, [DegisiklikTuru.Odak] = false, [DegisiklikTuru.Yogunluk] = false };
         var ant = await b.AntrenmanAsync(ct).ConfigureAwait(false);
 
         if (!ant.Basarili)
         {
-            gunluk.Add("Antrenman okunamadı: " + ant.Hata);
-            return (false, gunluk);
+            Yaz("Antrenman okunamadı: " + ant.Hata);
+            return (sonuc, gunluk);
         }
 
         var t = ant.Veri!;
-        var hepsi = true;
 
-        // 1) Yoğunluk
-        var oyuncu = t.Players.FirstOrDefault(p => p.IntensityLocked != true && p.Intensity is not null);
-        var yeniYogunluk = oyuncu is null ? null : t.IntensityOptions.FirstOrDefault(o => o.Id is >= 0 and <= 2 && o.Id != oyuncu.Intensity!.Id);
+        // Takım seansı önce: "Eksikleri gider" yalnızca buna ihtiyaç duyar.
+        var seansAdaylari =
+            from w in t.Weeks
+            from d in w.Days
+            where d.Match is null
+            from s in d.Sessions
+            where s.CanEdit == true
+            from yeni in t.SessionTypes.SelectMany(c => c.Sessions)
+            where yeni.Id != s.Type
+            select new Degisiklik(DegisiklikTuru.Seans, "test", $"{d.Date} {s.Slot + 1}. seans", new Secenek(s.Type, s.Name), new Secenek(yeni.Id, yeni.Name), "test", d.Date, s.Slot);
+        sonuc[DegisiklikTuru.Seans] = await TurDene(b, "Takım seansı", seansAdaylari, Yaz, ct).ConfigureAwait(false);
 
-        if (oyuncu is null || yeniYogunluk is null)
-        {
-            gunluk.Add("Yoğunluk: denenecek uygun oyuncu/seçenek yok.");
-            hepsi = false;
-        }
-        else
-        {
-            var eski = oyuncu.IntensityIsAutomatic == true ? -1 : oyuncu.Intensity!.Id;
-            var d = new Degisiklik(DegisiklikTuru.Yogunluk, "test", $"{oyuncu.Name} yoğunluk", null, new Secenek(yeniYogunluk.Id, yeniYogunluk.Name), "test", OyuncuId: oyuncu.PlayerId);
-            hepsi &= await GidipDon(b, d, new Secenek(eski, "eski"), gunluk, ct).ConfigureAwait(false);
-        }
+        var yogunlukAdaylari =
+            from p in t.Players
+            where p.IntensityLocked != true && p.Intensity is not null
+            from o in t.IntensityOptions
+            where o.Id is >= 0 and <= 2 && (p.IntensityIsAutomatic == true || o.Id != p.Intensity!.Id)
+            select new Degisiklik(DegisiklikTuru.Yogunluk, "test", $"{p.Name} – yoğunluk",
+                p.IntensityIsAutomatic == true ? new Secenek(-1, "Otomatik") : new Secenek(p.Intensity!.Id, p.Intensity.Name), new Secenek(o.Id, o.Name), "test", OyuncuId: p.PlayerId);
+        sonuc[DegisiklikTuru.Yogunluk] = await TurDene(b, "Bireysel yoğunluk", yogunlukAdaylari, Yaz, ct).ConfigureAwait(false);
 
-        // 2) Ek odak
-        var odakOyuncu = t.Players.FirstOrDefault(p => p.FocusLocked != true);
-        var yeniOdak = odakOyuncu is null ? null : t.FocusOptions.FirstOrDefault(o => o.Id >= 0 && o.Id != (odakOyuncu.Focus?.Id ?? -1));
+        var odakAdaylari =
+            from p in t.Players
+            where p.FocusLocked != true
+            from o in t.FocusOptions
+            where o.Id >= 0 && o.Id != (p.Focus?.Id ?? -1)
+            select new Degisiklik(DegisiklikTuru.Odak, "test", $"{p.Name} – ek odak",
+                p.Focus is null ? new Secenek(-1, "Yok") : new Secenek(p.Focus.Id, p.Focus.Name), new Secenek(o.Id, o.Name), "test", OyuncuId: p.PlayerId);
+        sonuc[DegisiklikTuru.Odak] = await TurDene(b, "Ek odak", odakAdaylari, Yaz, ct).ConfigureAwait(false);
 
-        if (odakOyuncu is null || yeniOdak is null)
-        {
-            gunluk.Add("Ek odak: denenecek uygun oyuncu/seçenek yok.");
-            hepsi = false;
-        }
-        else
-        {
-            var d = new Degisiklik(DegisiklikTuru.Odak, "test", $"{odakOyuncu.Name} odak", null, new Secenek(yeniOdak.Id, yeniOdak.Name), "test", OyuncuId: odakOyuncu.PlayerId);
-            hepsi &= await GidipDon(b, d, new Secenek(odakOyuncu.Focus?.Id ?? -1, "eski"), gunluk, ct).ConfigureAwait(false);
-        }
-
-        // 3) Seans
-        var gun = t.Weeks.SelectMany(w => w.Days).FirstOrDefault(x => x.Sessions.Any(s => s.CanEdit == true));
-        var seans = gun?.Sessions.First(s => s.CanEdit == true);
-        var yeniSeans = seans is null ? null : t.SessionTypes.SelectMany(c => c.Sessions).FirstOrDefault(s => s.Id != seans.Type);
-
-        if (gun is null || seans is null || yeniSeans is null)
-        {
-            gunluk.Add("Seans: düzenlenebilir seans yok.");
-            hepsi = false;
-        }
-        else
-        {
-            var d = new Degisiklik(DegisiklikTuru.Seans, "test", $"{gun.Date} {seans.Slot + 1}. seans", null, new Secenek(yeniSeans.Id, yeniSeans.Name), "test", gun.Date, seans.Slot);
-            hepsi &= await GidipDon(b, d, new Secenek(seans.Type, seans.Name), gunluk, ct).ConfigureAwait(false);
-        }
-
-        return (hepsi, gunluk);
+        return (sonuc, gunluk);
     }
 
-    private static async Task<bool> GidipDon(IOyunBaglantisi b, Degisiklik d, Secenek eski, List<string> gunluk, CancellationToken ct)
+    private static async Task<bool> TurDene(IOyunBaglantisi b, string ad, IEnumerable<Degisiklik> adaylar, Action<string> yaz, CancellationToken ct)
     {
-        var git = await b.AntrenmanYazAsync(d.Istek(d.Hedef), true, ct).ConfigureAwait(false);
-        var oku = await b.AntrenmanAsync(ct).ConfigureAwait(false);
-        var gitti = oku.Basarili && d.Oku(oku.Veri!)?.Id == d.Hedef.Id;
-        gunluk.Add($"{d.Baslik}: \"{d.Hedef.Ad}\" yazıldı → {(gitti ? "geri okundu ✓" : "doğrulanamadı ✗ " + (git.Hata ?? oku.Hata))}");
+        yaz($"{ad}: deneniyor…");
+        string? sonRet = null;
+        var denenen = 0;
 
-        // Belirsiz sonuçta bile eski değere dönmeyi dener; dönüş de ayrıca doğrulanır ve sonucu gizlenmez.
-        var don = await b.AntrenmanYazAsync(d.Istek(eski), true, ct).ConfigureAwait(false);
-        var oku2 = await b.AntrenmanAsync(ct).ConfigureAwait(false);
-        var dondu = oku2.Basarili && d.Oku(oku2.Veri!)?.Id == eski.Id;
-        gunluk.Add($"{d.Baslik}: eski değere dönüş → {(dondu ? "doğrulandı ✓" : "DOĞRULANAMADI ✗ — oyunda elle kontrol edin. " + (don.Hata ?? oku2.Hata))}");
+        foreach (var d in adaylar.Take(25))
+        {
+            denenen++;
+            var kuru = await b.AntrenmanYazAsync(d.Istek(d.Hedef), false, ct).ConfigureAwait(false);
+
+            if (kuru.Basarili)
+            {
+                try
+                {
+                    return await GidipDon(b, d, d.Eski!, yaz, ct).ConfigureAwait(false);
+                }
+                catch (Exception e) when (e is not OperationCanceledException)
+                {
+                    yaz($"{ad}: beklenmeyen hata: {e.Message}");
+                    return false;
+                }
+            }
+
+            if (kuru.Sonuc != CagriSonucu.Reddedildi)
+            {
+                yaz($"{ad}: bağlantı hatası, test durdu: {kuru.Hata}");
+                return false;
+            }
+
+            sonRet = kuru.Hata;
+        }
+
+        yaz(denenen == 0
+            ? $"{ad}: denenecek uygun oyuncu/seans yok."
+            : $"{ad}: oyun {denenen} adayın hepsini ön kontrolde reddetti. Son yanıt: {sonRet}");
+        return false;
+    }
+
+    private static async Task<bool> GidipDon(IOyunBaglantisi b, Degisiklik d, Secenek eski, Action<string> yaz, CancellationToken ct)
+    {
+        var gitti = false;
+        var dondu = false;
+
+        try
+        {
+            var git = await b.AntrenmanYazAsync(d.Istek(d.Hedef), true, ct).ConfigureAwait(false);
+            var oku = await b.AntrenmanAsync(ct).ConfigureAwait(false);
+            gitti = oku.Basarili && d.Oku(oku.Veri!)?.Id == d.Hedef.Id;
+            yaz($"{d.Baslik}: \"{d.Hedef.Ad}\" yazıldı → {(gitti ? "geri okundu ✓" : "doğrulanamadı ✗ " + (git.Hata ?? oku.Hata ?? "oyunda değer değişmedi"))}");
+        }
+        finally
+        {
+            // Ne olursa olsun eski değere dönmeyi dener; dönüş de ayrıca doğrulanır ve sonucu gizlenmez.
+            var don = await b.AntrenmanYazAsync(d.Istek(eski), true, ct).ConfigureAwait(false);
+            var oku2 = await b.AntrenmanAsync(ct).ConfigureAwait(false);
+            dondu = oku2.Basarili && d.Oku(oku2.Veri!)?.Id == eski.Id;
+            yaz($"{d.Baslik}: eski değere dönüş → {(dondu ? "doğrulandı ✓" : "DOĞRULANAMADI ✗ — oyunda elle kontrol edin. " + (don.Hata ?? oku2.Hata))}");
+        }
+
         return gitti && dondu;
     }
 

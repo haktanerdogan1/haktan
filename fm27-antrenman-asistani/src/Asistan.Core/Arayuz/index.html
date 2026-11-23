@@ -254,6 +254,7 @@ async function yukle() {
   try {
     const r = await fetch("api/durum", { cache: "no-store" });
     V = await r.json();
+    if (V.mesgul) document.getElementById("yuklemeMetni").textContent = V.durum;
     const odak = document.activeElement?.tagName;
     if (!document.getElementById("katman").innerHTML && odak !== "INPUT" && odak !== "SELECT") ciz();
   } catch (_) { }
@@ -747,7 +748,7 @@ function ayarlar() {
 }
 
 yukle();
-setInterval(yukle, 3000);
+setInterval(yukle, 1500);
 </script>
 </body>
 </html>

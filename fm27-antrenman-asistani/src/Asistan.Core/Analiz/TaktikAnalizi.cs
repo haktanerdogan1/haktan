@@ -176,10 +176,16 @@ public static class TaktikAnalizi
         var eslesen = new List<string>();
         double onem = alan is TaktikAlan.TopaSahipkenDizilis or TaktikAlan.TopRakipteyken ? 1.2 : 1.0;
 
-        bool Ara(string[] anahtarKaliplari, out string? deger)
+        bool Ara(string[] anahtarKaliplari, out string? deger, params string[] haric)
         {
             foreach (var (k, v) in t.Talimatlar)
             {
+                // Benzer adlı başka talimatlar karışmasın: "CrossEngagement" karşılama çizgisi, "PressingTrap" pres yoğunluğu değildir.
+                if (haric.Any(h => k.Contains(h, StringComparison.OrdinalIgnoreCase)))
+                {
+                    continue;
+                }
+
                 if (anahtarKaliplari.Any(p => k.Contains(p, StringComparison.OrdinalIgnoreCase)))
                 {
                     eslesen.Add($"{k} = {v ?? "—"}");
@@ -198,7 +204,7 @@ public static class TaktikAnalizi
                                                         || v.Contains("Urgent", StringComparison.OrdinalIgnoreCase));
         static bool Azalan(string? v) => v is not null && (v.Contains("Less", StringComparison.OrdinalIgnoreCase) || v.Contains("Low", StringComparison.OrdinalIgnoreCase)
                                                          || v.Contains("Fewer", StringComparison.OrdinalIgnoreCase));
-        static bool Acik(string? v) => v is not null && !v.Contains("None", StringComparison.OrdinalIgnoreCase) && !v.Contains("Off", StringComparison.OrdinalIgnoreCase)
+        static bool Acik(string? v) => v is not null && !v.EndsWith("None", StringComparison.OrdinalIgnoreCase) && !v.Contains("None", StringComparison.OrdinalIgnoreCase) && !v.Contains("Off", StringComparison.OrdinalIgnoreCase)
                                        && !v.Contains("Default", StringComparison.OrdinalIgnoreCase) && !v.Equals("No", StringComparison.OrdinalIgnoreCase);
 
         string? d;
@@ -206,7 +212,7 @@ public static class TaktikAnalizi
         switch (alan)
         {
             case TaktikAlan.PresYogunlugu:
-                if (Ara(new[] { "PressingIntensity", "Pressing", "TriggerPress", "Press" }, out d))
+                if (Ara(new[] { "PressingIntensity", "TriggerPress", "Pressing", "Press" }, out d, "Trap", "Avoid", "Cross"))
                 {
                     onem = Azalan(d) ? 0.6 : Artan(d) ? 1.5 : 1.0;
                 }
@@ -218,7 +224,7 @@ public static class TaktikAnalizi
                 }
                 break;
             case TaktikAlan.BaskiHatti:
-                if (Ara(new[] { "LineOfEngagement", "Engagement" }, out d))
+                if (Ara(new[] { "LineOfEngagement", "EngagementLine" }, out d, "Cross"))
                 {
                     onem = Azalan(d) ? 0.9 : Artan(d) ? 1.4 : 1.0;
                 }
@@ -236,7 +242,7 @@ public static class TaktikAnalizi
                 }
                 break;
             case TaktikAlan.FirsatYaratma:
-                if (Ara(new[] { "ChanceCreation", "Cross", "Shoot", "Dribble", "WorkBall", "Final" }, out d))
+                if (Ara(new[] { "ChanceCreation", "Crossing", "CrossFrom", "Shoot", "Dribble", "WorkBall", "Final" }, out d, "Engagement", "Invite"))
                 {
                     onem = Acik(d) ? 1.3 : 1.0;
                 }
