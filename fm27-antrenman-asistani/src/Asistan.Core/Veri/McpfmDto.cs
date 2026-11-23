@@ -47,6 +47,7 @@ public sealed class OyuncuAntrenmanDto
     public string? RoleKey { get; set; }
     public string? RoleName { get; set; }
     public bool FollowsMatchRole { get; set; }
+    public string? OutOfPossessionRole { get; set; }
     public SecenekDto? Focus { get; set; }
     public SecenekDto? Intensity { get; set; }
     public bool? IntensityIsAutomatic { get; set; }

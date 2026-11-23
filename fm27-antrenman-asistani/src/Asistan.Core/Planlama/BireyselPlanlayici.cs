@@ -241,29 +241,21 @@ public static class BireyselPlanlayici
             return (null, g);
         }
 
-        var anahtar = RolOzellikleri.Anahtar(o.RolAnahtari);
+        // Oynanan taktikteki iki rol (topa sahipken + top rakipteyken) birlikte değerlendirilir; odak FM27'nin özellik grubu odaklarıdır.
+        var rapor = BireyselGelisim.Rapor(o, a.OdakSecenekleri);
 
-        if (anahtar.Count == 0)
+        if (!rapor.TopaSahipken.Tanindi && !rapor.TopRakipteyken.Tanindi)
         {
-            g.Add($"Antrenman rolü ({o.RolAdi ?? o.RolAnahtari ?? "bilinmiyor"}) tanınmadı; odak önerisi yapılmadı.");
+            g.Add($"Rol ({o.RolAdi ?? o.RolAnahtari ?? "bilinmiyor"}) tanınmadı; odak önerisi yapılmadı.");
             return (null, g);
         }
 
-        var degerler = anahtar.Where(o.Ozellikler.ContainsKey).Select(k => (Ad: k, Puan: o.Ozellikler[k].Orta)).ToList();
-
-        if (degerler.Count == 0)
+        foreach (var r in new[] { rapor.TopaSahipken, rapor.TopRakipteyken })
         {
-            g.Add("Rolün anahtar özellikleri okunamadı; odak önerisi yapılmadı.");
-            return (null, g);
-        }
-
-        var ortalama = degerler.Average(d => d.Puan);
-
-        // "Rol uygun değil" ile "ek odak gerekli" ayrı sonuçlardır.
-        if (ortalama < 9)
-        {
-            uyarilar.Add($"Rol uygunluğu düşük: {o.RolAdi ?? o.RolAnahtari} için anahtar özellik ortalaması {ortalama:0.0}/20. "
-                         + "Ek odak tek başına yetmez; rol/pozisyon değişikliğini değerlendirin (otomatik yazılmaz).");
+            if (r.Uyum is < 9 && r.Rol is not null)
+            {
+                uyarilar.Add($"Rol uygunluğu düşük: {r.Rol.Ad} için anahtar özellik ortalaması {r.Uyum:0.0}/20. Ek odak tek başına yetmez; rol değişikliğini değerlendirin (otomatik yazılmaz).");
+            }
         }
 
         if (o.Yas.VarMi && o.Yas.Deger >= 31)
@@ -272,44 +264,38 @@ public static class BireyselPlanlayici
             return (null, g);
         }
 
-        var hedefler = degerler.OrderBy(d => d.Puan).ThenBy(d => anahtar.IndexOf(d.Ad)).ToList();
-        var mevcutOzellikler = o.Odak is null ? new List<string>() : OdakOzellikleri.Ozellikler(o.Odak.Ad);
-        var mevcutHedef = degerler.Where(d => mevcutOzellikler.Contains(d.Ad)).OrderBy(d => d.Puan).FirstOrDefault();
-
-        foreach (var (ad, puan) in hedefler)
+        if (rapor.Odaklar.Count == 0)
         {
-            var secenek = a.OdakSecenekleri.Where(s => s.Id >= 0 && OdakOzellikleri.Ozellikler(s.Ad).Contains(ad)).OrderBy(s => OdakOzellikleri.Ozellikler(s.Ad).Count).ThenBy(s => s.Id).FirstOrDefault();
-
-            if (secenek is null)
-            {
-                continue;
-            }
-
-            if (o.Odak?.Id == secenek.Id)
-            {
-                g.Add($"Mevcut odak ({secenek.Ad}) rolün en zayıf anahtar özelliğini ({OzellikAdi(ad)} {puan:0}) çalıştırıyor.");
-                return (null, g);
-            }
-
-            if (mevcutHedef.Ad is not null && mevcutHedef.Puan - puan < ayar.OdakDegisimEsigi)
-            {
-                g.Add($"Mevcut odak ({o.Odak!.Ad}) hâlâ rol için anlamlı ({OzellikAdi(mevcutHedef.Ad)} {mevcutHedef.Puan:0}); fark değişiklik eşiğinin altında.");
-                return (null, g);
-            }
-
-            if (sonDegisim.TryGetValue(o.Id, out var son) && bugun.DayNumber - son.DayNumber < ayar.OdakAsgariGun)
-            {
-                g.Add($"Odak {bugun.DayNumber - son.DayNumber} gün önce değişti; istikrar için {ayar.OdakAsgariGun} gün dolmadan yeniden değiştirilmez.");
-                return (null, g);
-            }
-
-            g.Add($"{o.RolAdi ?? o.RolAnahtari} rolünün anahtar özellikleri içinde en zayıfı {OzellikAdi(ad)} ({puan:0}/20; ortalama {ortalama:0.0}).");
-            g.Add($"Önerilen ek odak: {secenek.Ad}.");
-            return (secenek, g);
+            g.Add("Rolün zayıf anahtar özelliklerini çalıştıran bir odak seçeneği bulunamadı.");
+            return (null, g);
         }
 
-        g.Add("Zayıf anahtar özellikleri çalıştıran bir odak seçeneği bulunamadı.");
-        return (null, g);
+        var enIyi = rapor.Odaklar[0];
+
+        if (o.Odak?.Id == enIyi.Secenek.Id)
+        {
+            g.Add($"Mevcut odak ({enIyi.Secenek.Ad}) rolün en zayıf halkasını çalıştırıyor. {enIyi.Gerekce}");
+            return (null, g);
+        }
+
+        var mevcut = rapor.Odaklar.FirstOrDefault(x => x.Secenek.Id == o.Odak?.Id);
+
+        if (mevcut is not null && mevcut.Puan >= enIyi.Puan * 0.75)
+        {
+            g.Add($"Mevcut odak ({mevcut.Secenek.Ad}) hâlâ rol için anlamlı; daha iyisiyle fark değişiklik eşiğinin altında.");
+            return (null, g);
+        }
+
+        if (sonDegisim.TryGetValue(o.Id, out var son) && bugun.DayNumber - son.DayNumber < ayar.OdakAsgariGun)
+        {
+            g.Add($"Odak {bugun.DayNumber - son.DayNumber} gün önce değişti; istikrar için {ayar.OdakAsgariGun} gün dolmadan yeniden değiştirilmez.");
+            return (null, g);
+        }
+
+        var roller = string.Join(" + ", new[] { rapor.TopaSahipken.Rol?.Ad, rapor.TopRakipteyken.Rol?.Ad }.Where(x => x is not null));
+        g.Add($"{roller}: {enIyi.Gerekce}");
+        g.Add($"Önerilen ek odak: {enIyi.Secenek.Ad}.");
+        return (enIyi.Secenek, g);
     }
 
     private static string OzellikAdi(string anahtar) => OdakOzellikleri.TurkceAd(anahtar);

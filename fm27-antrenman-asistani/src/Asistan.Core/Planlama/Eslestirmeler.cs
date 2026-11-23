@@ -106,7 +106,15 @@ public static class OdakOzellikleri
         return sonuc;
     }
 
-    public static string TurkceAd(string ozellik) => Tablo.FirstOrDefault(t => t.Ozellik == ozellik).Turkce ?? ozellik;
+    private static readonly Dictionary<string, string> EkAdlar = new()
+    {
+        ["Aggression"] = "Agresiflik", ["Bravery"] = "Cesaret", ["Flair"] = "Yaratıcılık", ["Determination"] = "Kararlılık",
+        ["Leadership"] = "Liderlik", ["NaturalFitness"] = "Doğal kondisyon", ["LongThrows"] = "Uzun taç", ["Eccentricity"] = "Sıra dışılık",
+        ["TendencyToPunch"] = "Yumruklama eğilimi"
+    };
+
+    public static string TurkceAd(string ozellik) =>
+        Tablo.FirstOrDefault(t => t.Ozellik == ozellik).Turkce ?? (EkAdlar.TryGetValue(ozellik, out var ad) ? ad : ozellik);
 
     // "pas" "pasif" içinde, "orta" "ortalama" içinde eşleşmesin: kelime başı ve sonu kontrol edilir (çok kelimeli ifadeler serbest).
     private static bool KelimeIceriyor(string metin, string kelime)

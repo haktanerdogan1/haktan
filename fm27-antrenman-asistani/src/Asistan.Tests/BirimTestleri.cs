@@ -76,4 +76,27 @@ public class BirimTestleri
         Assert.Equal(4, s.Count);
         Assert.Equal(2, s[BireyselPlanlayici.Seviye.Yuksek].Id);
     }
+
+    [Theory]
+    [InlineData("CentreForward", RolEvresi.TopaSahipken, "Centre Forward")]
+    [InlineData("Ball Playing Centre-Back", RolEvresi.TopaSahipken, "Ball-Playing Centre-Back")]
+    [InlineData("Pressing Full-Back", RolEvresi.TopRakipteyken, "Pressing Full-Back")]
+    [InlineData("SweeperKeeper", RolEvresi.TopRakipteyken, "Sweeper Keeper")]
+    public void RolTablosu_Bulur(string ad, RolEvresi evre, string beklenen) => Assert.Equal(beklenen, RolTablosu.Bul(ad, evre)?.Ad);
+
+    [Fact]
+    public void RolTablosu_FM27RolleriniKapsar()
+    {
+        Assert.True(RolTablosu.Hepsi.Count(r => r.Evre == RolEvresi.TopRakipteyken) >= 38);
+        Assert.Contains(RolTablosu.Hepsi, r => r.Anahtar == "PressingFullBack" && r.Oncelikli.Contains("WorkRate"));
+    }
+
+    [Theory]
+    [InlineData("Chance Conversion", "ChanceConversion")]
+    [InlineData("Ball Retention", "BallRetention")]
+    [InlineData("Agility and Balance", "AgilityBalance")]
+    [InlineData("GK Shot Stopping", "GkShotStopping")]
+    [InlineData("Defensive Positioning", "DefensivePositioning")]
+    [InlineData("Free Kick Taking", "FreeKicks")]
+    public void OdakGruplari_FM27Adlari(string ad, string kod) => Assert.Equal(kod, OdakGruplari.Bul(ad)?.Kod);
 }

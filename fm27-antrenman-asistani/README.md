@@ -34,6 +34,23 @@ dotnet publish src\TrainingAgents -c Release -r win-x64 -o cikti
 ![Genel bakış](docs/genel-bakis.png)
 ![Eksikleri gider](docs/eksikleri-gider.png)
 ![Takım programı](docs/takim-programi.png)
+![Bireysel gelişim](docs/bireysel-gelisim.png)
+
+## Bireysel gelişim
+
+Her oyuncu için oynanan taktikteki iki rolü birlikte ele alır:
+- **Topa sahipken** ve **top rakipteyken** rolünün öncelikli ve destekleyici özellikleri, oyuncunun bu özelliklerdeki
+  değerleri ve 20 üzerinden rol uyumu
+- En zayıf halka ve onu en çok kapatan **FM27 ek odağı** (oyundaki 28 odak: Chance Conversion, Ball Retention,
+  Pressing, Containment, Quickness…)
+- Aynı mevkide daha uygun rol alternatifi
+- Yaşa göre gelişim penceresi
+- Role uygun **karakteristik** önerileri
+
+Rol–özellik tablosu [Touchline FM27 rol rehberinden](https://touchlinefm.com/tactics) alındı (rehberin kendi notuyla
+resmi eşik değil, koçluk yorumu). Odak listesi FM27'nin bireysel antrenman ekranındaki listedir. Odakların hangi
+özellikleri çalıştırdığı oyunda yazılı değildir, eşleştirme tahmindir. Ek odak oyuna yazılabilir; rol değişikliği ve
+karakteristikler MCPFM ile yazılamadığı için yalnızca önerilir.
 
 ## Nasıl çalışır?
 

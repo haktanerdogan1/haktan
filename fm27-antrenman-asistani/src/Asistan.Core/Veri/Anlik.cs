@@ -45,7 +45,8 @@ public sealed record Oyuncu(
     Okuma<string> IsYuku,
     bool OdakKilitli,
     bool YogunlukKilitli,
-    IReadOnlyDictionary<string, Puan> Ozellikler);
+    IReadOnlyDictionary<string, Puan> Ozellikler,
+    string? OopRol = null);
 
 /// <summary>Taktiksel Verimlilik ekranındaki bir kalem. Antrenmanla düzeltilebilenler ayrıca işaretlenir.</summary>
 public sealed record VerimlilikKalemi(string Baslik, string? Puan, string? Metin, bool Olumlu, bool AntrenmanlaDuzelir, string Ne);
@@ -178,7 +179,8 @@ public sealed class Anlik
                 Okuma<string>.Belki(p.Workload, KaynakAntrenman, zaman),
                 p.FocusLocked == true,
                 p.IntensityLocked == true,
-                Ozellikleri(k));
+                Ozellikleri(k),
+                p.OutOfPossessionRole);
         }).ToList();
 
         // ---- Taktik ve taktiksel anlayış

@@ -110,6 +110,36 @@ public static class Gorunum
                 haric = a.Ayarlar.HaricOyuncular.Contains(o.Oyuncu.Id),
                 degisiklikler = new[] { $"odak:{o.Oyuncu.Id}", $"yogunluk:{o.Oyuncu.Id}" }.Where(anahtarlar.ContainsKey).ToList()
             }).ToList(),
+            gelisim = an is null ? null : BireyselGelisim.Olustur(an).Select(r =>
+            {
+                var oneri = a.Bireysel.FirstOrDefault(b => b.Oyuncu.Id == r.Oyuncu.Id);
+                object Rol(RolDegerlendirmesi d) => new
+                {
+                    rol = d.Rol?.Ad ?? d.RolAdi,
+                    tanindi = d.Tanindi,
+                    uyum = d.Uyum is { } u ? Math.Round(u, 1) : (double?)null,
+                    ozellikler = d.Ozellikler.Select(z => new { ad = z.Ad, kod = z.Anahtar, deger = z.Deger, oncelikli = z.Oncelikli, zayif = z.Zayif }).ToList(),
+                    alternatifler = d.Alternatifler.Select(x => new { rol = x.Rol.Ad, uyum = Math.Round(x.Uyum, 1) }).ToList()
+                };
+                return new
+                {
+                    id = r.Oyuncu.Id,
+                    ad = r.Oyuncu.Ad,
+                    pozisyon = r.Oyuncu.Pozisyon,
+                    yas = r.Oyuncu.Yas.ToString(),
+                    odak = r.Oyuncu.Odak?.Ad ?? "Yok",
+                    ip = Rol(r.TopaSahipken),
+                    oop = Rol(r.TopRakipteyken),
+                    enZayif = r.EnZayif.Select(z => new { ad = z.Ad, deger = z.Deger }).ToList(),
+                    odaklar = r.Odaklar.Select(x => new { ad = x.Secenek.Ad, grup = x.Grup.Ad, puan = Math.Round(x.Puan, 1), gerekce = x.Gerekce }).ToList(),
+                    evre = r.GelisimEvresi,
+                    karakteristikler = r.Karakteristikler,
+                    notlar = r.Notlar,
+                    oneriOdak = oneri?.OdakDegisiyor == true ? oneri.OnerilenOdak!.Ad : null,
+                    oneriGerekce = oneri?.OdakGerekcesi,
+                    degisiklik = anahtarlar.ContainsKey($"odak:{r.Oyuncu.Id}") ? $"odak:{r.Oyuncu.Id}" : null
+                };
+            }).ToList(),
             degisiklikler = degisiklikler.Select(d => new
             {
                 anahtar = d.Anahtar,

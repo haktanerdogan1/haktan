@@ -617,4 +617,22 @@ public class KabulTestleri : IDisposable
     [InlineData("Community Outreach", "Extra-Curricular", SeansAmaci.Sosyal)]
     [InlineData("Line of Engagement", "Tactical Understanding", SeansAmaci.Taktik)]
     public void FM27_SeansKategorileri(string ad, string kategori, SeansAmaci amac) => Assert.Equal(amac, Seanslar.Siniflandir(ad, kategori).Amac);
+
+    // ---------------- Bireysel gelişim ----------------
+
+    [Fact]
+    public async Task BireyselGelisim_IkiRoluBirlikteDegerlendirir()
+    {
+        var a = Kur(TekMacliOyun());
+        await a.AnalizEtAsync();
+        var deniz = BireyselGelisim.Rapor(a.Anlik!.Oyuncular.First(o => o.Id == 4), a.Anlik.OdakSecenekleri);
+
+        Assert.Equal("Winger", deniz.TopaSahipken.Rol?.Anahtar);
+        Assert.Equal("TrackingWinger", deniz.TopRakipteyken.Rol?.Anahtar);
+        Assert.NotNull(deniz.TopaSahipken.Uyum);
+        Assert.NotEmpty(deniz.Odaklar);
+        Assert.Contains(deniz.EnZayif, z => z.Anahtar is "Movement" or "Crossing" or "FirstTouch");
+        Assert.NotEmpty(deniz.Karakteristikler);
+        Assert.Contains("gelişim", deniz.GelisimEvresi);
+    }
 }

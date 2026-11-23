@@ -161,9 +161,11 @@ public static class Senaryo
             }).ToList(),
             FocusOptions =
             {
-                new() { Id = -1, Name = "Yok" }, new() { Id = 1, Name = "Bitiricilik" }, new() { Id = 2, Name = "Pas" },
-                new() { Id = 3, Name = "Top Kapma" }, new() { Id = 4, Name = "Dayanıklılık" }, new() { Id = 5, Name = "Topsuz Alan" },
-                new() { Id = 6, Name = "Kafa Vuruşu" }, new() { Id = 7, Name = "Markaj" }
+                new() { Id = -1, Name = "Yok" }, new() { Id = 1, Name = "Chance Conversion" }, new() { Id = 2, Name = "Passing" },
+                new() { Id = 3, Name = "Tackling" }, new() { Id = 4, Name = "Stamina" }, new() { Id = 5, Name = "Attacking Movement" },
+                new() { Id = 6, Name = "Aerial" }, new() { Id = 7, Name = "Marking" }, new() { Id = 8, Name = "Quickness" },
+                new() { Id = 9, Name = "Pressing" }, new() { Id = 10, Name = "Defensive Positioning" }, new() { Id = 11, Name = "Ball Control" },
+                new() { Id = 12, Name = "Chance Creation" }, new() { Id = 13, Name = "Crossing" }
             },
             IntensityOptions =
             {
@@ -197,12 +199,12 @@ public static class Senaryo
         var odakAdlari = a.FocusOptions.ToDictionary(o => o.Id, o => o.Name);
         a.Players.AddRange(new[]
         {
-            Oyuncu(1, "Arda Forvet", "AdvancedForward", "ST", focus: null),
-            Oyuncu(2, "Burak Stoper", "CentreBack", "D (M)", focus: 3),
-            Oyuncu(3, "Can Orta", "BoxToBoxMidfielder", "M (M)", focus: 2),
-            Oyuncu(4, "Deniz Genç", "Winger", "OOS (Sğ)", focus: null),
-            Oyuncu(5, "Emre Sakat", "FullBack", "D (Sğ)", focus: null, yogunlukKilitli: true),
-            Oyuncu(6, "Ferhat Yorgun", "DefensiveMidfielder", "DM", focus: 3)
+            Oyuncu(1, "Arda Forvet", "CentreForward", "ST", focus: null, oop: "Centre Forward"),
+            Oyuncu(2, "Burak Stoper", "CentreBack", "D (M)", focus: 3, oop: "Centre-Back"),
+            Oyuncu(3, "Can Orta", "BoxToBoxMidfielder", "M (M)", focus: 9, oop: "Pressing Central Midfielder"),
+            Oyuncu(4, "Deniz Genç", "Winger", "OOS (Sğ)", focus: null, oop: "Tracking Winger"),
+            Oyuncu(5, "Emre Sakat", "FullBack", "D (Sğ)", focus: null, yogunlukKilitli: true, oop: "Full-Back"),
+            Oyuncu(6, "Ferhat Yorgun", "DefensiveMidfielder", "DM", focus: 3, oop: "Screening Defensive Midfielder")
         });
 
         foreach (var p in a.Players.Where(p => p.Focus is not null))
@@ -220,9 +222,9 @@ public static class Senaryo
 
     public static string Tarih(int gun) => Pazartesi.AddDays(gun).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
-    private static OyuncuAntrenmanDto Oyuncu(int id, string ad, string rol, string poz, long? focus, bool yogunlukKilitli = false) => new()
+    private static OyuncuAntrenmanDto Oyuncu(int id, string ad, string rol, string poz, long? focus, bool yogunlukKilitli = false, string? oop = null) => new()
     {
-        PlayerId = id, Name = ad, RoleKey = rol, RoleName = rol, Position = poz,
+        PlayerId = id, Name = ad, RoleKey = rol, RoleName = rol, Position = poz, OutOfPossessionRole = oop,
         Focus = focus is null ? null : new SecenekDto { Id = focus.Value, Name = "?" },
         Intensity = new SecenekDto { Id = 1, Name = "Ortalama" },
         IntensityIsAutomatic = null,
