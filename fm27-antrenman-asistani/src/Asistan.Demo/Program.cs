@@ -16,6 +16,9 @@ foreach (var s in antrenman.SessionTypes.SelectMany(c => c.Sessions))
 
 var taktik = Senaryo.Taktik("52-58", digerleri: null);
 taktik.Slots[0].Name = "GYR - BEAST 4231";
+taktik.Slots[0].Effectiveness!.Overall = "61";
+taktik.Slots[0].Effectiveness!.PlayerAbility = new YetenekPuaniDto { Overall = "58", Advice = new TavsiyeDto { Text = "Bazı oyuncular rollerinde yeterince rahat değil.", IsPositive = false } };
+taktik.Slots[0].Effectiveness!.PlayerBuyIn = new BenimsemeDto { Overall = "74", Advice = new TavsiyeDto { Text = "Oyuncular taktik yaklaşımımızı destekliyor.", IsPositive = true } };
 var ta = taktik.Slots[0].Effectiveness!.TacticalUnderstanding!;
 ta.LineOfEngagement = new TaktikAlanDto { Understanding = "48-55", MatchExposure = "45", TrainingContribution = "20" };
 ta.ChanceCreation = new TaktikAlanDto { Understanding = "70", MatchExposure = "60", TrainingContribution = "35" };
@@ -28,4 +31,10 @@ var asistan = new AntrenmanAsistani(oyun, depo);
 using var sunucu = new WebSunucu(asistan, port, Console.WriteLine);
 sunucu.Baslat();
 Console.WriteLine("Demo çalışıyor. Kapatmak için Ctrl+C.");
-await Task.Delay(Timeout.Infinite);
+
+// Masaüstü uygulamasıyla aynı canlı döngü: birkaç saniyede bir oyunu yoklar.
+while (true)
+{
+    try { await asistan.CanliKontrolAsync(); } catch (Exception ex) { Console.WriteLine(ex.Message); }
+    await Task.Delay(TimeSpan.FromSeconds(3));
+}

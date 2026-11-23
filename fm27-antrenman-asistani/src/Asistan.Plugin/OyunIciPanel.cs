@@ -63,7 +63,7 @@ public sealed class OyunIciPanel : MonoBehaviour
 
         if (!_acik)
         {
-            if (GUI.Button(new Rect(Screen.width - 150, Screen.height - 34, 140, 26), $"Antrenman ({_tus})"))
+            if (GUI.Button(new Rect(Screen.width - 150, Screen.height - 34, 140, 26), $"TrainingAgents ({_tus})"))
             {
                 _acik = true;
             }
@@ -82,7 +82,7 @@ public sealed class OyunIciPanel : MonoBehaviour
         var w = _pencere.width - 24;
         var y = _pencere.y + 10;
 
-        GUI.Label(new Rect(x, y, w - 30, 24), "FM27 Antrenman Asistanı", _baslik);
+        GUI.Label(new Rect(x, y, w - 30, 24), "TrainingAgents", _baslik);
 
         if (GUI.Button(new Rect(_pencere.xMax - 34, y, 24, 22), "×"))
         {

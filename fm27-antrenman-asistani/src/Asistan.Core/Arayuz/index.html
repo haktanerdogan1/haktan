@@ -3,430 +3,617 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Antrenman Asistanı</title>
+<title>TrainingAgents</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='15' fill='%230E1216'/%3E%3Crect x='13' y='16' width='38' height='8' rx='4' fill='%23B8F23A'/%3E%3Crect x='13' y='28' width='26' height='8' rx='4' fill='%23B8F23A' fill-opacity='.62'/%3E%3Crect x='13' y='40' width='14' height='8' rx='4' fill='%23E7ECF1' fill-opacity='.38'/%3E%3Crect x='43' y='40' width='8' height='8' rx='2' fill='%23B8F23A'/%3E%3C/svg%3E">
 <style>
 :root {
-  --zemin: #12161c; --panel: #1b2129; --panel2: #222a34; --cizgi: #2e3845; --metin: #e6ebf1; --soluk: #93a1b2;
-  --vurgu: #2bb3a3; --vurgu2: #1d8478; --yuksek: #e5534b; --orta: #e0a43a; --dusuk: #6aa0e8; --iyi: #3fb950; --gri: #6b7785;
-  --mac: #8b5cf6;
+  --bg: #0b0e11; --s1: #11151a; --s2: #161b21; --s3: #1d232b; --line: #222a33; --line2: #2c3540;
+  --tx: #e7ecf1; --tx2: #a9b4c0; --mut: #7d8996;
+  --acc: #b8f23a; --acc-ink: #0b0e11;
+  --hi: #f0625a; --mid: #f2b33d; --lo: #6aa8ff; --ok: #4fd18b; --mac: #a98bff;
+  --r: 10px;
+  font-family: "Segoe UI Variable Text", "Segoe UI", Inter, system-ui, -apple-system, sans-serif;
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--zemin); color: var(--metin); font: 14px/1.45 "Segoe UI", system-ui, sans-serif; }
-header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--cizgi); flex-wrap: wrap; }
-header h1 { font-size: 17px; margin: 0; letter-spacing: .3px; }
-header h1 span { color: var(--vurgu); }
-.bilgi { color: var(--soluk); font-size: 13px; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--tx); font-size: 13.5px; line-height: 1.45; -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; }
+.num { font-variant-numeric: tabular-nums; }
+
+.uyg { display: grid; grid-template-columns: 228px 1fr; height: 100vh; }
+aside { background: var(--s1); border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 18px 12px; gap: 2px; overflow-y: auto; }
+.marka { display: flex; align-items: center; gap: 10px; padding: 2px 8px 16px; }
+.marka svg { width: 30px; height: 30px; flex: none; }
+.marka b { font-size: 15.5px; letter-spacing: -.1px; font-weight: 600; }
+.marka b span { color: var(--tx2); font-weight: 400; }
+.menu { display: flex; align-items: center; gap: 11px; padding: 8px 10px; border-radius: 7px; color: var(--tx2); cursor: pointer; border: 0; background: none; text-align: left; width: 100%; }
+.menu svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.6; flex: none; }
+.menu:hover { background: var(--s2); color: var(--tx); }
+.menu.secili { background: var(--s3); color: var(--tx); }
+.menu.secili svg { stroke: var(--acc); }
+.menu .rozet { margin-left: auto; background: var(--s3); color: var(--tx2); font-size: 11px; border-radius: 9px; padding: 0 7px; line-height: 18px; }
+.menu.secili .rozet { background: var(--acc); color: var(--acc-ink); }
+.grup { font-size: 11px; color: var(--mut); padding: 14px 10px 4px; text-transform: uppercase; letter-spacing: .6px; }
+.baglanti { margin-top: auto; background: var(--s2); border: 1px solid var(--line); border-radius: var(--r); padding: 11px 12px; font-size: 12px; }
+.baglanti .ust { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 12.5px; }
+.nokta { width: 8px; height: 8px; border-radius: 50%; background: var(--mut); flex: none; }
+.nokta.Canli { background: var(--ok); animation: nabiz 2s infinite; }
+.nokta.OyunYok, .nokta.ApiYok { background: var(--hi); }
+@keyframes nabiz { 0% { box-shadow: 0 0 0 0 rgba(79,209,139,.45); } 70% { box-shadow: 0 0 0 7px rgba(79,209,139,0); } 100% { box-shadow: 0 0 0 0 rgba(79,209,139,0); } }
+.baglanti .alt { color: var(--mut); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+main { overflow-y: auto; display: flex; flex-direction: column; }
+.ust-cubuk { position: sticky; top: 0; z-index: 3; background: rgba(11,14,17,.94); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); padding: 14px 28px; display: flex; align-items: center; gap: 12px; }
+.ust-cubuk h1 { font-size: 18px; font-weight: 600; margin: 0 6px 0 0; letter-spacing: -.2px; }
+.cip { display: inline-flex; align-items: center; gap: 6px; background: var(--s2); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; color: var(--tx2); font-size: 12px; white-space: nowrap; }
 .bosluk { flex: 1; }
-button { background: var(--panel2); color: var(--metin); border: 1px solid var(--cizgi); border-radius: 6px; padding: 7px 13px; font: inherit; cursor: pointer; }
-button:hover:not(:disabled) { border-color: var(--vurgu); }
-button.ana { background: var(--vurgu2); border-color: var(--vurgu); }
-button.tehlike { border-color: var(--yuksek); }
-button.buyuk { font-size: 15px; font-weight: 600; padding: 9px 18px; }
-.tavsiye { border-color: var(--yuksek); background: #3a1717; }
-.perde { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: flex-start; justify-content: center; padding: 30px 12px; overflow-y: auto; z-index: 10; }
-.pencere { background: var(--panel); border: 1px solid var(--cizgi); border-radius: 10px; width: min(860px, 100%); padding: 16px 20px; }
-.pbas { display: flex; justify-content: space-between; align-items: center; }
-.pbas h2 { margin: 0; }
-.adim { border-top: 1px solid var(--cizgi); padding: 12px 0; }
-.satir { display: grid; grid-template-columns: 22px 190px 1fr 56px auto auto; gap: 10px; align-items: center; padding: 5px 0; }
-.adim > .satir:not(:has(input)) { grid-template-columns: 190px 1fr 40px; }
-.satir .ad { font-weight: 600; }
-.cubukk { height: 8px; background: var(--panel2); border-radius: 4px; overflow: hidden; }
-.cubukk i { display: block; height: 100%; background: var(--vurgu); }
-.cubukk i.Yuksek { background: var(--yuksek); } .cubukk i.Orta { background: var(--orta); } .cubukk i.Dusuk { background: var(--dusuk); }
-.deger { text-align: right; font-variant-numeric: tabular-nums; }
-.onizleme { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 8px 0 10px; }
-.onizleme > div { background: var(--panel2); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; }
-.buyuksayi { font-size: 24px; font-weight: 700; color: var(--vurgu); }
-.pson { display: flex; gap: 10px; align-items: center; border-top: 1px solid var(--cizgi); padding-top: 12px; flex-wrap: wrap; }
-@media (max-width: 700px) { .satir { grid-template-columns: 22px 1fr 50px; } .satir .cubukk, .satir .etiket { display: none; } .onizleme { grid-template-columns: 1fr 1fr; } }
-button:disabled { opacity: .45; cursor: default; }
-nav { display: flex; gap: 2px; padding: 0 20px; background: var(--panel); border-bottom: 1px solid var(--cizgi); overflow-x: auto; }
-nav button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 10px 14px; color: var(--soluk); white-space: nowrap; }
-nav button.secili { color: var(--metin); border-bottom-color: var(--vurgu); }
-nav .sayac { background: var(--vurgu2); color: #fff; border-radius: 9px; padding: 0 6px; font-size: 11px; margin-left: 4px; }
-main { padding: 18px 20px 60px; max-width: 1400px; margin: 0 auto; }
-.serit { padding: 9px 13px; border-radius: 6px; margin-bottom: 10px; border: 1px solid var(--cizgi); background: var(--panel); }
-.serit.uyari { border-color: var(--orta); }
-.serit.hata { border-color: var(--yuksek); }
-.serit.iyi { border-color: var(--iyi); }
-.izgara { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; }
-.kart { background: var(--panel); border: 1px solid var(--cizgi); border-radius: 8px; padding: 13px 15px; }
-.kart h3 { margin: 0 0 6px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
-.etiket { font-size: 11px; padding: 1px 8px; border-radius: 10px; border: 1px solid currentColor; white-space: nowrap; }
-.Yuksek { color: var(--yuksek); } .Orta { color: var(--orta); } .Dusuk { color: var(--dusuk); } .Yok { color: var(--iyi); } .Belirsiz { color: var(--gri); }
-.kart dl { margin: 6px 0 0; display: grid; grid-template-columns: 98px 1fr; gap: 3px 8px; font-size: 13px; }
-.kart dt { color: var(--soluk); }
-.kart dd { margin: 0; }
-.cubuk { height: 6px; background: var(--panel2); border-radius: 3px; overflow: hidden; margin: 6px 0; }
-.cubuk i { display: block; height: 100%; background: var(--vurgu); }
-.kucuk { font-size: 12px; color: var(--soluk); }
-ul.sinir { margin: 4px 0 0; padding-left: 18px; color: var(--soluk); font-size: 12px; }
+.icerik { padding: 22px 28px 48px; max-width: 1360px; width: 100%; }
+
+.dg { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 34px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--line2); background: var(--s2); cursor: pointer; white-space: nowrap; }
+.dg:hover:not(:disabled) { border-color: #3a4552; background: var(--s3); }
+.dg:disabled { opacity: .45; cursor: default; }
+.dg.ana { background: var(--acc); border-color: var(--acc); color: var(--acc-ink); font-weight: 600; }
+.dg.ana:hover:not(:disabled) { background: #c7f75e; border-color: #c7f75e; }
+.dg.tehlike { color: var(--hi); border-color: rgba(240,98,90,.45); background: transparent; }
+.dg.kucuk { height: 28px; padding: 0 10px; font-size: 12.5px; }
+.dg svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+.kutu { background: var(--s1); border: 1px solid var(--line); border-radius: var(--r); }
+.kutu > .bas { display: flex; align-items: center; gap: 10px; padding: 13px 16px; border-bottom: 1px solid var(--line); }
+.kutu > .bas h3 { margin: 0; font-size: 13.5px; font-weight: 600; }
+.kutu > .bas .ac { color: var(--mut); font-size: 12px; }
+.kutu > .gov { padding: 14px 16px; }
+.izgara { display: grid; gap: 16px; }
+.i2 { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
+.i3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.i4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 1100px) { .i2 { grid-template-columns: 1fr; } .i4 { grid-template-columns: repeat(2, 1fr); } }
+.soluk { color: var(--mut); }
+.ikinci { color: var(--tx2); }
+.ince { font-size: 12px; }
+.not { border-left: 2px solid var(--line2); padding: 2px 0 2px 12px; color: var(--tx2); margin: 6px 0; font-size: 12.5px; }
+.not.uyari { border-color: var(--mid); } .not.hata { border-color: var(--hi); } .not.iyi { border-color: var(--ok); }
+.serit { display: flex; gap: 12px; align-items: flex-start; padding: 11px 14px; border-radius: 8px; background: var(--s1); border: 1px solid var(--line); margin-bottom: 12px; font-size: 13px; }
+.serit .ik { width: 3px; align-self: stretch; border-radius: 2px; background: var(--line2); flex: none; }
+.serit.uyari .ik { background: var(--mid); } .serit.hata .ik { background: var(--hi); } .serit.iyi .ik { background: var(--ok); }
+.serit b { font-weight: 600; }
+.etk { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 5px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.etk.Yuksek { background: rgba(240,98,90,.14); color: #ff8a83; }
+.etk.Orta { background: rgba(242,179,61,.14); color: #f6c665; }
+.etk.Dusuk { background: rgba(106,168,255,.14); color: #8fbcff; }
+.etk.Yok { background: rgba(79,209,139,.12); color: #6fdca1; }
+.etk.Belirsiz { background: var(--s3); color: var(--tx2); }
 table { border-collapse: collapse; width: 100%; }
-th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--cizgi); vertical-align: top; }
-th { color: var(--soluk); font-weight: 600; font-size: 12px; }
-.takvim { display: grid; grid-template-columns: repeat(7, minmax(150px, 1fr)); gap: 8px; overflow-x: auto; }
-.gun { background: var(--panel); border: 1px solid var(--cizgi); border-radius: 8px; padding: 8px; min-width: 150px; }
-.gun.macgunu { border-color: var(--mac); }
-.gun h4 { margin: 0; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
-.gun .baglam { font-size: 11px; color: var(--soluk); min-height: 16px; margin-bottom: 6px; }
-.hucre { border-radius: 6px; padding: 6px 7px; margin-bottom: 5px; background: var(--panel2); font-size: 12px; border-left: 3px solid var(--gri); cursor: default; }
-.hucre.Degisiyor { border-left-color: var(--vurgu); }
-.hucre.Mac { border-left-color: var(--mac); }
-.hucre.Kilitli, .hucre.Duzenlenemez { opacity: .7; }
-.hucre .eski { text-decoration: line-through; color: var(--soluk); }
-.hucre .yeni { color: var(--metin); font-weight: 600; }
-.hucre .gerekce { color: var(--soluk); margin-top: 3px; display: none; }
-.hucre.acik .gerekce { display: block; }
-.hucre label { display: flex; gap: 6px; align-items: flex-start; cursor: pointer; }
-.yuk { font-size: 10px; color: var(--soluk); }
-.oyuncular { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px; }
-.secimler { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
-.secimler button.secili { border-color: var(--vurgu); background: var(--vurgu2); }
-.ok { color: var(--vurgu); }
-.durum-Dogrulandi, .durum-ZatenUygulanmis { color: var(--iyi); }
-.durum-Basarisiz, .durum-Belirsiz { color: var(--yuksek); }
-.durum-Cakisma, .durum-Atlandi { color: var(--orta); }
-select, input[type=number] { background: var(--panel2); color: var(--metin); border: 1px solid var(--cizgi); border-radius: 5px; padding: 4px 6px; font: inherit; }
-.ikili { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-@media (max-width: 900px) { .ikili { grid-template-columns: 1fr; } .takvim { grid-template-columns: repeat(7, 160px); } }
-.mesgul { position: fixed; right: 18px; bottom: 18px; background: var(--vurgu2); padding: 8px 14px; border-radius: 6px; display: none; }
-.bos { color: var(--soluk); padding: 30px; text-align: center; }
-h2 { font-size: 15px; margin: 18px 0 10px; }
+th { text-align: left; font-weight: 500; color: var(--mut); font-size: 12px; padding: 9px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+tbody tr:hover td { background: rgba(255,255,255,.015); }
+.bos { padding: 60px 20px; text-align: center; color: var(--tx2); }
+.bos h2 { color: var(--tx); font-size: 17px; font-weight: 600; margin: 14px 0 6px; }
+input[type=checkbox] { accent-color: var(--acc); width: 15px; height: 15px; vertical-align: -3px; }
+select, input[type=number] { background: var(--s2); color: var(--tx); border: 1px solid var(--line2); border-radius: 7px; height: 30px; padding: 0 8px; font: inherit; }
+.ok { color: var(--acc); }
+.ayrac { height: 1px; background: var(--line); margin: 14px 0; }
+
+.alan { display: grid; grid-template-columns: 34px minmax(0,1fr) auto; gap: 12px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+.alan:last-child { border-bottom: 0; }
+.alan.sec { background: rgba(184,242,58,.035); }
+.halka { width: 34px; height: 34px; }
+.alan .ad { font-weight: 600; }
+.alan .alt { color: var(--mut); font-size: 12px; margin-top: 1px; }
+.alan .sag { display: flex; align-items: center; gap: 10px; }
+.deger { font-size: 15px; font-weight: 600; min-width: 46px; text-align: right; }
+.parca { display: flex; gap: 14px; font-size: 11.5px; color: var(--mut); margin-top: 3px; flex-wrap: wrap; }
+.parca i { display: inline-block; width: 7px; height: 7px; border-radius: 2px; margin-right: 5px; }
+.metrik { padding: 14px 16px; }
+.metrik .et { color: var(--mut); font-size: 12px; }
+.metrik .bd { font-size: 26px; font-weight: 600; letter-spacing: -.5px; margin-top: 2px; }
+.metrik .alt { color: var(--tx2); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.adim-no { width: 22px; height: 22px; border-radius: 6px; background: var(--s3); color: var(--tx2); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; flex: none; }
+.segment { display: inline-flex; background: var(--s2); border: 1px solid var(--line2); border-radius: 9px; padding: 3px; gap: 3px; }
+.segment button { border: 0; background: none; border-radius: 6px; padding: 7px 16px; cursor: pointer; color: var(--tx2); }
+.segment button.sec { background: var(--s3); color: var(--tx); box-shadow: inset 0 0 0 1px var(--line2); }
+.secenekler { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.secenek { border: 1px solid var(--line2); border-radius: 9px; padding: 12px 13px; cursor: pointer; background: var(--s2); text-align: left; }
+.secenek:hover { border-color: #3a4552; }
+.secenek.sec { border-color: var(--acc); box-shadow: inset 0 0 0 1px var(--acc); background: rgba(184,242,58,.04); }
+.secenek b { display: block; font-size: 13.5px; }
+.secenek .slot { display: flex; gap: 4px; margin: 9px 0 7px; }
+.secenek .slot i { height: 6px; flex: 1; border-radius: 3px; background: var(--s3); }
+.secenek .slot i.d { background: var(--acc); }
+.secenek span { color: var(--mut); font-size: 12px; }
+.cubuk { height: 6px; border-radius: 3px; background: var(--s3); overflow: hidden; }
+.cubuk i { display: block; height: 100%; background: var(--acc); border-radius: 3px; }
+.satir { display: grid; grid-template-columns: 170px minmax(0,1fr) 34px; gap: 12px; align-items: center; padding: 5px 0; font-size: 12.5px; }
+.buyuk-sayi { font-size: 22px; font-weight: 600; }
+
+.takvim { display: grid; grid-template-columns: repeat(7, minmax(132px, 1fr)); gap: 8px; overflow-x: auto; }
+.gun { background: var(--s1); border: 1px solid var(--line); border-radius: var(--r); padding: 10px; min-width: 0; }
+.gun.mac { border-color: rgba(169,139,255,.45); }
+.gun .gb { display: flex; justify-content: space-between; align-items: baseline; }
+.gun .gb b { font-size: 12.5px; }
+.gun .gb .kilit { border: 0; background: none; cursor: pointer; color: var(--mut); padding: 0; }
+.gun .gb .kilit svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+.gun .gb .kilit.acik { color: var(--acc); }
+.gun .bg { color: var(--mut); font-size: 11.5px; min-height: 30px; margin: 2px 0 6px; }
+.gun .bg .rakip { color: var(--mac); font-weight: 600; }
+.hucre { position: relative; border-radius: 7px; padding: 7px 8px 7px 10px; margin-top: 5px; background: var(--s2); font-size: 12px; cursor: pointer; overflow: hidden; }
+.hucre::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--line2); }
+.hucre.Taktik::before { background: var(--acc); }
+.hucre.Mac::before, .hucre.MacHazirligi::before { background: var(--mac); }
+.hucre.Toparlanma::before, .hucre.Dinlenme::before { background: #4b5563; }
+.hucre.Fiziksel::before { background: var(--mid); }
+.hucre.Teknik::before, .hucre.DuranTop::before { background: var(--lo); }
+.hucre.Sosyal::before { background: var(--ok); }
+.hucre .ad { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hucre .eski { color: var(--mut); text-decoration: line-through; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hucre .yeni-isaret { position: absolute; right: 7px; top: 7px; width: 6px; height: 6px; border-radius: 50%; background: var(--acc); }
+.hucre.soluk-h { opacity: .5; }
+.hucre.secili-h { box-shadow: inset 0 0 0 1px var(--acc); }
+.lejant { display: flex; gap: 14px; flex-wrap: wrap; color: var(--mut); font-size: 12px; }
+.lejant i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+
+.kondisyon { display: flex; align-items: center; gap: 8px; min-width: 110px; }
+.kondisyon .cubuk { width: 60px; }
+.ok-ok { color: var(--mut); margin: 0 6px; }
+
+.katman { position: fixed; inset: 0; background: rgba(5,7,9,.62); display: flex; align-items: center; justify-content: center; z-index: 20; padding: 20px; }
+.diyalog { background: var(--s1); border: 1px solid var(--line2); border-radius: 12px; width: min(480px, 100%); padding: 20px 22px; box-shadow: 0 24px 60px rgba(0,0,0,.5); }
+.diyalog h3 { margin: 0 0 8px; font-size: 16px; }
+.diyalog p { color: var(--tx2); margin: 0 0 6px; }
+.diyalog .alt { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.yukleme { position: fixed; right: 20px; bottom: 20px; background: var(--s2); border: 1px solid var(--line2); border-radius: 9px; padding: 10px 14px; display: none; align-items: center; gap: 10px; z-index: 30; }
+.yukleme.var { display: flex; }
+.donen { width: 14px; height: 14px; border: 2px solid var(--line2); border-top-color: var(--acc); border-radius: 50%; animation: don .8s linear infinite; }
+@keyframes don { to { transform: rotate(360deg); } }
+.ipucu { position: fixed; z-index: 25; max-width: 320px; background: var(--s3); border: 1px solid var(--line2); border-radius: 8px; padding: 10px 12px; font-size: 12px; color: var(--tx2); pointer-events: none; box-shadow: 0 10px 30px rgba(0,0,0,.4); }
+.ipucu b { color: var(--tx); display: block; margin-bottom: 3px; }
 </style>
 </head>
 <body>
-<header>
-  <h1>FM27 <span>Antrenman Asistanı</span></h1>
-  <div class="bilgi" id="baslikBilgi">Bağlanılmadı</div>
-  <div class="bosluk"></div>
-  <button id="analizBtn" onclick="islem('analiz')">Oyundan oku ve analiz et</button>
-  <button class="ana buyuk" id="tekTikBtn" onclick="tekTik()">⚡ Eksikleri gider</button>
-</header>
-<nav id="sekmeler"></nav>
-<main id="icerik"><div class="bos">Yükleniyor…</div></main>
-<div class="mesgul" id="mesgul">İşlem sürüyor…</div>
+<div class="uyg">
+  <aside>
+    <div class="marka">
+      <svg viewBox="0 0 64 64"><rect x=".5" y=".5" width="63" height="63" rx="15" fill="#0E1216" stroke="#232a33"/><rect x="13" y="16" width="38" height="8" rx="4" fill="#B8F23A"/><rect x="13" y="28" width="26" height="8" rx="4" fill="#B8F23A" fill-opacity=".62"/><rect x="13" y="40" width="14" height="8" rx="4" fill="#E7ECF1" fill-opacity=".38"/><rect x="43" y="40" width="8" height="8" rx="2" fill="#B8F23A"/></svg>
+      <b>training<span>Agents</span></b>
+    </div>
+    <div id="menu"></div>
+    <div class="baglanti" id="baglanti"></div>
+  </aside>
+  <main>
+    <div class="ust-cubuk" id="ust"></div>
+    <div class="icerik" id="icerik"></div>
+  </main>
+</div>
+<div id="katman"></div>
+<div class="yukleme" id="yukleme"><div class="donen"></div><span id="yuklemeMetni">Çalışıyor</span></div>
+<div class="ipucu" id="ipucu" style="display:none"></div>
 
 <script>
+"use strict";
 const BASLIK = { "Content-Type": "application/json", "X-Antrenman-Asistani": "1" };
-let V = null;
-let sekme = "genel";
+let V = null, sayfa = "genel", secilenHucre = null, yalnizDegisen = false, oyuncularDahil = false;
 const secim = new Set();
-const acikHucreler = new Set();
-
-const SEKMELER = [
-  ["genel", "Genel bakış"], ["takvim", "Takım programı"], ["oyuncular", "Oyuncular"],
-  ["uygula", "Önizle ve uygula"], ["izleme", "İzleme"], ["baglanti", "Bağlantı"], ["ayarlar", "Ayarlar"]
-];
-
 const e = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+const IKON = {
+  genel: '<path d="M3 13h4v8H3zM10 8h4v13h-4zM17 3h4v18h-4z"/>',
+  gider: '<path d="M4 12h10M10 6l6 6-6 6M20 4v16"/>',
+  program: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/>',
+  oyuncular: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20c.6-3.4 3-5.2 6-5.2s5.4 1.8 6 5.2"/><path d="M16 4.6a3 3 0 0 1 0 6M18.5 14.6c1.4.8 2.2 2.6 2.5 5.4"/>',
+  islemler: '<path d="M5 6h14M5 12h14M5 18h9"/><path d="M17 16l2 2 3-4"/>',
+  izleme: '<path d="M3 17l5-6 4 3 5-7 4 4"/><path d="M3 21h18"/>',
+  baglanti: '<path d="M9 15l6-6"/><path d="M11 6l1-1a4.2 4.2 0 0 1 6 6l-1 1M13 18l-1 1a4.2 4.2 0 0 1-6-6l1-1"/>',
+  ayarlar: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
+  yenile: '<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>',
+  kilit: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+  kilitAcik: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/>'
+};
+const ikon = ad => `<svg viewBox="0 0 24 24">${IKON[ad]}</svg>`;
+
+const SAYFALAR = [
+  ["genel", "Taktiksel verimlilik", "Analiz"], ["gider", "Eksikleri gider", "Analiz"],
+  ["program", "Takım programı", "Plan"], ["oyuncular", "Oyuncular", "Plan"], ["islemler", "İşlemler", "Plan"],
+  ["izleme", "İzleme", "Sistem"], ["baglanti", "Bağlantı", "Sistem"], ["ayarlar", "Ayarlar", "Sistem"]
+];
+
+// ---------------- veri ----------------
+
 async function yukle() {
-  const r = await fetch("api/durum", { cache: "no-store" });
-  V = await r.json();
-  ciz();
+  try {
+    const r = await fetch("api/durum", { cache: "no-store" });
+    V = await r.json();
+    const odak = document.activeElement?.tagName;
+    if (!document.getElementById("katman").innerHTML && odak !== "INPUT" && odak !== "SELECT") ciz();
+  } catch (_) { }
 }
 
-async function islem(ad, govde = {}) {
-  if (ad === "uygula") {
-    const n = secim.size;
-    if (!n) return alert("Önce uygulanacak değişiklikleri seçin.");
-    if (!confirm(`${n} değişiklik oyuna gönderilecek. Her biri oyunun ön kontrolünden geçecek, gönderildikten sonra oyundan geri okunacak.\n\nDevam edilsin mi?`)) return;
-    govde = { anahtarlar: [...secim] };
-  }
-  if (ad === "yazma-testi" && !confirm("Yazma testi bir oyuncunun yoğunluğunu ve ek odağını, bir seansı değiştirip hemen eski haline getirir; her adım oyundan geri okunur.\n\nKaydınızın yedeği olduğundan emin olun. Devam edilsin mi?")) return;
-  if (ad === "geri-al" && !confirm("Bu işlemde doğrulanan ve oyunda hâlâ aynı duran değişiklikler eski değerine döndürülecek. Devam edilsin mi?")) return;
-  document.getElementById("mesgul").style.display = "block";
-  document.querySelectorAll("button").forEach(b => b.disabled = true);
+async function istek(ad, govde = {}, metin = "Çalışıyor") {
+  yukleniyor(true, metin);
   try {
     const r = await fetch("api/" + ad, { method: "POST", headers: BASLIK, body: JSON.stringify(govde) });
     const j = await r.json();
-    if (j.hata) alert(j.hata); else V = j;
-    if (ad === "uygula") { secim.clear(); sekme = "uygula"; }
-    if (ad === "analiz") secim.clear();
-  } catch (err) { alert("Panel ile bağlantı kurulamadı: " + err); }
-  document.getElementById("mesgul").style.display = "none";
+    if (j.hata) bildir("İşlem tamamlanamadı", j.hata); else V = j;
+  } catch (_) { bildir("Bağlantı yok", "Uygulamanın yerel sunucusuna ulaşılamadı."); }
+  yukleniyor(false);
   ciz();
 }
 
-let modalAcik = false, oyuncularDahil = false;
-
-async function tekTik() {
-  if (!V?.kartlar) await islem("analiz");
-  modalAcik = true; ciz();
+function yukleniyor(v, metin) {
+  document.getElementById("yukleme").classList.toggle("var", v);
+  if (metin) document.getElementById("yuklemeMetni").textContent = metin;
 }
 
-async function secenek(degisim) {
-  const s = { ...V.secenekler, ...degisim };
-  document.getElementById("mesgul").style.display = "block";
-  const r = await fetch("api/secenekler", { method: "POST", headers: BASLIK, body: JSON.stringify(s) });
-  V = await r.json();
-  document.getElementById("mesgul").style.display = "none";
-  ciz();
+const ayar = (islem, veri) => istek("ayar", { islem, ...veri }, "Plan yeniden hesaplanıyor");
+
+function onay(baslik, metin, dugme = "Devam et", tehlike = false) {
+  return new Promise(coz => {
+    const k = document.getElementById("katman");
+    k.innerHTML = `<div class="katman"><div class="diyalog"><h3>${e(baslik)}</h3>${metin}
+      <div class="alt"><button class="dg" id="vazgec">Vazgeç</button><button class="dg ${tehlike ? "tehlike" : "ana"}" id="tamam">${e(dugme)}</button></div></div></div>`;
+    const kapat = v => { k.innerHTML = ""; coz(v); };
+    k.querySelector("#vazgec").onclick = () => kapat(false);
+    k.querySelector("#tamam").onclick = () => kapat(true);
+    k.querySelector(".katman").onclick = ev => { if (ev.target.classList.contains("katman")) kapat(false); };
+  });
 }
 
+function bildir(baslik, metin) {
+  const k = document.getElementById("katman");
+  k.innerHTML = `<div class="katman"><div class="diyalog"><h3>${e(baslik)}</h3><p>${e(metin)}</p><div class="alt"><button class="dg ana" onclick="document.getElementById('katman').innerHTML='';ciz()">Tamam</button></div></div></div>`;
+}
+
+function git(s) { sayfa = s; secilenHucre = null; ciz(); document.querySelector("main").scrollTop = 0; }
+
+// ---------------- çerçeve ----------------
+
+function ciz() {
+  if (!V) return;
+  const sayac = { gider: V.onizleme?.degisiklik, islemler: secim.size || null };
+  let grup = "";
+  document.getElementById("menu").innerHTML = SAYFALAR.map(([k, ad, g]) => {
+    const gb = g !== grup ? `<div class="grup">${g}</div>` : ""; grup = g;
+    return gb + `<button class="menu ${k === sayfa ? "secili" : ""}" onclick="git('${k}')">${ikon(k)}<span>${ad}</span>${sayac[k] ? `<span class="rozet num">${sayac[k]}</span>` : ""}</button>`;
+  }).join("");
+
+  const b = V.baglanti || {};
+  const bm = { Canli: "Oyuna bağlı", OyunYok: "Oyun kapalı", ApiYok: "MCPFM API kapalı", Bekleniyor: "Bağlanıyor" }[b.durum] || "Bağlanıyor";
+  document.getElementById("baglanti").innerHTML = `<div class="ust"><span class="nokta ${b.durum}"></span>${bm}</div>
+    <div class="alt">${b.durum === "Canli" ? `Son okuma ${b.saniyeOnce ?? 0} sn önce` : e(b.hata || "Oyun bekleniyor")}</div>
+    ${V.surum ? `<div class="alt" title="${e(V.surum)}">${e(V.surum.split("|")[0])}</div>` : ""}`;
+
+  const baslik = SAYFALAR.find(x => x[0] === sayfa)[1];
+  document.getElementById("ust").innerHTML = `<h1>${baslik}</h1>
+    ${V.takim ? `<span class="cip">${e(V.takim)}</span><span class="cip">${e(V.taktik)}</span>` : ""}
+    <div class="bosluk"></div>
+    <button class="dg" ${V.mesgul ? "disabled" : ""} onclick="istek('analiz',{},'Oyundan okunuyor')" title="Oyunu şimdi yeniden oku">${ikon("yenile")}Yenile</button>
+    ${sayfa !== "gider" ? `<button class="dg ana" ${V.mesgul ? "disabled" : ""} onclick="git('gider')">Eksikleri gider</button>` : ""}`;
+
+  const f = { genel, gider, program, oyuncular, islemler, izleme, baglanti, ayarlar }[sayfa];
+  document.getElementById("icerik").innerHTML = seritler() + f();
+}
+
+function seritler() {
+  let h = "";
+  if (V.planUyarisi) h += `<div class="serit uyari"><span class="ik"></span><div>${e(V.planUyarisi)}</div></div>`;
+  for (const u of V.uyarilar || []) h += `<div class="serit uyari"><span class="ik"></span><div>${e(u)}</div></div>`;
+  if (V.sonIslem && (sayfa === "islemler" || sayfa === "gider")) {
+    const s = V.sonIslem.durumKod === "Dogrulandi" ? "iyi" : V.sonIslem.durumKod === "KismenUygulandi" ? "uyari" : "hata";
+    h += `<div class="serit ${s}"><span class="ik"></span><div><b>${e(V.sonIslem.durum)}.</b> ${e(V.sonIslem.ozet)}</div></div>`;
+  }
+  return h;
+}
+
+function bosEkran(baslik, metin) {
+  const b = V.baglanti?.durum;
+  return `<div class="kutu"><div class="bos">
+    <svg viewBox="0 0 64 64" width="44" height="44"><rect width="64" height="64" rx="15" fill="#161b21"/><rect x="13" y="16" width="38" height="8" rx="4" fill="#2c3540"/><rect x="13" y="28" width="26" height="8" rx="4" fill="#2c3540"/><rect x="13" y="40" width="14" height="8" rx="4" fill="#2c3540"/><rect x="43" y="40" width="8" height="8" rx="2" fill="#b8f23a"/></svg>
+    <h2>${baslik}</h2><div>${metin}</div>
+    ${b === "Canli" ? `<div style="margin-top:16px"><button class="dg ana" onclick="istek('analiz',{},'Oyundan okunuyor')">Oyunu oku</button></div>` :
+      `<div style="margin-top:16px" class="soluk ince">Football Manager 27 açık ve MCPFM API'si çalışıyorken bağlantı kendiliğinden kurulur.</div>`}
+  </div></div>`;
+}
+
+function halka(deger, kod) {
+  const r = 14, c = 2 * Math.PI * r, d = Math.max(0, Math.min(100, deger ?? 0));
+  const renk = { Yuksek: "#f0625a", Orta: "#f2b33d", Dusuk: "#6aa8ff", Yok: "#b8f23a" }[kod] || "#5b6672";
+  return `<svg class="halka" viewBox="0 0 34 34"><circle cx="17" cy="17" r="${r}" fill="none" stroke="#222a33" stroke-width="4"/>
+    <circle cx="17" cy="17" r="${r}" fill="none" stroke="${renk}" stroke-width="4" stroke-linecap="round" stroke-dasharray="${(c * d / 100).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 17 17)"/></svg>`;
+}
+
+function ipucuGoster(ev, i) {
+  const k = V.kartlar[i], t = document.getElementById("ipucu");
+  t.innerHTML = `<b>${e(k.alan)}</b>${e(k.gozlem)}<br><br>${e(k.oneri)}`;
+  t.style.display = "block";
+  t.style.left = Math.min(ev.clientX + 16, innerWidth - 340) + "px";
+  t.style.top = Math.min(ev.clientY + 14, innerHeight - t.offsetHeight - 10) + "px";
+}
+function ipucuGizle() { document.getElementById("ipucu").style.display = "none"; }
+
+// ---------------- sayfalar ----------------
+
+function genel() {
+  if (!V.kartlar) return bosEkran("Henüz analiz yok", "Taktiksel verimlilik, oyundan okununca burada görünür.");
+  const eksik = V.kartlar.filter(k => ["Yuksek", "Orta"].includes(k.oncelikKod));
+  const digerEksi = (V.verimlilik || []).filter(v => !v.olumlu);
+  const o = V.onizleme || {};
+  return `
+  <div class="izgara i4" style="margin-bottom:16px">
+    <div class="kutu metrik"><div class="et">Genel taktik anlayışı</div><div class="bd num">${e(V.genelAnlayis ?? "—")}</div><div class="alt">0–100, oyunun ölçümü</div></div>
+    <div class="kutu metrik"><div class="et">Öncelikli eksik</div><div class="bd num">${eksik.length}</div><div class="alt">${eksik.map(k => e(k.alan)).join(", ") || "yok"}</div></div>
+    <div class="kutu metrik"><div class="et">Planlanan taktik seansı</div><div class="bd num">${o.toplamTaktik ?? 0}</div><div class="alt">haftada yaklaşık ${o.haftalikTaktik ?? 0}</div></div>
+    <div class="kutu metrik"><div class="et">Bekleyen değişiklik</div><div class="bd num">${o.degisiklik ?? 0}</div><div class="alt">${V.yazmaIzni.acik ? "oyuna yazmaya hazır" : "yazma doğrulanmadı"}</div></div>
+  </div>
+  <div class="izgara i2">
+    <div class="kutu">
+      <div class="bas"><h3>Taktik anlayışı</h3><span class="ac">${e(V.taktik)}</span></div>
+      ${V.kartlar.map((k, i) => `<div class="alan ${k.oyunIstiyor ? "sec" : ""}" onmousemove="ipucuGoster(event, ${i})" onmouseleave="ipucuGizle()">
+        ${halka(k.deger, k.oncelikKod)}
+        <div><div class="ad">${e(k.alan)}</div>
+          <div class="parca"><span><i style="background:var(--mac)"></i>maç ${k.mac ?? "—"}</span><span><i style="background:var(--acc)"></i>antrenman ${k.antrenman ?? "—"}</span>${k.seanslar.length ? `<span>seans: ${e(k.seanslar[0])}</span>` : `<span style="color:var(--mid)">seans eşleşmedi</span>`}</div></div>
+        <div class="sag"><span class="etk ${k.oncelikKod}">${e(k.oncelik)}</span><span class="deger num">${e(k.anlayis)}</span></div>
+      </div>`).join("")}
+    </div>
+    <div class="izgara" style="align-content:start">
+      ${V.oyunTavsiyesi ? `<div class="kutu"><div class="bas"><h3>Oyunun tavsiyesi</h3></div><div class="gov">
+        <div class="not ${V.oyunTavsiyesiOlumlu ? "iyi" : "hata"}" style="font-size:13.5px;color:var(--tx)">${e(V.oyunTavsiyesi)}</div>
+        <div class="soluk ince" style="margin-top:8px">${V.oyunTavsiyesiOlumlu ? "Ek önlem gerekmiyor." : "Adı geçen alan en yüksek önceliğe alındı; programda haftada en fazla 3 kez yer alır."}</div></div></div>` : ""}
+      <div class="kutu"><div class="bas"><h3>Verimliliği düşüren diğer unsurlar</h3></div><div class="gov">
+        ${digerEksi.length ? digerEksi.map(v => `<div style="margin-bottom:10px"><b>${e(v.baslik)}</b>${v.puan ? ` <span class="num soluk">${e(v.puan)}</span>` : ""}
+          <div class="ikinci ince">${e(v.metin || "")}</div><div class="soluk ince">${v.antrenman ? "Antrenmanla düzelir." : e(v.ne)}</div></div>`).join("") : `<div class="soluk">Oyun başka bir olumsuz unsur göstermiyor.</div>`}
+      </div></div>
+      <div class="kutu"><div class="bas"><h3>Plan notları</h3></div><div class="gov">
+        ${[...V.analizNotlari, ...V.planNotlari].map(n => `<div class="not">${e(n)}</div>`).join("") || `<div class="soluk">Not yok.</div>`}
+      </div></div>
+    </div>
+  </div>`;
+}
+
+async function secenek(degisim) { await istek("secenekler", { ...V.secenekler, ...degisim }, "Önizleme hesaplanıyor"); }
 function alanDegistir(kod, hedefle) {
   const h = new Set(V.secenekler.haricAlanlar);
   hedefle ? h.delete(kod) : h.add(kod);
   secenek({ haricAlanlar: [...h] });
 }
 
-async function modalUygula() {
+async function eksikleriGider() {
   const o = V.onizleme;
-  if (!confirm(`${o.degisiklik} seans değişikliği${oyuncularDahil ? " ve oyuncu önerileri" : ""} oyuna yazılacak, her biri geri okunarak doğrulanacak.${V.yazmaIzni.acik ? "" : "\n\nBu sürümde yazma henüz doğrulanmadığı için önce kısa bir yazma testi yapılacak (değiştir → geri oku → eski haline getir)."}\n\nKayıt yedeğiniz var mı? Devam edilsin mi?`)) return;
-  modalAcik = false;
-  await islem("eksikleri-gider", { oyuncular: oyuncularDahil });
-  sekme = "uygula"; ciz();
+  const testNotu = V.yazmaIzni.acik ? "" : "<p>Bu oyun sürümünde yazma henüz doğrulanmadı. Önce kısa bir yazma testi yapılır: bir ayar değiştirilir, geri okunur ve eski haline getirilir.</p>";
+  const ok = await onay("Programı oyuna yaz",
+    `<p><b class="num">${o.degisiklik}</b> seans${oyuncularDahil ? " ve oyuncuların ek odak/yoğunluk önerileri" : ""} oyuna yazılacak. Her değişiklik oyundan geri okunarak doğrulanır.</p>${testNotu}<p class="soluk ince">Kayıt dosyanızın yedeği olduğundan emin olun.</p>`, "Oyuna yaz");
+  if (!ok) return;
+  await istek("eksikleri-gider", { oyuncular: oyuncularDahil }, "Program oyuna yazılıyor");
+  git("islemler");
 }
 
-function modal() {
-  if (!modalAcik || !V.kartlar) return "";
+function gider() {
+  if (!V.kartlar) return bosEkran("Önce oyunu okuyun", "Eksikler, taktiksel verimlilik okununca burada listelenir.");
   const sec = V.secenekler, o = V.onizleme || {};
   const haric = new Set(sec.haricAlanlar);
   const sorunlu = V.kartlar.filter(k => k.oncelikKod !== "Yok");
-  const iyi = V.kartlar.filter(k => k.oncelikKod === "Yok");
-  const digerEksi = (V.verimlilik || []).filter(v => !v.olumlu && !v.antrenman);
-  const sureler = [[7, "1 hafta"], [14, "2 hafta"], [28, "1 ay"]];
-  const yogunluklar = [["Az", "Az", "Günde 1 çalışma, 2 bölüm dinlenme. Yorgun kadro, yoğun fikstür."], ["Normal", "Normal", "Günde 2 çalışma + 1 dinlenme. Dengeli."], ["Yogun", "Yoğun", "Uygun günlerde 3 bölüm de çalışma. Anlayış en hızlı artar; yorgunluk ve sakatlık riski artar."]];
+  const yeterli = V.kartlar.filter(k => k.oncelikKod === "Yok");
   const maks = Math.max(1, ...Object.values(o.taktikSeans || {}));
-  return `<div class="perde" onclick="if(event.target===this){modalAcik=false;ciz()}"><div class="pencere">
-    <div class="pbas"><h2>⚡ Eksikleri gider</h2><button onclick="modalAcik=false;ciz()">×</button></div>
-    <div class="adim"><b>1. Taktiksel Verimlilik — eksi unsurlar</b> <span class="kucuk">${e(V.taktik)} · genel anlayış ${e(V.genelAnlayis)}/100${V.genelVerimlilik ? " · genel verimlilik " + e(V.genelVerimlilik) : ""}</span>
-      ${V.oyunTavsiyesi && !V.oyunTavsiyesiOlumlu ? `<div class="serit tavsiye"><b>Oyunun tavsiyesi:</b> ${e(V.oyunTavsiyesi)}</div>` : ""}
-      ${sorunlu.length ? sorunlu.map(k => `<label class="satir"><input type="checkbox" ${haric.has(k.kod) ? "" : "checked"} onchange="alanDegistir('${k.kod}',this.checked)">
-        <span class="ad">${e(k.alan)}</span><span class="cubukk"><i style="width:${parseFloat(k.anlayis) || 0}%" class="${k.oncelikKod}"></i></span>
-        <span class="deger">${e(k.anlayis)}</span><span class="etiket ${k.oncelikKod}">${e(k.oncelik)}</span>
-        <span class="kucuk">${(o.taktikSeans || {})[k.kod] || 0} seans</span></label>`).join("") : `<div class="kucuk">Taktik anlayışında eksik yok.</div>`}
-      ${iyi.length ? `<div class="kucuk" style="margin-top:6px">Yeterli: ${iyi.map(k => `${e(k.alan)} ${e(k.anlayis)}`).join(" · ")}</div>` : ""}
-      ${digerEksi.length ? `<div class="kucuk" style="margin-top:8px"><b>Antrenmanla düzelmeyen eksiler:</b>${digerEksi.map(v => `<div>• ${e(v.baslik)}${v.puan ? " (" + e(v.puan) + ")" : ""}: ${e(v.metin || "")} <i>— ${e(v.ne)}</i></div>`).join("")}</div>` : ""}
-    </div>
-    <div class="adim"><b>2. Süre</b><div class="secimler">${sureler.map(([g, ad]) => `<button class="${sec.sure === g ? "secili" : ""}" onclick="secenek({sure:${g}})">${ad}</button>`).join("")}</div>
-      ${o.sureNotu ? `<div class="kucuk" style="margin-top:6px">ℹ ${e(o.sureNotu)}</div>` : ""}</div>
-    <div class="adim"><b>3. Günlük yoğunluk (3 antrenman bölümü)</b><div class="secimler">${yogunluklar.map(([k, ad, ac]) => `<button class="${sec.yogunluk === k ? "secili" : ""}" title="${ac}" onclick="secenek({yogunluk:'${k}'})">${ad}</button>`).join("")}</div>
-      <div class="kucuk" style="margin-top:6px">${e(yogunluklar.find(y => y[0] === sec.yogunluk)?.[2])} Maç günü, maç öncesi hazırlık ve maç ertesi toparlanma her seçenekte korunur.</div></div>
-    <div class="adim"><b>4. Önizleme</b>
-      <div class="onizleme">
-        <div><span class="buyuksayi">${o.toplamTaktik ?? 0}</span><span class="kucuk">taktik seansı (haftada ~${o.haftalikTaktik ?? 0})</span></div>
-        <div><span class="buyuksayi">${o.calismaSeansi ?? 0}</span><span class="kucuk">toplam çalışma seansı</span></div>
-        <div><span class="buyuksayi">${o.dinlenme ?? 0}</span><span class="kucuk">dinlenme bölümü</span></div>
-        <div><span class="buyuksayi">${o.degisiklik ?? 0}</span><span class="kucuk">değişecek seans</span></div>
+  const yog = [["Az", "Az", 1, "Günde 1 çalışma. Yorgun kadro ya da sıkışık fikstür için."], ["Normal", "Normal", 2, "Günde 2 çalışma, 1 dinlenme. Dengeli ilerleme."], ["Yogun", "Yoğun", 3, "Uygun günlerde 3 bölüm de çalışma. En hızlı ilerleme, en yüksek yük."]];
+  return `<div class="izgara i2">
+    <div class="izgara" style="align-content:start">
+      <div class="kutu"><div class="bas"><span class="adim-no">1</span><h3>Hedeflenecek eksikler</h3><span class="ac">işaretli alanlar programa konur</span></div>
+        ${sorunlu.length ? sorunlu.map(k => `<label class="alan" style="cursor:pointer">
+          ${halka(k.deger, k.oncelikKod)}
+          <div><div class="ad">${e(k.alan)}</div><div class="alt">${k.oyunIstiyor ? "Oyun bu alan için daha fazla antrenman istiyor." : e(k.oneri)}</div></div>
+          <div class="sag"><span class="etk ${k.oncelikKod}">${e(k.oncelik)}</span><span class="deger num">${e(k.anlayis)}</span><input type="checkbox" ${haric.has(k.kod) ? "" : "checked"} onchange="alanDegistir('${k.kod}',this.checked)"></div>
+        </label>`).join("") : `<div class="gov soluk">Taktik anlayışında hedef altı alan yok.</div>`}
+        ${yeterli.length ? `<div class="gov soluk ince" style="border-top:1px solid var(--line)">Yeterli: ${yeterli.map(k => `${e(k.alan)} <span class="num">${e(k.anlayis)}</span>`).join(" · ")}</div>` : ""}
       </div>
-      ${Object.entries(o.taktikSeans || {}).sort((a, b) => b[1] - a[1]).map(([kod, n]) => `<div class="satir"><span class="ad">${e(V.alanlar.find(a => a.kod === kod)?.ad)}</span><span class="cubukk"><i style="width:${n / maks * 100}%"></i></span><span class="deger">${n}</span></div>`).join("")}
-      ${(o.haftalar || []).map(h => `<div class="kucuk">${h.no}. hafta tahmini yük ${h.yuk} / ${h.sinir}${h.yuk > h.sinir ? " <b class='Yuksek'>sınır üstü</b>" : ""}</div>`).join("")}
-      <div class="kucuk">Topluluk testi: haftada 8 taktik seansı anlayışı ~%50'den ~%80'e çıkardı, sakatlık riskini de artırdı.</div>
+      <div class="kutu"><div class="bas"><span class="adim-no">2</span><h3>Süre</h3></div><div class="gov">
+        <div class="segment">${[[7, "1 hafta"], [14, "2 hafta"], [28, "1 ay"]].map(([g, ad]) => `<button class="${sec.sure === g ? "sec" : ""}" onclick="secenek({sure:${g}})">${ad}</button>`).join("")}</div>
+        ${o.sureNotu ? `<div class="not" style="margin-top:12px">${e(o.sureNotu)}</div>` : ""}
+      </div></div>
+      <div class="kutu"><div class="bas"><span class="adim-no">3</span><h3>Günlük yoğunluk</h3><span class="ac">günün 3 antrenman bölümü</span></div><div class="gov">
+        <div class="secenekler">${yog.map(([k, ad, n, ac]) => `<button class="secenek ${sec.yogunluk === k ? "sec" : ""}" onclick="secenek({yogunluk:'${k}'})">
+          <b>${ad}</b><div class="slot">${[0, 1, 2].map(i => `<i class="${i < n ? "d" : ""}"></i>`).join("")}</div><span>${ac}</span></button>`).join("")}</div>
+        <div class="soluk ince" style="margin-top:10px">Maç günü, maç öncesi hazırlık ve maç ertesi toparlanma her seçenekte korunur.</div>
+      </div></div>
     </div>
-    <div class="pson">
-      <label class="kucuk"><input type="checkbox" ${oyuncularDahil ? "checked" : ""} onchange="oyuncularDahil=this.checked"> Oyuncuların ek odak/yoğunluk önerilerini de uygula</label>
-      <div class="bosluk"></div>
-      <button onclick="modalAcik=false;sekme='takvim';ciz()">Programı incele</button>
-      <button class="ana buyuk" ${o.degisiklik ? "" : "disabled"} onclick="modalUygula()">Uygula (${o.degisiklik ?? 0})</button>
-    </div></div></div>`;
+    <div class="izgara" style="align-content:start">
+      <div class="kutu"><div class="bas"><span class="adim-no">4</span><h3>Önizleme</h3><span class="ac">${sec.sure === 7 ? "1 hafta" : sec.sure === 14 ? "2 hafta" : "ilk 2 hafta"}</span></div><div class="gov">
+        <div class="izgara i3" style="gap:10px;margin-bottom:14px">
+          <div><div class="soluk ince">Taktik seansı</div><div class="num buyuk-sayi">${o.toplamTaktik ?? 0}</div><div class="soluk ince">haftada ~${o.haftalikTaktik ?? 0}</div></div>
+          <div><div class="soluk ince">Çalışma / dinlenme</div><div class="num buyuk-sayi">${o.calismaSeansi ?? 0}<span class="soluk" style="font-size:15px"> / ${o.dinlenme ?? 0}</span></div></div>
+          <div><div class="soluk ince">Değişecek seans</div><div class="num buyuk-sayi" style="color:var(--acc)">${o.degisiklik ?? 0}</div></div>
+        </div>
+        ${Object.entries(o.taktikSeans || {}).sort((a, b) => b[1] - a[1]).map(([kod, n]) => `<div class="satir"><span>${e(V.alanlar.find(a => a.kod === kod)?.ad)}</span><div class="cubuk"><i style="width:${n / maks * 100}%"></i></div><span class="num" style="text-align:right">${n}</span></div>`).join("") || `<div class="soluk">Taktik seansı planlanmadı.</div>`}
+        <div class="ayrac"></div>
+        ${(o.haftalar || []).map(h => `<div class="satir"><span>${h.no}. hafta tahmini yük</span><div class="cubuk"><i style="width:${Math.min(100, h.yuk / Math.max(1, h.sinir) * 100)}%;background:${h.yuk > h.sinir ? "var(--hi)" : h.yuk > h.sinir * .85 ? "var(--mid)" : "var(--acc)"}"></i></div><span class="num" style="text-align:right">${h.yuk}</span></div>`).join("")}
+        <div class="soluk ince" style="margin-top:12px">Topluluk testlerinde haftada 8 taktik seansı, anlayışı yaklaşık %50'den %80'e çıkardı; yorgunluk ve sakatlık riski de arttı.</div>
+      </div></div>
+      <div class="kutu"><div class="gov">
+        <label class="ince" style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" ${oyuncularDahil ? "checked" : ""} onchange="oyuncularDahil=this.checked"> Oyuncuların ek odak ve yoğunluk önerilerini de uygula</label>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button class="dg" onclick="git('program')">Programı incele</button>
+          <div class="bosluk"></div>
+          <button class="dg ana" ${o.degisiklik && !V.mesgul ? "" : "disabled"} onclick="eksikleriGider()">Oyuna yaz (${o.degisiklik ?? 0})</button>
+        </div>
+      </div></div>
+    </div>
+  </div>`;
 }
 
-const ayar = (islem, veri) => window.islem("ayar", { islem, ...veri });
+function hucreSec(anahtar) { secilenHucre = secilenHucre === anahtar ? null : anahtar; ciz(); }
+function degisiklikSec(anahtar, v) { v ? secim.add(anahtar) : secim.delete(anahtar); ciz(); }
 
-function ciz() {
-  if (!V) return;
-  const degisen = (V.degisiklikler || []).length;
-  document.getElementById("sekmeler").innerHTML = SEKMELER.map(([k, ad]) =>
-    `<button class="${k === sekme ? "secili" : ""}" onclick="sekme='${k}';ciz()">${ad}${k === "uygula" && degisen ? `<span class="sayac">${secim.size}/${degisen}</span>` : ""}</button>`).join("");
-  document.getElementById("baslikBilgi").innerHTML = V.takim
-    ? `<b>${e(V.takim)}</b> · ${e(V.taktik)} · okunma ${e(V.okunma)} · ${e(V.surum || "sürüm okunamadı")}`
-    : e(V.durum);
-  document.getElementById("analizBtn").disabled = V.mesgul;
-  document.getElementById("tekTikBtn").disabled = V.mesgul;
-  const f = { genel, takvim, oyuncular, uygula, izleme, baglanti, ayarlar }[sekme];
-  document.getElementById("icerik").innerHTML = serit() + f() + modal();
-}
-
-function serit() {
-  let h = `<div class="serit">${e(V.durum)}</div>`;
-  if (V.oyunTavsiyesi && !V.oyunTavsiyesiOlumlu) h += `<div class="serit tavsiye"><b>Oyunun tavsiyesi:</b> ${e(V.oyunTavsiyesi)} <span class="kucuk">— bu alan önceliklendirildi.</span></div>`;
-  if (V.planUyarisi) h += `<div class="serit uyari">${e(V.planUyarisi)}</div>`;
-  if (V.takim && !V.yazmaIzni.acik) h += `<div class="serit uyari">Oyuna yazma kapalı: ${e(V.yazmaIzni.neden)}</div>`;
-  for (const u of V.uyarilar || []) h += `<div class="serit uyari">${e(u)}</div>`;
-  return h;
-}
-
-function genel() {
-  if (!V.kartlar) return `<div class="bos">Oyun açıkken ve MCPFM çalışırken <b>Oyundan oku ve analiz et</b> düğmesine basın.<br><br>Uygulama oyunda hiçbir şeyi siz onaylamadan değiştirmez.</div>`;
-  const notlar = [...V.analizNotlari, ...V.planNotlari].map(n => `<div class="serit">${e(n)}</div>`).join("");
-  return `<h2>Taktiksel eksikler <span class="kucuk">genel anlayış ${e(V.genelAnlayis)}/100 · öncelik = eksiklik × taktik açısından önem × veri güveni</span></h2>
-    ${notlar}
-    <div class="izgara">${V.kartlar.map(k => `
-      <div class="kart">
-        <h3>${e(k.alan)} <span class="etiket ${k.oncelikKod}">${e(k.oncelik)}</span></h3>
-        <div class="cubuk"><i style="width:${parseFloat(k.anlayis) || 0}%"></i></div>
-        <dl>
-          <dt>Gözlem</dt><dd>${e(k.gozlem)}</dd>
-          <dt>Taktikle ilişkisi</dt><dd>${e(k.talimat)}</dd>
-          <dt>Öneri</dt><dd>${e(k.oneri)}</dd>
-          <dt>Güven</dt><dd>%${k.guven} <span class="kucuk">(veri: ${e(k.veriDurumu)})</span></dd>
-        </dl>
-        ${k.sinirlar.length ? `<ul class="sinir">${k.sinirlar.map(s => `<li>${e(s)}</li>`).join("")}</ul>` : ""}
-      </div>`).join("")}</div>`;
-}
-
-function hucreSec(anahtar, el) { el.checked ? secim.add(anahtar) : secim.delete(anahtar); ciz(); }
-function hucreAc(anahtar) { acikHucreler.has(anahtar) ? acikHucreler.delete(anahtar) : acikHucreler.add(anahtar); ciz(); }
-
-function takvim() {
-  if (!V.gunler) return `<div class="bos">Önce analiz edin.</div>`;
-  const haftalar = V.haftalar.map(h => `<div class="serit"><b>${h.no}. hafta (${e(h.baslangic)})</b> · ${e(h.tip)} · ${h.macSayisi} maç · tahmini yük <b>${h.yuk}</b> / sınır ${h.sinir} <span class="kucuk">— ${e(h.notlar.join(" "))}</span></div>`);
-  let html = `<p class="kucuk">Mevcut seans üstü çizili, önerilen kalın. Bir hücreye tıklayınca gerekçesi açılır. Kutuyu işaretlediğiniz değişiklikler "Önizle ve uygula" sekmesine eklenir. Yük değerleri <b>tahminidir</b>, oyunun ölçtüğü yük değildir.</p>`;
-  for (let w = 0; w < V.haftalar.length; w++) {
-    html += haftalar[w] + `<div class="takvim">`;
+function program() {
+  if (!V.gunler) return bosEkran("Program henüz yok", "Oyun okununca iki haftalık takvim burada görünür.");
+  const tur = {}; (V.seansTurleri || []).forEach(t => tur[t.ad] = t.amac);
+  const sec = secilenHucre && V.gunler.flatMap(g => g.hucreler.map(h => ({ ...h, gun: g }))).find(h => h.anahtar === secilenHucre);
+  let html = `<div style="display:flex;align-items:center;gap:16px;margin-bottom:14px;flex-wrap:wrap">
+    <div class="lejant"><span><i style="background:var(--acc)"></i>Taktik</span><span><i style="background:var(--mac)"></i>Maç, hazırlık</span><span><i style="background:var(--lo)"></i>Teknik, duran top</span><span><i style="background:var(--mid)"></i>Fiziksel</span><span><i style="background:var(--ok)"></i>Kaynaşma</span><span><i style="background:#4b5563"></i>Dinlenme, toparlanma</span></div>
+    <div class="bosluk"></div>
+    <label class="ince ikinci" style="cursor:pointer"><input type="checkbox" ${yalnizDegisen ? "checked" : ""} onchange="yalnizDegisen=this.checked;ciz()"> Yalnızca değişenler</label></div>`;
+  html += sec
+    ? `<div class="serit"><span class="ik" style="background:var(--acc)"></span><div><b>${e(sec.gun.gun)} · ${sec.slot + 1}. bölüm.</b> ${sec.durum === "Degisiyor" ? `${e(sec.mevcut)} <span class="soluk">→</span> <b>${e(sec.onerilen)}</b>. ` : ""}${e(sec.gerekce)} <span class="soluk">Tahmini yük: ${e(sec.yuk)}.</span>${sec.uyarilar.map(u => `<div class="soluk ince">${e(u)}</div>`).join("")}
+      ${sec.degisiklik ? `<div style="margin-top:8px"><label class="ince" style="cursor:pointer"><input type="checkbox" ${secim.has(sec.degisiklik) ? "checked" : ""} onchange="degisiklikSec('${sec.degisiklik}',this.checked)"> İşlem listesine ekle</label></div>` : ""}</div></div>`
+    : `<div class="soluk ince" style="margin-bottom:6px">Bir seansa tıklayınca neden seçildiği görünür. Yük değerleri tahminidir.</div>`;
+  V.haftalar.forEach((h, w) => {
+    html += `<div style="display:flex;align-items:baseline;gap:12px;margin:18px 0 8px"><b>${h.no}. hafta</b><span class="soluk">${e(h.baslangic)} · ${e(h.tip)} · ${h.macSayisi} maç</span><div class="bosluk"></div><span class="ince ikinci num">tahmini yük ${h.yuk} / ${h.sinir}</span></div><div class="takvim">`;
     for (const g of V.gunler.slice(w * 7, w * 7 + 7)) {
-      html += `<div class="gun ${g.mac ? "macgunu" : ""}">
-        <h4>${e(g.gun)} <button title="Günü kilitle/aç" style="padding:1px 6px" onclick="ayar('seansKilidi',{anahtar:'${g.tarih}',deger:${!g.kilitli}})">${g.kilitli ? "🔒" : "🔓"}</button></h4>
-        <div class="baglam">${g.mac ? "⚽ " + e(g.mac) : e(g.baglam)} <span class="yuk">· yük ${g.yuk}</span></div>
+      html += `<div class="gun ${g.mac ? "mac" : ""}"><div class="gb"><b>${e(g.gun)}</b><button class="kilit ${g.kilitli ? "acik" : ""}" title="${g.kilitli ? "Kilidi aç" : "Günü kilitle: planlayıcı dokunmaz"}" onclick="ayar('seansKilidi',{anahtar:'${g.tarih}',deger:${!g.kilitli}})">${ikon(g.kilitli ? "kilit" : "kilitAcik")}</button></div>
+        <div class="bg">${g.mac ? `<span class="rakip">${e(g.mac)}</span>` : e(g.baglam)}</div>
         ${g.hucreler.map(h => {
-          const ac = acikHucreler.has(h.anahtar) ? "acik" : "";
           const degisir = h.durum === "Degisiyor";
-          const ust = degisir
-            ? `<label onclick="event.stopPropagation()"><input type="checkbox" ${secim.has(h.degisiklik) ? "checked" : ""} ${h.degisiklik ? "" : "disabled"} onchange="hucreSec('${h.degisiklik}',this)"><span><span class="eski">${e(h.mevcut)}</span><br><span class="yeni">${e(h.onerilen)}</span></span></label>`
-            : `<span class="yeni">${e(h.onerilen ?? h.mevcut ?? "—")}</span>`;
-          return `<div class="hucre ${h.durum} ${ac}" onclick="hucreAc('${h.anahtar}')">${ust}
-            <div class="yuk">${e(h.amac)} · tahmini yük ${e(h.yuk)}</div>
-            <div class="gerekce">${e(h.gerekce)}${h.uyarilar.length ? "<br>⚠ " + h.uyarilar.map(e).join("<br>⚠ ") : ""}</div></div>`;
-        }).join("")}
-      </div>`;
+          const amac = h.durum === "Mac" ? "Mac" : (tur[h.onerilen] || "");
+          const sol = (yalnizDegisen && !degisir) || h.durum === "SureDisi" || h.durum === "Duzenlenemez" ? "soluk-h" : "";
+          return `<div class="hucre ${amac} ${sol} ${secilenHucre === h.anahtar ? "secili-h" : ""}" onclick="hucreSec('${h.anahtar}')">
+            ${degisir ? `<span class="yeni-isaret"></span><div class="eski">${e(h.mevcut)}</div>` : ""}<div class="ad">${e(h.onerilen ?? h.mevcut ?? "—")}</div></div>`;
+        }).join("")}</div>`;
     }
     html += `</div>`;
-  }
+  });
   return html;
 }
 
-function oyuncuSec(o) {
+function oyuncuSec(i) {
+  const o = V.oyuncular[i];
   const tum = o.degisiklikler.every(k => secim.has(k));
   o.degisiklikler.forEach(k => tum ? secim.delete(k) : secim.add(k));
   ciz();
 }
 
 function oyuncular() {
-  if (!V.oyuncular?.length) return `<div class="bos">Önce analiz edin.</div>`;
-  return `<p class="kucuk">Ek odak ve yoğunluk önerileri takım programının yüküyle birlikte hesaplanır. Sağlık ekibinin ve oyunun kilitleri aşılmaz.</p>
-  <div class="oyuncular">${V.oyuncular.map((o, i) => {
-    const secili = o.degisiklikler.length && o.degisiklikler.every(k => secim.has(k));
-    return `<div class="kart">
-      <h3>${e(o.ad)} <span class="kucuk">${e(o.rol || "")}</span> <span class="etiket ${o.karar === "Oneri" ? "Orta" : o.karar === "OyunKilidi" ? "Yuksek" : "Belirsiz"}">${e(o.kararMetni)}</span></h3>
-      <div class="kucuk">${e(o.pozisyon || "")} · ${e(o.yas)} yaş · kondisyon ${e(o.kondisyon)} · iş yükü ${e(o.isYuku)}${o.sakat ? " · <b class='Yuksek'>sakat</b>" : ""} · güven %${o.guven}</div>
-      <dl>
-        <dt>Ek odak</dt><dd>${e(o.odak)}${o.onerilenOdak ? ` <span class="ok">→ ${e(o.onerilenOdak)}</span>` : ""}<div class="kucuk">${e(o.odakGerekcesi.join(" "))}</div></dd>
-        <dt>Yoğunluk</dt><dd>${e(o.yogunluk)}${o.onerilenYogunluk ? ` <span class="ok">→ ${e(o.onerilenYogunluk)}</span>` : ""}<div class="kucuk">${e(o.yogunlukGerekcesi.join(" "))}</div></dd>
-      </dl>
-      ${o.uyarilar.length ? `<ul class="sinir">${o.uyarilar.map(u => `<li>${e(u)}</li>`).join("")}</ul>` : ""}
-      <div class="secimler">
-        <button class="${secili ? "secili" : ""}" ${o.degisiklikler.length ? "" : "disabled"} onclick="oyuncuSec(V.oyuncular[${i}])">Uygula</button>
-        <button class="${o.kilitli ? "secili" : ""}" onclick="ayar('oyuncuKilidi',{id:${o.id},deger:${!o.kilitli}})">Koru</button>
-        <button class="${o.haric ? "secili" : ""}" onclick="ayar('oyuncuHaric',{id:${o.id},deger:${!o.haric}})">Hariç tut</button>
-      </div></div>`;
-  }).join("")}</div>`;
+  if (!V.oyuncular?.length) return bosEkran("Oyuncu verisi yok", "Kadro ve bireysel antrenman, oyun okununca burada görünür.");
+  return `<div class="kutu"><table><thead><tr><th>Oyuncu</th><th>Kondisyon</th><th>Ek odak</th><th>Yoğunluk</th><th>Gerekçe</th><th></th></tr></thead><tbody>
+    ${V.oyuncular.map((o, i) => {
+      const kon = parseInt(String(o.kondisyon).replace("%", "")) || 0;
+      const secili = o.degisiklikler.length && o.degisiklikler.every(k => secim.has(k));
+      return `<tr><td><b>${e(o.ad)}</b><div class="soluk ince">${e(o.rol || "")}${o.pozisyon ? " · " + e(o.pozisyon) : ""} · ${e(o.yas)} yaş${o.sakat ? ` · <span style="color:var(--hi)">sakat</span>` : ""}</div></td>
+        <td><div class="kondisyon"><div class="cubuk"><i style="width:${kon}%;background:${kon < 70 ? "var(--hi)" : kon < 85 ? "var(--mid)" : "var(--ok)"}"></i></div><span class="num ince">${e(o.kondisyon)}</span></div><div class="soluk ince">iş yükü ${e(o.isYuku)}</div></td>
+        <td>${e(o.odak)}${o.onerilenOdak ? `<span class="ok-ok">→</span><b class="ok">${e(o.onerilenOdak)}</b>` : ""}</td>
+        <td>${e(o.yogunluk)}${o.onerilenYogunluk ? `<span class="ok-ok">→</span><b class="ok">${e(o.onerilenYogunluk)}</b>` : ""}</td>
+        <td class="ince ikinci" style="max-width:380px">${e([...o.yogunlukGerekcesi, ...o.odakGerekcesi].join(" "))}${o.uyarilar.map(u => `<div style="color:var(--mid)">${e(u)}</div>`).join("")}</td>
+        <td style="white-space:nowrap">
+          <button class="dg kucuk ${secili ? "ana" : ""}" ${o.degisiklikler.length ? "" : "disabled"} onclick="oyuncuSec(${i})">${secili ? "Seçildi" : "Uygula"}</button>
+          <button class="dg kucuk" onclick="ayar('oyuncuKilidi',{id:${o.id},deger:${!o.kilitli}})" title="Önerilerden koru">${o.kilitli ? "Korunuyor" : "Koru"}</button>
+          <button class="dg kucuk" onclick="ayar('oyuncuHaric',{id:${o.id},deger:${!o.haric}})">${o.haric ? "Hariç" : "Hariç tut"}</button></td></tr>`;
+    }).join("")}</tbody></table></div>`;
 }
 
-function hepsiniSec(d) { (V.degisiklikler || []).forEach(x => d ? secim.add(x.anahtar) : secim.delete(x.anahtar)); ciz(); }
+async function seciliUygula() {
+  if (!await onay("Seçilenleri oyuna yaz", `<p><b class="num">${secim.size}</b> değişiklik oyuna gönderilecek. Her biri önce oyunun kendi ön kontrolünden geçer, gönderildikten sonra geri okunur.</p>`, "Oyuna yaz")) return;
+  await istek("uygula", { anahtarlar: [...secim] }, "Oyuna yazılıyor");
+  secim.clear(); ciz();
+}
 
-function uygula() {
-  let h = "";
+async function geriAl(id) {
+  if (!await onay("İşlemi geri al", "<p>Bu işlemde doğrulanan ve oyunda hâlâ aynı duran değerler eski haline döndürülür; her biri ayrıca doğrulanır.</p>", "Geri al", true)) return;
+  await istek("geri-al", { id }, "Geri alınıyor");
+}
+
+function tumunuSec() { (V.degisiklikler || []).forEach(x => secim.add(x.anahtar)); ciz(); }
+
+function islemler() {
   const d = V.degisiklikler || [];
-  if (!d.length) h += `<div class="bos">Önerilen değişiklik yok${V.gunler ? " — mevcut program önerilerle aynı." : ". Önce analiz edin."}</div>`;
-  else {
-    h += `<h2>Farklar (${d.length}) <span class="kucuk">yalnızca seçtikleriniz gönderilir</span></h2>
-      <div style="display:flex;gap:8px;margin-bottom:8px">
-        <button onclick="hepsiniSec(true)">Tümünü seç</button><button onclick="hepsiniSec(false)">Seçimi temizle</button>
-        <div class="bosluk"></div>
-        <button class="ana" ${!secim.size || !V.yazmaIzni.acik ? "disabled" : ""} onclick="islem('uygula')">Seçilen ${secim.size} değişikliği oyuna uygula</button>
-      </div>
-      <table><tr><th></th><th>Tür</th><th>Ne</th><th>Mevcut</th><th>Önerilen</th><th>Gerekçe</th></tr>
-      ${d.map(x => `<tr><td><input type="checkbox" ${secim.has(x.anahtar) ? "checked" : ""} onchange="hucreSec('${x.anahtar}',this)"></td>
-        <td>${e(x.tur)}</td><td>${e(x.baslik)}</td><td class="kucuk">${e(x.eski)}</td><td><b>${e(x.hedef)}</b></td><td class="kucuk">${e(x.gerekce)}</td></tr>`).join("")}</table>`;
+  let h = `<div class="kutu" style="margin-bottom:16px"><div class="bas"><h3>Bekleyen değişiklikler</h3><span class="ac">${d.length} öneri · ${secim.size} seçili</span><div class="bosluk"></div>
+    <button class="dg kucuk" onclick="tumunuSec()">Tümünü seç</button>
+    <button class="dg kucuk" onclick="secim.clear();ciz()">Temizle</button>
+    <button class="dg ana kucuk" ${secim.size && V.yazmaIzni.acik && !V.mesgul ? "" : "disabled"} onclick="seciliUygula()">Seçilenleri yaz</button></div>
+    ${!V.yazmaIzni.acik ? `<div class="gov"><div class="not uyari">${e(V.yazmaIzni.neden)}</div></div>` : ""}
+    ${d.length ? `<table><thead><tr><th></th><th>Tür</th><th>Değişiklik</th><th>Mevcut</th><th>Önerilen</th><th>Gerekçe</th></tr></thead><tbody>
+      ${d.map(x => `<tr><td><input type="checkbox" ${secim.has(x.anahtar) ? "checked" : ""} onchange="degisiklikSec('${x.anahtar}',this.checked)"></td><td class="soluk">${e(x.tur)}</td><td>${e(x.baslik)}</td><td class="soluk">${e(x.eski)}</td><td><b>${e(x.hedef)}</b></td><td class="ince ikinci">${e(x.gerekce)}</td></tr>`).join("")}</tbody></table>`
+      : `<div class="gov soluk">Oyundaki program önerilerle aynı. Bekleyen değişiklik yok.</div>`}</div>`;
+  if (V.sonIslem) {
+    const r = V.sonIslem;
+    h += `<div class="kutu" style="margin-bottom:16px"><div class="bas"><h3>Son işlem</h3><span class="ac">${e(r.takim)}</span></div>
+      <table><thead><tr><th>Değişiklik</th><th>Önceki</th><th>Hedef</th><th>Oyundan okunan</th><th>Sonuç</th></tr></thead><tbody>
+      ${r.kalemler.map(k => {
+        const renk = ["Dogrulandi", "ZatenUygulanmis"].includes(k.durumKod) ? "var(--ok)" : ["Basarisiz", "Belirsiz"].includes(k.durumKod) ? "var(--hi)" : "var(--mid)";
+        return `<tr><td>${e(k.baslik)}</td><td class="soluk">${e(k.eski)}</td><td>${e(k.hedef)}</td><td>${e(k.okunan ?? "—")}</td><td><span style="color:${renk};font-weight:600">${e(k.durum)}</span>${k.hata ? `<div class="soluk ince">${e(k.hata)}</div>` : ""}</td></tr>`;
+      }).join("")}</tbody></table>${r.notlar.length ? `<div class="gov">${r.notlar.map(n => `<div class="not">${e(n)}</div>`).join("")}</div>` : ""}</div>`;
   }
-  if (V.sonIslem) h += rapor(V.sonIslem, "Son işlem");
-  if (V.gecmis?.length) {
-    h += `<h2>İşlem günlüğü</h2><table><tr><th>Zaman</th><th>Durum</th><th>Özet</th><th></th></tr>
-      ${V.gecmis.map(r => `<tr><td>${e(r.zaman)}</td><td>${e(r.durum)}${r.geriAlma ? " (geri alma)" : ""}</td><td class="kucuk">${e(r.ozet)}</td>
-      <td>${r.geriAlinabilir ? `<button class="tehlike" onclick="islem('geri-al',{id:'${r.id}'})">Geri al</button>` : ""}</td></tr>`).join("")}</table>
-      <p class="kucuk">Geri alma yalnızca doğrulanmış ve oyunda hâlâ aynı duran değerlerde denenir. Oyun tarihi ilerledikten sonra kusursuz geri alma garantisi yoktur; kayıt dosyası yedeği ayrı bir güvencedir.</p>`;
-  }
+  if (V.gecmis?.length) h += `<div class="kutu"><div class="bas"><h3>İşlem günlüğü</h3><span class="ac">geri alma yalnızca doğrulanmış ve oyunda hâlâ aynı duran değerlerde denenir</span></div>
+    <table><tbody>${V.gecmis.map(r => `<tr><td class="num soluk" style="width:110px">${e(r.zaman)}</td><td style="width:170px">${e(r.durum)}${r.geriAlma ? ' <span class="soluk">(geri alma)</span>' : ""}</td><td class="ikinci">${e(r.ozet)}</td>
+      <td style="text-align:right">${r.geriAlinabilir ? `<button class="dg kucuk tehlike" onclick="geriAl('${r.id}')">Geri al</button>` : ""}</td></tr>`).join("")}</tbody></table></div>`;
   return h;
-}
-
-function rapor(r, baslik) {
-  const sinif = r.durumKod === "Dogrulandi" ? "iyi" : r.durumKod === "KismenUygulandi" ? "uyari" : "hata";
-  return `<h2>${baslik} — ${e(r.takim)}</h2><div class="serit ${sinif}"><b>${e(r.durum)}</b>: ${e(r.ozet)}</div>
-    ${r.notlar.map(n => `<div class="kucuk">• ${e(n)}</div>`).join("")}
-    <table><tr><th>Değişiklik</th><th>Eski</th><th>Hedef</th><th>Oyundan okunan</th><th>Sonuç</th></tr>
-    ${r.kalemler.map(k => `<tr><td>${e(k.baslik)}</td><td class="kucuk">${e(k.eski)}</td><td>${e(k.hedef)}</td><td>${e(k.okunan ?? "—")}</td>
-      <td class="durum-${k.durumKod}">${e(k.durum)}${k.hata ? `<div class="kucuk">${e(k.hata)}</div>` : ""}</td></tr>`).join("")}</table>`;
 }
 
 function izleme() {
   const g = V.analizGecmisi || [];
-  if (!g.length) return `<div class="bos">Henüz kayıtlı analiz yok.</div>`;
-  const alanlar = V.alanlar;
-  return `<h2>Taktiksel anlayış geçmişi</h2>
-    <p class="kucuk">Her analizde okunan değerler saklanır. Değişim plan uyumuyla birlikte izlenir; kontrolsüz önce/sonra farkı doğrudan nedensellik kanıtı sayılmaz.</p>
-    <table><tr><th>Okuma</th><th>Oyun günü</th><th>Genel</th>${alanlar.map(a => `<th>${e(a.ad)}</th>`).join("")}</tr>
-    ${g.slice().reverse().map((k, i, arr) => {
-      const onceki = arr[i + 1];
-      return `<tr><td>${e(k.zaman)}</td><td>${e(k.ilkGun)}</td><td>${k.genel ?? "—"}</td>${alanlar.map(a => {
-        const v = k.anlayis[a.kod]; const p = onceki?.anlayis[a.kod];
-        const fark = v != null && p != null ? v - p : null;
-        return `<td>${v ?? "—"}${fark ? ` <span class="${fark > 0 ? "Yok" : "Yuksek"}">${fark > 0 ? "+" : ""}${fark.toFixed(0)}</span>` : ""}</td>`;
-      }).join("")}</tr>`;
-    }).join("")}</table>`;
+  if (!g.length) return bosEkran("Henüz kayıt yok", "Her okumada taktik anlayışı değerleri kaydedilir; gelişim burada izlenir.");
+  const son = g.slice(-30);
+  const dizi = kod => son.map(k => kod ? k.anlayis[kod] : k.genel).filter(v => v != null);
+  const cizgi = kod => {
+    const d = dizi(kod);
+    if (d.length < 2) return `<span class="soluk ince">yeterli veri yok</span>`;
+    const mn = Math.min(...d) - 2, mx = Math.max(...d) + 2, W = 160, H = 30;
+    const p = d.map((v, i) => `${(i / (d.length - 1) * W).toFixed(1)},${(H - (v - mn) / (mx - mn) * H).toFixed(1)}`).join(" ");
+    return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><polyline points="${p}" fill="none" stroke="#b8f23a" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
+  };
+  const fark = kod => { const d = dizi(kod); if (d.length < 2) return ""; const f = d[d.length - 1] - d[0]; return `<span class="num" style="color:${f > 0 ? "var(--ok)" : f < 0 ? "var(--hi)" : "var(--mut)"}">${f > 0 ? "+" : ""}${f.toFixed(0)}</span>`; };
+  return `<div class="kutu"><div class="bas"><h3>Taktik anlayışı gelişimi</h3><span class="ac">son ${son.length} okuma · kontrolsüz önce/sonra farkı nedensellik kanıtı sayılmaz</span></div>
+    <table><thead><tr><th>Alan</th><th>Son değer</th><th>Değişim</th><th>Eğilim</th></tr></thead><tbody>
+    <tr><td><b>Genel</b></td><td class="num">${son[son.length - 1].genel ?? "—"}</td><td>${fark(null)}</td><td>${cizgi(null)}</td></tr>
+    ${V.alanlar.map(a => `<tr><td>${e(a.ad)}</td><td class="num">${son[son.length - 1].anlayis[a.kod] ?? "—"}</td><td>${fark(a.kod)}</td><td>${cizgi(a.kod)}</td></tr>`).join("")}</tbody></table></div>`;
+}
+
+async function yazmaTesti() {
+  if (!await onay("Oyun içi yazma testi", "<p>Bir oyuncunun yoğunluğu ve ek odağı ile bir seans değiştirilip geri okunur, sonra eski haline getirilip yine geri okunur. Hepsi doğrulanırsa bu sürümde oyuna yazma açılır.</p><p class='soluk ince'>Kayıt yedeğiniz olduğundan emin olun.</p>", "Testi çalıştır")) return;
+  await istek("yazma-testi", {}, "Yazma testi");
 }
 
 function baglanti() {
-  const m = V.matris;
-  let h = `<div class="ikili"><div class="kart"><h3>1. Yetenek testi</h3><p class="kucuk">Yalnızca okur ve oyunun kendi ön kontrolünü (kuru çalıştırma) kullanır. Oyunda hiçbir şey değişmez.</p>
-    <button onclick="islem('yetenek')">Yetenek matrisini çıkar</button></div>
-    <div class="kart"><h3>2. Oyun içi yazma testi</h3><p class="kucuk">Bir yoğunluk, bir ek odak ve bir seansı değiştirip geri okur, sonra eski haline getirip yine geri okur. Hepsi doğrulanırsa bu sürümde yazma açılır.</p>
-    <button class="tehlike" onclick="islem('yazma-testi')">Yazma testini çalıştır</button>
-    ${V.yazmaTestiGunlugu?.length ? `<ul class="sinir">${V.yazmaTestiGunlugu.map(s => `<li>${e(s)}</li>`).join("")}</ul>` : ""}</div></div>`;
-  if (m) h += `<h2>Destek matrisi <span class="kucuk">${e(m.surum || "sürüm okunamadı")} · ${e(m.zaman)} · yazma ${m.yazmaDogrulandi ? "doğrulandı" : "doğrulanmadı"}</span></h2>
-    <table><tr><th>Alan</th><th>Okuma</th><th>Yazma</th><th>Not</th></tr>
-    ${m.satirlar.map(s => `<tr><td>${e(s.alan)}</td><td>${e(s.okuma)}</td><td>${e(s.yazma)}</td><td class="kucuk">${e(s.not)}</td></tr>`).join("")}</table>`;
-  if (V.ayarlar.dogrulanmisSurumler.length) h += `<h2>Yazması doğrulanmış sürümler</h2>${V.ayarlar.dogrulanmisSurumler.map(s => `<div class="serit">${e(s)} <button onclick="ayar('surumUnut',{surum:${JSON.stringify(s).replace(/"/g, "&quot;")}})">Kaldır</button></div>`).join("")}`;
-  return h;
+  const b = V.baglanti || {}, m = V.matris;
+  const adim = (ok, ad, alt) => `<div style="display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)"><span class="nokta" style="margin-top:6px;background:${ok ? "var(--ok)" : "var(--hi)"}"></span><div><b>${ad}</b><div class="soluk ince">${alt}</div></div></div>`;
+  return `<div class="izgara i2">
+    <div class="kutu"><div class="bas"><h3>Durum</h3></div><div class="gov">
+      ${adim(b.durum === "Canli" || b.durum === "ApiYok", "Football Manager 27 ve MCPFM köprüsü", V.surum ? e(V.surum) : "Oyunun içindeki köprü yanıt vermiyor (localhost:5121).")}
+      ${adim(b.durum === "Canli", "MCPFM API", b.durum === "Canli" ? `Canlı · son okuma ${e(b.sonOkuma)}` : "localhost:5120 yanıt vermiyor.")}
+      ${adim(V.yazmaIzni.acik, "Oyuna yazma", e(V.yazmaIzni.neden))}
+      <div style="display:flex;gap:8px;margin-top:14px"><button class="dg" onclick="istek('yetenek',{},'Destek matrisi')">Destek matrisini çıkar</button><button class="dg" onclick="yazmaTesti()">Yazma testi</button></div>
+      ${V.yazmaTestiGunlugu?.length ? `<div style="margin-top:12px">${V.yazmaTestiGunlugu.map(s => `<div class="not">${e(s)}</div>`).join("")}</div>` : ""}
+    </div></div>
+    <div class="kutu"><div class="bas"><h3>Nasıl bağlanır</h3></div><div class="gov ikinci">
+      <div class="not">MCPFM köprüsü oyuna kurulu olmalı (BepInEx).</div>
+      <div class="not">MCPFM API'si çalışıyor olmalı (localhost:5120).</div>
+      <div class="not">Football Manager 27'yi açıp kariyeri yükleyin. TrainingAgents birkaç saniye içinde bağlanır ve oyunu sürekli izler.</div>
+      <div class="not">Taktik ya da taktik anlayışı oyunda değişince analiz kendiliğinden yenilenir. Oyuna yalnızca siz onayladığınızda, ya da otomatik mod açıksa yazılır.</div>
+    </div></div>
+  </div>
+  ${m ? `<div class="kutu" style="margin-top:16px"><div class="bas"><h3>Destek matrisi</h3><span class="ac">${e(m.surum || "")} · ${e(m.zaman)}</span></div>
+    <table><thead><tr><th>Alan</th><th>Okuma</th><th>Yazma</th><th>Not</th></tr></thead><tbody>${m.satirlar.map(s => `<tr><td>${e(s.alan)}</td><td>${e(s.okuma)}</td><td>${e(s.yazma)}</td><td class="ince ikinci">${e(s.not)}</td></tr>`).join("")}</tbody></table></div>` : ""}`;
 }
 
 function ayarlar() {
-  const a = V.ayarlar;
-  const fz = a.fizyoterapistVar;
-  const esik = (ad, baslik, aciklama) => `<tr><td>${baslik}<div class="kucuk">${aciklama}</div></td><td><input type="number" value="${a[ad[0].toLowerCase() + ad.slice(1)]}" onchange="ayar('esik',{ad:'${ad}',deger:+this.value})" style="width:80px"></td></tr>`;
-  let h = `<div class="kart" style="margin-bottom:12px"><h3>Otomatik mod <span class="etiket ${V.otomatik ? "Yok" : "Belirsiz"}">${V.otomatik ? "Açık" : "Kapalı"}</span></h3>
-    <p class="kucuk">Açıkken oyun tarihi yeni haftaya geçtiğinde ya da aktif taktik değiştiğinde "Eksikleri gider" kendiliğinden çalışır (yalnızca takım programı). Yazma testi geçmiş sürümlerde çalışır; sonuçlar işlem günlüğüne yazılır.</p>
-    <button onclick="ayar('otomatik',{deger:${!V.otomatik}})">${V.otomatik ? "Kapat" : "Aç"}</button></div>
-    <div class="ikili"><div class="kart"><h3>Personel</h3>
-    <p class="kucuk">MCPFM sağlık ekibini okumuyor. Toparlanma (rejenerasyon) seansları fizyoterapist gerektirir; durumu siz belirtin.</p>
-    <div class="secimler">
-      <button class="${fz === true ? "secili" : ""}" onclick="ayar('fizyoterapist',{deger:true})">Fizyoterapist var</button>
-      <button class="${fz === false ? "secili" : ""}" onclick="ayar('fizyoterapist',{deger:false})">Yok</button>
-      <button class="${fz == null ? "secili" : ""}" onclick="ayar('fizyoterapist',{deger:null})">Bilmiyorum</button>
-    </div></div>
-    <div class="kart"><h3>Eşikler</h3><p class="kucuk">Ürün varsayımlarıdır, oyun motorunun katsayıları değildir. Değiştirince plan önbellekteki veriden yeniden üretilir.</p>
-    <table>${esik("HedefAnlayis", "Hedef anlayış", "0-100; bunun altı eksik sayılır")}
-      ${esik("GunlukYukSiniri", "Günlük yük sınırı", "düşük=1, orta=2, yüksek=3")}
-      ${esik("CiftMacHaftasiGunlukYukSiniri", "Çift maçlı hafta günlük sınır", "")}
-      ${esik("HaftalikYukSiniri", "Haftalık yük sınırı", "tek maçlı hafta")}
-      ${esik("AyniSeansHaftalikSinir", "Aynı seans / hafta", "tekrar sınırı")}
-      ${esik("KritikKondisyonEsigi", "Kritik kondisyon %", "altında düşük yoğunluk")}
-      ${esik("YuksekYogunlukKondisyonEsigi", "Yüksek yoğunluk için kondisyon %", "")}
-      ${esik("YuksekYogunlukAzamiYas", "Yüksek yoğunluk azami yaş", "")}
-      ${esik("OdakAsgariGun", "Odak istikrarı (gün)", "bu süre dolmadan odak değişmez")}</table></div></div>`;
-  if (V.seansTurleri?.length) h += `<h2>Seans eşleştirme</h2>
-    <p class="kucuk">Seans adları oyunun dilinde gelir; ilk eşleştirme anahtar kelimeyle yapılır. Yanlış ya da "Sınıflandırılmamış" olanları buradan düzeltin. Sınıflandırılmamış seanslar planda kullanılmaz.</p>
-    <table><tr><th>Seans</th><th>Kategori</th><th>Amaç</th><th>Taktik alanı</th><th></th></tr>
-    ${V.seansTurleri.map(t => `<tr><td>${e(t.ad)} <span class="kucuk">#${t.id}</span></td><td class="kucuk">${e(t.kategori)}</td>
-      <td><select onchange="ayar('seansEslestir',{id:${t.id},amac:this.value,alan:this.value==='Taktik'?'${t.alan || "PasStili"}':null})">${V.amaclar.map(a => `<option value="${a.kod}" ${a.kod === t.amac ? "selected" : ""}>${e(a.ad)}</option>`).join("")}</select></td>
-      <td>${t.amac === "Taktik" ? `<select onchange="ayar('seansEslestir',{id:${t.id},amac:'Taktik',alan:this.value})"><option value="">—</option>${V.alanlar.map(a => `<option value="${a.kod}" ${a.kod === t.alan ? "selected" : ""}>${e(a.ad)}</option>`).join("")}</select>` : ""}</td>
-      <td>${t.kullanici ? `<button onclick="ayar('seansEslestir',{id:${t.id},amac:''})">Otomatiğe dön</button>` : `<span class="kucuk">otomatik</span>`}</td></tr>`).join("")}</table>`;
+  const a = V.ayarlar, fz = a.fizyoterapistVar;
+  const esik = (ad, baslik, aciklama) => `<tr><td>${baslik}<div class="soluk ince">${aciklama}</div></td><td style="width:110px"><input type="number" value="${a[ad[0].toLowerCase() + ad.slice(1)]}" onchange="ayar('esik',{ad:'${ad}',deger:+this.value})" style="width:90px"></td></tr>`;
+  let h = `<div class="izgara i2">
+    <div class="izgara" style="align-content:start">
+      <div class="kutu"><div class="bas"><h3>Otomatik mod</h3><div class="bosluk"></div><span class="etk ${V.otomatik ? "Yok" : "Belirsiz"}">${V.otomatik ? "Açık" : "Kapalı"}</span></div><div class="gov">
+        <div class="ikinci">Oyun yeni haftaya geçtiğinde ya da aktif taktik değiştiğinde eksikleri giderme kendiliğinden çalışır (takım programı). Yalnızca yazma testi geçmiş sürümlerde çalışır; her çalışma işlem günlüğüne yazılır.</div>
+        ${V.otomatikBitis ? `<div class="not" style="margin-top:8px">Bitiş: ${e(V.otomatikBitis)} (seçilen süre dolunca kapanır)</div>` : ""}
+        <div style="margin-top:12px"><button class="dg" onclick="ayar('otomatik',{deger:${!V.otomatik}})">${V.otomatik ? "Kapat" : "Aç"}</button></div></div></div>
+      <div class="kutu"><div class="bas"><h3>Fizyoterapist</h3></div><div class="gov">
+        <div class="ikinci" style="margin-bottom:10px">MCPFM sağlık ekibini okuyamıyor. "Yok" seçilirse maç ertesi toparlanma yerine dinlenme konur.</div>
+        <div class="segment">${[[true, "Var"], [false, "Yok"], [null, "Bilmiyorum"]].map(([d, ad]) => `<button class="${fz === d ? "sec" : ""}" onclick="ayar('fizyoterapist',{deger:${d}})">${ad}</button>`).join("")}</div></div></div>
+    </div>
+    <div class="kutu"><div class="bas"><h3>Eşikler</h3><span class="ac">ürün varsayımları; oyun motorunun katsayıları değildir</span></div>
+      <table><tbody>${esik("HedefAnlayis", "Hedef anlayış", "bunun altı eksik sayılır (0–100)")}
+        ${esik("GunlukYukSiniri", "Günlük yük sınırı", "düşük 1, orta 2, yüksek 3 puan")}
+        ${esik("HaftalikYukSiniri", "Haftalık yük sınırı", "tek maçlı hafta")}
+        ${esik("AyniSeansHaftalikSinir", "Aynı seans / hafta", "yüksek öncelikli alana +1")}
+        ${esik("KritikKondisyonEsigi", "Kritik kondisyon (%)", "altında düşük yoğunluk")}
+        ${esik("YuksekYogunlukKondisyonEsigi", "Yüksek yoğunluk kondisyonu (%)", "")}
+        ${esik("YuksekYogunlukAzamiYas", "Yüksek yoğunluk azami yaş", "")}
+        ${esik("OdakAsgariGun", "Odak istikrarı (gün)", "dolmadan odak değişmez")}</tbody></table></div>
+  </div>`;
+  if (V.seansTurleri?.length) h += `<div class="kutu" style="margin-top:16px"><div class="bas"><h3>Seans eşleştirme</h3><span class="ac">oyunun seans adları otomatik sınıflandırılır; yanlış olanı buradan düzeltin</span></div>
+    <table><thead><tr><th>Seans</th><th>Kategori</th><th>Amaç</th><th>Taktik alanı</th><th></th></tr></thead><tbody>
+    ${V.seansTurleri.map(t => `<tr><td>${e(t.ad)}</td><td class="soluk">${e(t.kategori)}</td>
+      <td><select onchange="ayar('seansEslestir',{id:${t.id},amac:this.value,alan:this.value==='Taktik'?'${t.alan || "PasStili"}':null})">${V.amaclar.map(x => `<option value="${x.kod}" ${x.kod === t.amac ? "selected" : ""}>${e(x.ad)}</option>`).join("")}</select></td>
+      <td>${t.amac === "Taktik" ? `<select onchange="ayar('seansEslestir',{id:${t.id},amac:'Taktik',alan:this.value})"><option value="">—</option>${V.alanlar.map(x => `<option value="${x.kod}" ${x.kod === t.alan ? "selected" : ""}>${e(x.ad)}</option>`).join("")}</select>` : ""}</td>
+      <td>${t.kullanici ? `<button class="dg kucuk" onclick="ayar('seansEslestir',{id:${t.id},amac:''})">Otomatiğe dön</button>` : `<span class="soluk ince">otomatik</span>`}</td></tr>`).join("")}</tbody></table></div>`;
   return h;
 }
 
 yukle();
-setInterval(() => { if (V?.mesgul) yukle(); }, 1500);
+setInterval(yukle, 3000);
 </script>
 </body>
 </html>

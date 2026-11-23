@@ -20,6 +20,13 @@ public static class Gorunum
         return new
         {
             durum = a.Durum,
+            baglanti = new
+            {
+                durum = a.Baglanti.ToString(),
+                sonOkuma = a.SonCanliOkuma?.ToLocalTime().ToString("HH:mm:ss", Tr),
+                saniyeOnce = a.SonCanliOkuma is { } so ? (int)(DateTimeOffset.Now - so).TotalSeconds : (int?)null,
+                hata = a.BaglantiHatasi
+            },
             mesgul = a.Mesgul,
             surum = a.Surum,
             yazmaIzni = new { acik = a.YazmaIzni.Acik, neden = a.YazmaIzni.Neden },
@@ -46,7 +53,7 @@ public static class Gorunum
             uyarilar = an?.Uyarilar ?? (IReadOnlyList<string>)Array.Empty<string>(),
             analizNotlari = a.Analiz?.GenelNotlar ?? (IReadOnlyList<string>)Array.Empty<string>(),
             planNotlari = a.Plan?.Notlar ?? (IReadOnlyList<string>)Array.Empty<string>(),
-            kartlar = a.Analiz?.Kartlar.Select(Kart).ToList(),
+            kartlar = a.Analiz?.Kartlar.Select(k => Kart(k, an)).ToList(),
             haftalar = a.Plan?.Haftalar.Select(h => new
             {
                 no = h.No,
@@ -195,8 +202,12 @@ public static class Gorunum
         };
     }
 
-    public static object Kart(SorunKarti k) => new
+    public static object Kart(SorunKarti k, Anlik? an = null) => new
     {
+        mac = an is not null && an.Anlayis.TryGetValue(k.Alan, out var o1) && o1.MacMaruziyeti.VarMi ? o1.MacMaruziyeti.Deger!.Orta : (double?)null,
+        antrenman = an is not null && an.Anlayis.TryGetValue(k.Alan, out var o2) && o2.AntrenmanKatkisi.VarMi ? o2.AntrenmanKatkisi.Deger!.Orta : (double?)null,
+        deger = k.Anlayis.VarMi ? k.Anlayis.Deger!.Orta : (double?)null,
+        oyunIstiyor = k.Gozlem.Contains("Oyunun kendi tavsiyesi"),
         alan = k.AlanAdi,
         kod = k.Alan.ToString(),
         oncelik = OncelikAdi(k.Oncelik),

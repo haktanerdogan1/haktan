@@ -18,8 +18,8 @@ namespace Asistan.Plugin;
 [BepInDependency("mcpfm.bridge", BepInDependency.DependencyFlags.SoftDependency)]
 public sealed class Eklenti : BasePlugin
 {
-    public const string Kimlik = "fm27.antrenman.asistani";
-    public const string Ad = "Antrenman Asistanı";
+    public const string Kimlik = "fm27.trainingagents";
+    public const string Ad = "TrainingAgents";
     public const string Surum = "1.0.0";
 
     internal static AntrenmanAsistani? Asistan { get; private set; }
@@ -53,16 +53,17 @@ public sealed class Eklenti : BasePlugin
         }
 
         // Otomatik mod (Ayarlar'dan açılır): her dakika oyunun haftası/taktiği değişti mi diye bakar.
+        // Canlı bağlantı: birkaç saniyede bir oyunu yoklar; taktik ya da anlayış değişince analiz yenilenir, otomatik mod da buradan çalışır.
         _otomatik = new Timer(_ =>
         {
             var a = Asistan;
-            if (a is null || !a.Ayarlar.OtomatikUygula) return;
+            if (a is null || a.Mesgul) return;
             _ = Task.Run(async () =>
             {
-                try { await a.OtomatikKontrolAsync().ConfigureAwait(false); }
-                catch (Exception e) { Log.LogWarning("Otomatik kontrol: " + e.Message); }
+                try { await a.CanliKontrolAsync().ConfigureAwait(false); }
+                catch (Exception e) { Log.LogWarning("Canlı kontrol: " + e.Message); }
             });
-        }, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+        }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
 
 #if IMGUI_PANEL
         try

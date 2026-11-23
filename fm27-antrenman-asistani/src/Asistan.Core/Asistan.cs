@@ -443,6 +443,58 @@ public sealed class AntrenmanAsistani
 
     private string? _sonOtomatikImza;
 
+    // ---------------- Canlı bağlantı ----------------
+
+    public enum BaglantiDurumu { Bekleniyor, Canli, OyunYok, ApiYok }
+
+    public BaglantiDurumu Baglanti { get; private set; } = BaglantiDurumu.Bekleniyor;
+    public DateTimeOffset? SonCanliOkuma { get; private set; }
+    public string? BaglantiHatasi { get; private set; }
+    private string? _canliImza;
+
+    /// <summary>
+    /// Oyunu düzenli aralıklarla yoklar (masaüstü uygulaması ve eklenti birkaç saniyede bir çağırır). Bağlantı durumu güncellenir;
+    /// taktik, taktik anlayışı ya da takvim haftası değiştiyse analiz ve plan kendiliğinden yenilenir. Oyuna hiçbir şey yazmaz
+    /// (otomatik mod açıksa o ayrıca çalışır).
+    /// </summary>
+    public async Task CanliKontrolAsync(CancellationToken ct = default)
+    {
+        if (Mesgul)
+        {
+            return;
+        }
+
+        var tak = await _baglanti.TaktiklerAsync(ct).ConfigureAwait(false);
+
+        if (!tak.Basarili)
+        {
+            var surum = await _baglanti.SurumAsync(ct).ConfigureAwait(false);
+            Baglanti = surum.Basarili ? BaglantiDurumu.ApiYok : BaglantiDurumu.OyunYok;
+            BaglantiHatasi = surum.Basarili
+                ? "Oyun açık ama MCPFM API'si (5120) yanıt vermiyor."
+                : "Football Manager 27 ya da MCPFM köprüsü açık değil.";
+            return;
+        }
+
+        Baglanti = BaglantiDurumu.Canli;
+        BaglantiHatasi = null;
+        SonCanliOkuma = DateTimeOffset.Now;
+
+        var aktif = tak.Veri!.Slots.FirstOrDefault(s => s.IsActive);
+        var ta = aktif?.Effectiveness?.TacticalUnderstanding;
+        var imza = string.Join("|", aktif?.Slot, aktif?.Name, ta?.Overall, ta?.InPossessionShape?.Understanding, ta?.OutOfPossessionShape?.Understanding,
+            ta?.BuildUpStrategy?.Understanding, ta?.ChanceCreation?.Understanding, ta?.PassingStyle?.Understanding, ta?.PressingIntensity?.Understanding,
+            ta?.PressingTrap?.Understanding, ta?.LineOfEngagement?.Understanding, ta?.AreasAdvice?.Text);
+
+        if (imza != _canliImza || Anlik is null)
+        {
+            _canliImza = imza;
+            await AnalizEtAsync(ct).ConfigureAwait(false);
+        }
+
+        await OtomatikKontrolAsync(ct).ConfigureAwait(false);
+    }
+
     // ---------------- Ayarlar ----------------
 
     public void AyarDegistir(Action<Ayarlar> degisiklik)

@@ -1,22 +1,38 @@
-# FM27 Antrenman Asistanı
+<p align="center"><img src="marka/logo-256.png" width="88" alt="TrainingAgents"></p>
 
-Football Manager 27'nin **içinde** çalışan bir eklenti. Kullandığınız taktiğin anlayış eksiklerini oyunun kendi verisinden
-okur. Maç takvimini, oyuncu kondisyonunu ve rolleri hesaba katarak iki haftalık takım programı ile oyuncuya özel ek odak
-ve yoğunluk önerir. Her önerinin nedenini gösterir. Seçtiğiniz değişiklikleri oyuna yazar ve oyundan geri okuyarak
-doğrular.
+# TrainingAgents
 
-Hazır bir `.fmf` programını bütün sezona kopyalamaz. Her analizde güncel durumdan (fikstür, taktik, oyuncular) yeni bir
-plan üretir.
+Football Manager 27 için antrenman planlayıcısı. Oyuna canlı bağlanır, taktiğinizin **Taktiksel Verimlilik** ekranını
+okur ve eksik alanları kapatan takım programını, seçtiğiniz süre (1 hafta / 2 hafta / 1 ay) ve yoğunlukla
+(Az / Normal / Yoğun) kurup oyuna yazar. Her değişikliği oyundan geri okuyarak doğrular.
 
-| Hazır antrenman programı (.fmf) | Antrenman Asistanı |
-|---|---|
-| Her hafta aynı şablon | Her gün maça uzaklığına ve haftanın maç sayısına göre hesaplanır |
-| Taktiğinizi bilmez | Aktif taktiğin 8 anlayış alanını okur, en zayıf ve taktik için en önemli alanı öne alır |
-| Oyuncuları bilmez | Kondisyon, yaş, sakatlık ve rolün anahtar özelliklerine göre bireysel odak/yoğunluk |
-| Neden o seans? Bilinmez | Her hücrede gerekçe, tahmini yük ve varsa uyarı |
-| Uygulandı mı? Bilinmez | Her değişiklik oyundan geri okunur; "doğrulandı" yalnızca eşleşirse yazılır |
+İki biçimde gelir:
+
+- **TrainingAgents.exe** — kendi penceresinde çalışan masaüstü uygulaması. Kurulum gerektirmez, tek dosyadır. Oyunu
+  birkaç saniyede bir yoklar; taktik ya da taktik anlayışı oyunda değişince ekran kendiliğinden güncellenir.
+- **Oyun içi eklenti** (BepInEx) — FM27'nin içinde F8 ile açılan panel.
+
+İkisi de oyuna [MCPFM](https://github.com/FootballManagerMCP/FootballManagerMCP) üzerinden bağlanır.
+
+## TrainingAgents.exe
+
+1. MCPFM'i kurun (BepInEx köprüsü ve API, MCPFM README'sindeki 1–5. adımlar) ve API'yi başlatın.
+2. `TrainingAgents.exe`'yi çalıştırın, sonra FM27'yi açıp kariyerinizi yükleyin. Sol alttaki gösterge
+   "Oyuna bağlı" olunca her şey canlıdır.
+3. **Eksikleri gider** → eksik alanları işaretleyin, süreyi ve yoğunluğu seçin, önizlemeye bakın → **Oyuna yaz**.
+
+`TrainingAgents.exe --demo` oyun açmadan sahte bir kariyerle çalışır. Ayarlar ve kayıtlar `%APPDATA%\TrainingAgents`
+altındadır; MCPFM adresleri `baglanti.json` dosyasından değiştirilebilir. Pencere Windows 10/11'de yerleşik gelen
+Microsoft Edge WebView2'yi kullanır; yoksa panel varsayılan tarayıcıda açılır.
+
+**Derleme:** Depoya her gönderimde GitHub Actions `.exe`'yi Windows'ta yeniden üretir (Actions → "TrainingAgents exe"
+→ Artifacts). Elle derlemek için:
+```powershell
+dotnet publish src\TrainingAgents -c Release -r win-x64 -o cikti
+```
 
 ![Genel bakış](docs/genel-bakis.png)
+![Eksikleri gider](docs/eksikleri-gider.png)
 ![Takım programı](docs/takim-programi.png)
 
 ## Nasıl çalışır?

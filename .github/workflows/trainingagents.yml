@@ -1,0 +1,48 @@
+# TrainingAgents: testleri çalıştırır, Windows için tek dosyalık TrainingAgents.exe üretir.
+# Çıktı: Actions → bu çalışma → Artifacts → "TrainingAgents-win-x64".
+name: TrainingAgents exe
+
+on:
+  push:
+    paths:
+      - "fm27-antrenman-asistani/**"
+      - ".github/workflows/trainingagents.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exe:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: fm27-antrenman-asistani
+    steps:
+      - name: Depoyu al
+        uses: actions/checkout@v4
+
+      - name: .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Testler (K01-K12 ve diğerleri)
+        run: dotnet test src/Asistan.Tests -c Release
+
+      - name: TrainingAgents.exe
+        run: dotnet publish src/TrainingAgents -c Release -r win-x64 -o cikti
+
+      - name: Paketle
+        shell: pwsh
+        run: |
+          Remove-Item cikti\*.pdb -ErrorAction SilentlyContinue
+          Copy-Item README.md cikti\BENIOKU.md
+
+      - name: Yükle
+        uses: actions/upload-artifact@v4
+        with:
+          name: TrainingAgents-win-x64
+          path: fm27-antrenman-asistani/cikti
+          retention-days: 30
