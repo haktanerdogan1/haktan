@@ -33,7 +33,7 @@ class MaidenTests(unittest.TestCase):
                   "101": {"n_prev": 0, "last_pos": None, "best_norm": None},
                   "102": {"n_prev": 2, "last_pos": 5, "best_norm": 75.0, "best_norm_str": "1.15.00"}}
         sires = {"BABA1": {"win": 20.0}, "BABA2": {"win": 8.0}, "BABA3": None}
-        with mock.patch.object(MD, "horse_prior", lambda at, d: priors[at]), \
+        with mock.patch.object(MD, "horse_prior", lambda at, d, *a: priors[at]), \
              mock.patch.object(MD, "sire_stats", lambda n: sires[n]):
             return MD.analyze_race(race(agf=agf), "21/11/2026")
 
@@ -112,3 +112,15 @@ class StaleProgramTests(unittest.TestCase):
             self.assertIsNone(S.stale_program("01/01/2030", "99"))  # artık taze
         with S.CACHE_LOCK:
             S.CACHE.pop(key, None)
+
+
+class GeneralFormTableTests(unittest.TestCase):
+    def test_general_race_uses_site_probability(self):
+        r = race("Handikap 17", agf=(50, 30, 20))
+        for h, mp in zip(r["horses"], (40.0, 35.0, 25.0)):
+            h["simulation"] = {"market_prob": mp, "win_prob": 10.0}
+        with mock.patch.object(MD, "horse_prior", lambda at, d, *a: {"n_prev": 2, "last3": [1, 2], "form": "Formda"}), \
+             mock.patch.object(MD, "sire_stats", lambda n: None):
+            d = MD.analyze_race(r, "21/11/2026", general=True)
+        self.assertTrue(d["general"])
+        self.assertEqual([x["maiden_prob"] for x in d["rows"]], [40.0, 35.0, 25.0])

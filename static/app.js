@@ -752,23 +752,24 @@ function isMaidenRace(race) {
 function renderMaidenCard(race) {
   const el = document.getElementById('maidenCard');
   if (!el) return;
-  if (!isMaidenRace(race)) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+  // Tüm koşularda form tablosu; Maiden / Şartlı 1 / Şartlı 19'da şans Maiden modelinden
+  const isM = isMaidenRace(race);
   el.classList.remove('hidden');
   const p = STATE.program;
   const url = `/api/maiden?date=${encodeURIComponent(p.date)}&city_id=${encodeURIComponent(p.city_id)}&race_no=${race.race_no}`;
   const head = sub => `
     <div class="flex items-center justify-between mb-1.5">
-      <span class="serif-title text-sm font-bold text-[#8C5A3C] uppercase">🐣 Maiden Analizi</span>
+      <span class="serif-title text-sm font-bold text-[#8C5A3C] uppercase">${isM ? '🐣 Maiden Analizi' : '📈 Form Tablosu'}</span>
       <span class="text-[10px] text-[#57534E]">${sub}</span>
     </div>`;
   if (race._maiden) return paintMaiden(el, race, race._maiden, head);
   el.innerHTML = head('⏳ atların geçmişi ve baba istatistikleri yükleniyor…') +
-    '<div class="text-[11px] text-[#57534E]">Geçmişi az atlarda form, derece, baba taylarının başarısı ve start bilgisi taranıyor.</div>';
+    '<div class="text-[11px] text-[#57534E]">Atların form, derece, baba taylarının başarısı ve start bilgisi taranıyor.</div>';
   fetchJSON(url).then(d => {
     race._maiden = d;
     if (isCurrentRace(race)) paintMaiden(el, race, d, head);
   }).catch(e => {
-    if (isCurrentRace(race)) el.innerHTML = head('') + `<div class="text-[11px] text-[#7A1C1C]">Maiden analizi alınamadı: ${e.message}. <button class="underline font-bold" onclick="renderMaidenCard(STATE.program.races[STATE.currentRaceIndex])">Tekrar dene</button></div>`;
+    if (isCurrentRace(race)) el.innerHTML = head('') + `<div class="text-[11px] text-[#7A1C1C]">${isM ? 'Maiden analizi' : 'Form tablosu'} alınamadı: ${e.message}. <button class="underline font-bold" onclick="renderMaidenCard(STATE.program.races[STATE.currentRaceIndex])">Tekrar dene</button></div>`;
   });
 }
 
@@ -814,11 +815,14 @@ function loadMaidenFamily(race) {
 
 function paintMaiden(el, race, d, head) {
   const pct = v => (v === null || v === undefined) ? '—' : `%${v}`;
+  const gen = !!d.general;
+  const kgOf = no => (race.horses.find(x => x.no === no) || {}).weight;
+  const bestHere = d.rows.map(r => r.best_here_str).filter(Boolean).sort((a, b) => a.length - b.length || a.localeCompare(b))[0];
   const rows = d.rows.map(r => {
-    const diff = d.has_agf ? r.maiden_prob - r.agf_pct : 0;
+    const diff = d.has_agf && !gen ? r.maiden_prob - r.agf_pct : 0;
     const tags = [];
     if (!r.n_prev) tags.push('<span class="text-[#7A1C1C]">ilk koşu</span>');
-    if (r.speed_rank === 1) tags.push('<span class="text-[#0F291E] font-bold">en iyi derece</span>');
+    if (gen ? (r.best_here_str && r.best_here_str === bestHere) : r.speed_rank === 1) tags.push('<span class="text-[#0F291E] font-bold">en iyi derece</span>');
     if (r.sire_stats && r.sire_stats.win >= 15) tags.push('<span class="text-[#0F291E] font-bold">güçlü baba</span>');
     const tone = diff >= 4 ? 'text-[#0F291E]' : diff <= -4 ? 'text-[#7A1C1C]' : 'text-[#57534E]';
     return `
@@ -826,23 +830,25 @@ function paintMaiden(el, race, d, head) {
         <td class="py-1 pr-1 mono font-extrabold text-[#0F291E]">#${r.no}</td>
         <td class="py-1 pr-1"><div class="font-bold text-[#18181B] leading-tight">${r.name}</div>
           <div class="text-[9px] text-[#57534E] leading-tight">${r.sire || '—'}${r.sire_stats ? ` • tayları 1. ${pct(r.sire_stats.win)}` : ''}${tags.length ? ' • ' + tags.join(' • ') : ''}</div>
-          <div id="mfam-${r.no}" class="text-[9px] leading-tight mt-0.5">${famLine(race, r.no)}</div></td>
+          ${gen ? '' : `<div id="mfam-${r.no}" class="text-[9px] leading-tight mt-0.5">${famLine(race, r.no)}</div>`}</td>
         <td class="py-1 pr-1 text-center">${formBadge(r)}</td>
         <td class="py-1 pr-1 mono text-center">${r.n_prev ?? '—'}</td>
-        <td class="py-1 pr-1 mono text-center" title="${r.best_from || ''}">${r.best_norm_str ? `${r.best_norm_str}<span class="text-[9px] text-[#78716C]"> (${r.speed_rank}.)</span>` : '—'}</td>
+        ${gen
+          ? `<td class="py-1 pr-1 mono text-center" title="${r.best_here_from || ''}">${r.best_here_str ? `${r.best_here_str}<div class="text-[9px] text-[#57534E]">${r.best_here_kg ? r.best_here_kg + ' kg' : ''}${kgDiffHTML(r.best_here_kg, kgOf(r.no))}</div>` : '<span class="text-[#A8A29E]">—</span>'}</td>`
+          : `<td class="py-1 pr-1 mono text-center" title="${r.best_from || ''}">${r.best_norm_str ? `${r.best_norm_str}<span class="text-[9px] text-[#78716C]"> (${r.speed_rank}.)</span>` : '—'}</td>`}
         <td class="py-1 pr-1 mono text-center">${r.start || '—'}</td>
         <td class="py-1 mono text-right font-extrabold text-[#0F291E]">%${r.maiden_prob}
-          ${d.has_agf ? `<div class="text-[9px] font-semibold ${tone}">AGF %${Math.round(r.agf_pct)}</div>` : ''}</td>
+          ${d.has_agf && !gen ? `<div class="text-[9px] font-semibold ${tone}">AGF %${Math.round(r.agf_pct)}</div>` : ''}</td>
       </tr>`;
   }).join('');
-  loadMaidenFamily(race);
-  el.innerHTML = head(`${d.class} • ${d.has_agf ? 'AGF + bilgiler' : 'AGF henüz yok: form + bilgiler'}`) + `
+  if (!gen) loadMaidenFamily(race);
+  el.innerHTML = head(gen ? `${d.class} • ${d.has_agf ? 'şans: AGF' : 'şans: model (AGF yok)'}` : `${d.class} • ${d.has_agf ? 'AGF + bilgiler' : 'AGF henüz yok: form + bilgiler'}`) + `
     <div class="overflow-x-auto"><table class="w-full text-[11px]">
       <thead><tr class="text-[9px] uppercase text-[#8C5A3C] font-extrabold">
         <th class="text-left pb-1">No</th><th class="text-left pb-1">At / Baba</th><th class="pb-1">Form</th><th class="pb-1">Koşu</th>
-        <th class="pb-1">En iyi (1200 m)</th><th class="pb-1">St</th><th class="text-right pb-1">Maiden şansı</th>
+        <th class="pb-1">${gen ? `En iyi (${race.distance_m} m ${raceSurfaceName(race)})` : 'En iyi (1200 m)'}</th><th class="pb-1">St</th><th class="text-right pb-1">${gen ? 'Şans' : 'Maiden şansı'}</th>
       </tr></thead><tbody>${rows}</tbody></table></div>
-    <div class="text-[9px] text-[#78716C] mt-1.5 leading-snug">Derece: önceki koşulardaki en iyi derecenin 1200 m karşılığı (parantezde koşudaki sırası). Bu koşularda halkın en çok oynadığı at yalnız ~%30 kazanıyor; en güçlü ek bilgi babanın taylarının birincilik oranı, ilk kez koşan atlar ise halkça fazla oynanıyor. Form (son 3 koşunun sırası): AGF yokken en güçlü bilgi; AGF varken halk formu zaten fiyatlıyor. 🧬 Aile: baba, baba babası, anne ve anne babasının kendi ilk koşusunu kazanıp kazanmadığı (bilgi amaçlı, modele katılmadı). Son 2 ayın 297 koşusundan öğrenildi, örnek küçük: şans sırası için kullanın, tek başına bahis kuralı değildir.</div>`;
+    ${gen ? `<div class="text-[9px] text-[#78716C] mt-1.5 leading-snug">Form: son 3 koşunun sırası ve son koşudan bu yana gün. En iyi: atın bugünkü mesafe ve pistteki en iyi derecesi ve o dereceyi yaptığı kilo (<span class="text-[#7A1C1C] font-bold">+</span> bugün daha ağır, <span class="text-[#0F291E] font-bold">−</span> daha hafif). Şans: AGF açıklandıysa halkın düzeltilmiş şansı, yoksa modelin şansı.</div>` : `<div class="text-[9px] text-[#78716C] mt-1.5 leading-snug">Derece: önceki koşulardaki en iyi derecenin 1200 m karşılığı (parantezde koşudaki sırası). Bu koşularda halkın en çok oynadığı at yalnız ~%30 kazanıyor; en güçlü ek bilgi babanın taylarının birincilik oranı, ilk kez koşan atlar ise halkça fazla oynanıyor. Form (son 3 koşunun sırası): AGF yokken en güçlü bilgi; AGF varken halk formu zaten fiyatlıyor. 🧬 Aile: baba, baba babası, anne ve anne babasının kendi ilk koşusunu kazanıp kazanmadığı (bilgi amaçlı, modele katılmadı). Son 2 ayın 297 koşusundan öğrenildi, örnek küçük: şans sırası için kullanın, tek başına bahis kuralı değildir.</div>`}`;
 }
 
 // ------------------------------------------------------------------
@@ -1550,7 +1556,7 @@ function closeDayiPopup() {
 
 function dayiProb(h, race) {
   // Maiden / Şartlı 1 / Şartlı 19: Maiden analizinin şansı (bu koşularda genel modelden isabetli)
-  const m = race && race._maiden && race._maiden.rows.find(x => x.no === h.no);
+  const m = race && race._maiden && !race._maiden.general && race._maiden.rows.find(x => x.no === h.no);
   if (m) return m.maiden_prob;
   const s = h.simulation || {};
   return s.market_prob != null ? s.market_prob : s.win_prob;
@@ -1629,7 +1635,7 @@ function renderDayi() {
               <div class="bg-white border border-[#E2D3B0] rounded-lg px-2.5 py-1.5">
                 <div class="flex items-center justify-between text-[10px] font-bold text-[#8C5A3C]">
                   <span>${x.r.race_no}. Koşu • ${x.r.time} • ${x.r.distance_m}m ${x.r.surface}</span>
-                  <span class="text-[#78716C] font-semibold">${x.r._maiden ? '🐣 Maiden analizi' : x.agf ? 'AGF + model' : 'AGF yok: model'}</span>
+                  <span class="text-[#78716C] font-semibold">${x.r._maiden && !x.r._maiden.general ? '🐣 Maiden analizi' : x.agf ? 'AGF + model' : 'AGF yok: model'}</span>
                 </div>
                 <div class="flex flex-wrap gap-1 mt-1">
                   ${x.hs.slice(0, 5).map((h, i) => `<span onclick="selectRace(${raceIdx(x.r.race_no)}); switchTab('race'); openHorseModal(${h.no});"
