@@ -54,6 +54,18 @@ Panel oyun açıkken http://localhost:5130 adresinde çalışır.
 
 ## Kullanım
 
+**En kısa yol: "⚡ Eksikleri gider" (oyun içinde F8 panelindeki büyük düğme).** Tek tıkla:
+1. Oyun okunur.
+2. Taktik ekranındaki 8 alan ve oyunun kendi tavsiyesine göre iki haftalık program kurulur. Örneğin oyun
+   "Antrenmanlarda Baskı Hattı kurgularına daha fazla zaman ayırmamız gerekiyor." diyorsa o alan yüksek önceliğe alınır.
+3. Bu sürümde yazma henüz doğrulanmadıysa önce yazma testi yapılır.
+4. Seanslar oyuna yazılır ve geri okunarak doğrulanır.
+
+Ayarlar'daki **Otomatik mod** açılırsa, oyun yeni haftaya geçtiğinde ya da taktiği değiştirdiğinizde bu kendiliğinden
+tekrarlanır.
+
+Adım adım kullanım:
+
 1. **Bağlantı → Yetenek matrisini çıkar.** Hangi verinin okunabildiğini, hangi yazmanın oyunun ön kontrolünden
    geçtiğini gösterir. Oyunda hiçbir şey değişmez.
 2. **Bağlantı → Yazma testini çalıştır** (bir kez, kayıt yedeğiniz varken). Bir yoğunluk, bir ek odak ve bir seansı

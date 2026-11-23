@@ -45,10 +45,10 @@ public static class Seanslar
     public static string AlanAdi(TaktikAlan alan) => alan switch
     {
         TaktikAlan.PasStili => "Pas stili",
-        TaktikAlan.OyunKurma => "Oyun kurma",
-        TaktikAlan.FirsatYaratma => "Fırsat yaratma",
+        TaktikAlan.OyunKurma => "Oyun kurulum",
+        TaktikAlan.FirsatYaratma => "Pozisyon üretimi",
         TaktikAlan.TopaSahipkenDizilis => "Topa sahipken diziliş",
-        TaktikAlan.BaskiHatti => "Baskı hattı",
+        TaktikAlan.BaskiHatti => "Karşılama çizgisi",
         TaktikAlan.PresYogunlugu => "Pres yoğunluğu",
         TaktikAlan.PresTuzagi => "Pres tuzağı",
         _ => "Top rakipteyken diziliş"
@@ -82,11 +82,11 @@ public static class Seanslar
     {
         (TaktikAlan.PresTuzagi, new[] { "pres tuzağı", "pres tuzagi", "pressing trap", "piège", "piege" }),
         (TaktikAlan.PresYogunlugu, new[] { "pres yoğunluğu", "pres yogunlugu", "pressing intensity", "intensité du pressing", "intensite du pressing" }),
-        (TaktikAlan.BaskiHatti, new[] { "baskı hattı", "baski hatti", "line of engagement", "ligne d'engagement", "ligne de pressing" }),
-        (TaktikAlan.TopRakipteyken, new[] { "top rakipteyken", "topsuz diziliş", "out of possession", "sans ballon", "sans le ballon" }),
-        (TaktikAlan.TopaSahipkenDizilis, new[] { "topa sahipken", "toplu diziliş", "in possession", "avec ballon", "avec le ballon" }),
-        (TaktikAlan.FirsatYaratma, new[] { "fırsat yaratma", "firsat yaratma", "chance creation", "création d'occasions", "creation d'occasions" }),
-        (TaktikAlan.OyunKurma, new[] { "oyun kurma", "build-up", "build up", "buildup", "construction" }),
+        (TaktikAlan.BaskiHatti, new[] { "baskı hattı", "karşılama çizgisi", "karsilama cizgisi", "karşılama", "baski hatti", "line of engagement", "ligne d'engagement", "ligne de pressing" }),
+        (TaktikAlan.TopRakipteyken, new[] { "top rakipteyken", "rakip topa sahipken", "topsuz oyun", "topsuz diziliş", "out of possession", "sans ballon", "sans le ballon" }),
+        (TaktikAlan.TopaSahipkenDizilis, new[] { "topa sahipken", "top bizdeyken", "toplu diziliş", "in possession", "avec ballon", "avec le ballon" }),
+        (TaktikAlan.FirsatYaratma, new[] { "pozisyon üretimi", "pozisyon uretimi", "fırsat yaratma", "firsat yaratma", "chance creation", "création d'occasions", "creation d'occasions" }),
+        (TaktikAlan.OyunKurma, new[] { "oyun kurulum", "oyun kurma", "oyunu kurma", "build-up", "build up", "buildup", "construction" }),
         (TaktikAlan.PasStili, new[] { "pas stili", "passing style", "style de passe" })
     };
 
@@ -142,6 +142,13 @@ public static class Seanslar
     }
 
     /// <summary>Küçük harf + aksan katlama: "BASKI HATTI", "Baskı hattı" ve "baski hatti" aynı metne iner.</summary>
+    /// <summary>Oyunun kendi tavsiye metninde ("Antrenmanlarda Baskı Hattı kurgularına daha fazla zaman…") adı geçen alanlar.</summary>
+    public static List<TaktikAlan> MetindekiAlanlar(string? metin)
+    {
+        var m = Kucuk(metin ?? "");
+        return AlanKelimeleri.Where(a => a.Kelimeler.Any(k => m.Contains(Kucuk(k)))).Select(a => a.Alan).Distinct().ToList();
+    }
+
     internal static string Kucuk(string metin)
     {
         var duz = (metin ?? "").Replace('İ', 'i').Replace('I', 'i').Replace('ı', 'i').ToLowerInvariant().Normalize(NormalizationForm.FormD);

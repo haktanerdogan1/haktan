@@ -64,6 +64,10 @@ public sealed class Anlik
     public required Okuma<Puan> GenelAnlayis { get; init; }
     public required Okuma<bool> Fizyoterapist { get; init; }
     public required IReadOnlyList<string> Uyarilar { get; init; }
+    /// <summary>Oyunun taktik ekranındaki kendi tavsiyesi (ör. "Antrenmanlarda Baskı Hattı kurgularına daha fazla zaman ayırmamız gerekiyor.").</summary>
+    public string? OyunTavsiyesi { get; init; }
+    /// <summary>Oyunun tavsiyesinin olumlu mu (her şey yolunda) olduğu.</summary>
+    public bool OyunTavsiyesiOlumlu { get; init; }
 
     public SeansTuru? Tur(int id) => SeansTurleri.TryGetValue(id, out var t) ? t : null;
 
@@ -173,6 +177,8 @@ public sealed class Anlik
 
         // ---- Taktik ve taktiksel anlayış
         Okuma<AktifTaktik> taktik;
+        string? tavsiye = null;
+        var tavsiyeOlumlu = false;
         var anlayis = new Dictionary<TaktikAlan, AlanOlcumu>();
         Okuma<Puan> genel;
 
@@ -186,6 +192,8 @@ public sealed class Anlik
                 : Okuma<AktifTaktik>.Var(new AktifTaktik(aktifSlot.Name, aktifSlot.Slot, a.InPossessionFormation, a.StyleKey, a.MentalityKey, a.TeamInstructions), KaynakTaktik, zaman);
 
             var ta = aktifSlot?.Effectiveness?.TacticalUnderstanding;
+            tavsiye = ta?.AreasAdvice?.Text;
+            tavsiyeOlumlu = ta?.AreasAdvice?.IsPositive == true;
             genel = Okuma<Puan>.Belki(Puan.Coz(ta?.Overall), KaynakTaktik, zaman, "0-100");
 
             foreach (var (alan, dto) in Alanlar(ta))
@@ -239,7 +247,9 @@ public sealed class Anlik
             Anlayis = anlayis,
             GenelAnlayis = genel,
             Fizyoterapist = fizyo,
-            Uyarilar = uyarilar
+            Uyarilar = uyarilar,
+            OyunTavsiyesi = tavsiye,
+            OyunTavsiyesiOlumlu = tavsiyeOlumlu
         };
     }
 

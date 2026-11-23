@@ -283,34 +283,134 @@ public sealed class AntrenmanAsistani
 
         try
         {
-            Durum = "Oyun içi yazma testi: değiştir → geri oku → eski haline getir → geri oku…";
-            var surum = await _baglanti.SurumAsync(ct).ConfigureAwait(false);
-
-            if (!surum.Basarili)
-            {
-                Durum = "Sürüm okunamadı; yazma testi yapılmadı.";
-                return false;
-            }
-
-            Surum = YetenekTesti.SurumSatiri(surum.Veri!);
-            var (ok, gunluk) = await YetenekTesti.YazmaTestiAsync(_baglanti, ct).ConfigureAwait(false);
-            YazmaTestiGunlugu.Clear();
-            YazmaTestiGunlugu.AddRange(gunluk);
-
-            if (ok && !Ayarlar.DogrulanmisSurumler.Contains(Surum))
-            {
-                Ayarlar.DogrulanmisSurumler.Add(Surum);
-                _depo.AyarlariYaz(Ayarlar);
-            }
-
-            Durum = ok ? "Yazma bu sürümde oyun içinde doğrulandı." : "Yazma testi tamamlanamadı; yazma kapalı kalıyor. Günlüğe bakın.";
-            return ok;
+            return await YazmaTestiIcAsync(ct).ConfigureAwait(false);
         }
         finally
         {
             _is.Release();
         }
     }
+
+    private async Task<bool> YazmaTestiIcAsync(CancellationToken ct)
+    {
+        Durum = "Oyun içi yazma testi: değiştir → geri oku → eski haline getir → geri oku…";
+        var surum = await _baglanti.SurumAsync(ct).ConfigureAwait(false);
+
+        if (!surum.Basarili)
+        {
+            Durum = "Sürüm okunamadı; yazma testi yapılmadı.";
+            return false;
+        }
+
+        Surum = YetenekTesti.SurumSatiri(surum.Veri!);
+        var (ok, gunluk) = await YetenekTesti.YazmaTestiAsync(_baglanti, ct).ConfigureAwait(false);
+        YazmaTestiGunlugu.Clear();
+        YazmaTestiGunlugu.AddRange(gunluk);
+
+        if (ok && !Ayarlar.DogrulanmisSurumler.Contains(Surum))
+        {
+            Ayarlar.DogrulanmisSurumler.Add(Surum);
+            _depo.AyarlariYaz(Ayarlar);
+        }
+
+        Durum = ok ? "Yazma bu sürümde oyun içinde doğrulandı." : "Yazma testi tamamlanamadı; yazma kapalı kalıyor. Günlüğe bakın.";
+        return ok;
+    }
+
+    // ---------------- Tek tık ----------------
+
+    /// <summary>
+    /// "Eksikleri gider": oyunu yeniden okur, taktik eksiklerine göre iki haftalık programı üretir ve takım programındaki
+    /// bütün önerilen değişiklikleri (istenirse oyuncu önerilerini de) tek seferde uygular. Bu sürümde yazma henüz
+    /// doğrulanmadıysa önce yazma testini yapar. Kullanıcı onayı arayüzde bu tek tıklamayla alınır.
+    /// </summary>
+    public async Task<IslemRaporu?> EksikleriGiderAsync(bool oyuncularDahil, CancellationToken ct = default)
+    {
+        if (!await _is.WaitAsync(0, ct).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        try
+        {
+            if (!await AnalizIcAsync(ct).ConfigureAwait(false) || Plan is null)
+            {
+                return null;
+            }
+
+            if (!YazmaIzni.Acik && !await YazmaTestiIcAsync(ct).ConfigureAwait(false))
+            {
+                Durum = "Tek tık durdu: yazma testi geçmedi, oyunda hiçbir plan değişikliği yapılmadı. Bağlantı sekmesindeki günlüğe bakın.";
+                return null;
+            }
+
+            var secilen = Degisiklikler()
+                .Where(d => d.Tur == DegisiklikTuru.Seans || oyuncularDahil)
+                .ToList();
+
+            if (secilen.Count == 0)
+            {
+                Durum = "Program zaten eksiklere uygun: değiştirilecek seans yok.";
+                return null;
+            }
+
+            Durum = $"Eksikler gideriliyor: {secilen.Count} değişiklik gönderiliyor…";
+            var rapor = await _islem.UygulaAsync(Plan.PlanAnahtari, secilen, GuncelOkuAsync, Surum, Ayarlar, ct: ct).ConfigureAwait(false);
+            Kaydet(rapor);
+            await SonrasindaYenileAsync(rapor, ct).ConfigureAwait(false);
+            return rapor;
+        }
+        finally
+        {
+            _is.Release();
+        }
+    }
+
+    /// <summary>
+    /// Otomatik mod (Ayarlar.OtomatikUygula): oyun tarihi yeni haftaya geçtiğinde ya da aktif taktik değiştiğinde
+    /// eksikleri giderme kendiliğinden yeniden çalışır. Eklenti bunu düzenli aralıklarla çağırır.
+    /// </summary>
+    public async Task OtomatikKontrolAsync(CancellationToken ct = default)
+    {
+        if (!Ayarlar.OtomatikUygula || Mesgul)
+        {
+            return;
+        }
+
+        if (Surum is null)
+        {
+            var s = await _baglanti.SurumAsync(ct).ConfigureAwait(false);
+            Surum = s.Basarili ? YetenekTesti.SurumSatiri(s.Veri!) : null;
+        }
+
+        // Otomatik modda yazma testi kendiliğinden yapılmaz: sürüm önceden doğrulanmış olmalı.
+        if (!YazmaIzni.Acik)
+        {
+            return;
+        }
+
+        var ant = await _baglanti.AntrenmanAsync(ct).ConfigureAwait(false);
+        var tak = await _baglanti.TaktiklerAsync(ct).ConfigureAwait(false);
+
+        if (!ant.Basarili || !tak.Basarili)
+        {
+            return;
+        }
+
+        var hafta = string.Join(",", ant.Veri!.Weeks.Select(w => w.StartDate ?? "?"));
+        var taktik = tak.Veri!.Slots.FirstOrDefault(s => s.IsActive)?.Name;
+        var imza = hafta + "|" + taktik;
+
+        if (imza == _sonOtomatikImza)
+        {
+            return;
+        }
+
+        _sonOtomatikImza = imza;
+        await EksikleriGiderAsync(oyuncularDahil: false, ct).ConfigureAwait(false);
+    }
+
+    private string? _sonOtomatikImza;
 
     // ---------------- Ayarlar ----------------
 
@@ -354,7 +454,8 @@ public sealed class AntrenmanAsistani
         {
             Kimlik = a.Kimlik, OkunmaZamani = a.OkunmaZamani, Gunler = a.Gunler, SeansTurleri = turler, Oyuncular = a.Oyuncular,
             OdakSecenekleri = a.OdakSecenekleri, YogunlukSecenekleri = a.YogunlukSecenekleri, Taktik = a.Taktik, Anlayis = a.Anlayis,
-            GenelAnlayis = a.GenelAnlayis, Fizyoterapist = fizyo, Uyarilar = a.Uyarilar
+            GenelAnlayis = a.GenelAnlayis, Fizyoterapist = fizyo, Uyarilar = a.Uyarilar,
+            OyunTavsiyesi = a.OyunTavsiyesi, OyunTavsiyesiOlumlu = a.OyunTavsiyesiOlumlu
         };
     }
 

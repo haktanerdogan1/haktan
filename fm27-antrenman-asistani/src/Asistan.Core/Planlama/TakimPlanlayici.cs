@@ -74,7 +74,11 @@ public static class TakimPlanlayici
         HaftaTipi Tip(int no) => haftaMac.GetValueOrDefault(no) switch { 0 => HaftaTipi.Macsiz, 1 => HaftaTipi.TekMacli, _ => HaftaTipi.CiftMacli };
 
         var secici = new SeansSecici(a);
-        var taktikSirasi = analiz.Oncelikli.ToList();
+        // Yüksek öncelikli eksikler sırada iki kez yer alır: kalan kapasitenin çoğu en büyük eksiğe gider.
+        var taktikSirasi = analiz.Oncelikli
+            .SelectMany(k => k.Oncelik == Oncelik.Yuksek ? new[] { k, k } : new[] { k })
+            .ToList();
+        var eksikVar = analiz.Oncelikli.Any(k => k.Oncelik == Oncelik.Yuksek);
         var haftalikSeansSayisi = new Dictionary<(int Hafta, int Seans), int>();
         var haftalikYuk = new Dictionary<int, int>();
         var sosyalKonuldu = new HashSet<int>();
@@ -107,7 +111,7 @@ public static class TakimPlanlayici
             var tip = Tip(hafta);
             var sonrakiMac = maclar.Where(m => m > gun.Tarih).Select(m => (int?)(m.DayNumber - gun.Tarih.DayNumber)).FirstOrDefault();
             var oncekiMac = maclar.Where(m => m < gun.Tarih).Select(m => (int?)(gun.Tarih.DayNumber - m.DayNumber)).LastOrDefault();
-            var (baglam, ihtiyaclar) = GunIhtiyaci(gun, tip, sonrakiMac, oncekiMac, maclar.Count == 0);
+            var (baglam, ihtiyaclar) = GunIhtiyaci(gun, tip, sonrakiMac, oncekiMac, maclar.Count == 0, eksikVar);
             var gunSiniri = tip == HaftaTipi.CiftMacli ? ayar.CiftMacHaftasiGunlukYukSiniri : ayar.GunlukYukSiniri;
 
             if (sonrakiMac == 1)
@@ -297,7 +301,8 @@ public static class TakimPlanlayici
                     }
 
                     var kart = taktikSirasi[(taktikImleci + deneme) % taktikSirasi.Count];
-                    var seans = kart.UygunSeanslar.FirstOrDefault(t => haftalikSeansSayisi.GetValueOrDefault((hafta, t.Id)) < ayar.AyniSeansHaftalikSinir);
+                    var sinir = ayar.AyniSeansHaftalikSinir + (kart.Oncelik == Oncelik.Yuksek ? 1 : 0);
+                    var seans = kart.UygunSeanslar.FirstOrDefault(t => haftalikSeansSayisi.GetValueOrDefault((hafta, t.Id)) < sinir);
 
                     if (seans is not null)
                     {
@@ -356,7 +361,7 @@ public static class TakimPlanlayici
         _ => ayar.HaftalikYukSiniri - 6
     };
 
-    private static (string Baglam, List<Ihtiyac> Ihtiyaclar) GunIhtiyaci(Gun gun, HaftaTipi tip, int? sonraki, int? onceki, bool hicMacYok)
+    private static (string Baglam, List<Ihtiyac> Ihtiyaclar) GunIhtiyaci(Gun gun, HaftaTipi tip, int? sonraki, int? onceki, bool hicMacYok, bool eksikVar)
     {
         if (gun.MacGunu)
         {
@@ -401,7 +406,9 @@ public static class TakimPlanlayici
                 : ("Maçsız dönem.", new() { Ihtiyac.Taktik, Ihtiyac.Fiziksel, Ihtiyac.Gelisim });
         }
 
-        return ("Maçtan uzak gün.", new() { Ihtiyac.Taktik, Ihtiyac.Fiziksel, Ihtiyac.Sosyal, Ihtiyac.Gelisim });
+        return eksikVar && tip != HaftaTipi.CiftMacli
+            ? ("Maçtan uzak gün: taktik eksik için iki seans.", new() { Ihtiyac.Taktik, Ihtiyac.Taktik, Ihtiyac.Fiziksel, Ihtiyac.Sosyal })
+            : ("Maçtan uzak gün.", new() { Ihtiyac.Taktik, Ihtiyac.Fiziksel, Ihtiyac.Sosyal, Ihtiyac.Gelisim });
     }
 
     private static string IhtiyacAdi(Ihtiyac i) => i switch

@@ -40,6 +40,13 @@ public static class TaktikAnalizi
     public static AnalizSonucu Calistir(Anlik a, Ayarlar ayar)
     {
         var notlar = new List<string>();
+        // Oyunun kendi tavsiyesi ("Antrenmanlarda Baskı Hattı kurgularına daha fazla zaman ayırmamız gerekiyor.") en güçlü işarettir.
+        var tavsiyeAlanlari = a.OyunTavsiyesiOlumlu ? new List<TaktikAlan>() : Seanslar.MetindekiAlanlar(a.OyunTavsiyesi);
+
+        if (!string.IsNullOrWhiteSpace(a.OyunTavsiyesi))
+        {
+            notlar.Add("Oyunun tavsiyesi: \"" + a.OyunTavsiyesi + "\"");
+        }
         var kartlar = new List<SorunKarti>();
         var olcumler = a.Anlayis.Values.Where(o => o.Anlayis.VarMi).Select(o => o.Anlayis.Deger!.Orta).ToList();
         var ortalama = olcumler.Count > 0 ? olcumler.Average() : (double?)null;
@@ -101,10 +108,19 @@ public static class TaktikAnalizi
             }
 
             var skor = eksiklik * onem * guven;
+            var oyunIstiyor = tavsiyeAlanlari.Contains(alan);
             var oncelik = puan.Orta >= ayar.HedefAnlayis - ayar.AnlamliEksik ? Oncelik.Yok
                 : skor >= ayar.YuksekOncelikEsigi ? Oncelik.Yuksek
                 : skor >= ayar.OrtaOncelikEsigi ? Oncelik.Orta
                 : Oncelik.Dusuk;
+
+            if (oyunIstiyor)
+            {
+                // Oyun bu alan için açıkça daha fazla antrenman istiyor: değer yüksek görünse bile en az yüksek öncelik.
+                oncelik = Oncelik.Yuksek;
+                skor = Math.Max(skor, ayar.YuksekOncelikEsigi) + 0.5;
+                gozlem += $" Oyunun kendi tavsiyesi bu alanı istiyor: \"{a.OyunTavsiyesi}\"";
+            }
 
             string oneri;
 

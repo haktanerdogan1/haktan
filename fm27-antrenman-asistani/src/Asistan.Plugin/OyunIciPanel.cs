@@ -23,13 +23,14 @@ public sealed class OyunIciPanel : MonoBehaviour
     private Vector2 _kaydirma;
     private int _sekme;
     private bool _onayBekliyor;
+    private bool _tekTikOnay;
     private bool _surukleniyor;
     private Vector2 _surukleBaslangic;
     private readonly HashSet<string> _secim = new();
     private KeyCode _tus = KeyCode.F8;
     private bool _stilHazir;
     private float _icerikYuksekligi = 600;
-    private GUIStyle? _baslik, _metin, _soluk, _kalin, _zemin, _kart;
+    private GUIStyle? _baslik, _metin, _soluk, _kalin, _zemin, _kart, _buyukDugme;
     private Texture2D? _zeminDoku, _kartDoku;
 
     private static AntrenmanAsistani? A => Eklenti.Asistan;
@@ -99,9 +100,51 @@ public sealed class OyunIciPanel : MonoBehaviour
             y += Yaz(x, y, w, "Dikkat: " + pu, _metin) + 4;
         }
 
+        if (A.Anlik?.OyunTavsiyesi is { } tav && !A.Anlik.OyunTavsiyesiOlumlu)
+        {
+            y += Yaz(x, y, w, "<color=#ff8a80>Oyunun tavsiyesi:</color> " + tav, _metin) + 4;
+        }
+
         GUI.enabled = !A.Mesgul;
 
-        if (GUI.Button(new Rect(x, y, 200, 26), "Oyundan oku ve analiz et"))
+        // Tek tık: oku → eksiklere göre program → (gerekirse yazma testi) → uygula → geri oku. İkinci tık onaydır.
+        if (!_tekTikOnay)
+        {
+            if (GUI.Button(new Rect(x, y, w, 34), "EKSİKLERİ GİDER (tek tık)", _buyukDugme))
+            {
+                _tekTikOnay = true;
+            }
+        }
+        else
+        {
+            if (GUI.Button(new Rect(x, y, w * 0.5f - 4, 34), "Onayla: takım programı", _buyukDugme))
+            {
+                _tekTikOnay = false;
+                _secim.Clear();
+                Arkaplan(() => A.EksikleriGiderAsync(oyuncularDahil: false));
+                _sekme = 3;
+            }
+
+            if (GUI.Button(new Rect(x + w * 0.5f, y, w * 0.3f - 4, 34), "+ oyuncu önerileri"))
+            {
+                _tekTikOnay = false;
+                _secim.Clear();
+                Arkaplan(() => A.EksikleriGiderAsync(oyuncularDahil: true));
+                _sekme = 3;
+            }
+
+            GUI.enabled = true;
+
+            if (GUI.Button(new Rect(x + w * 0.8f, y, w * 0.2f, 34), "Vazgeç"))
+            {
+                _tekTikOnay = false;
+            }
+        }
+
+        GUI.enabled = !A.Mesgul;
+        y += 40;
+
+        if (GUI.Button(new Rect(x, y, 200, 26), "Yalnızca oku ve analiz et"))
         {
             _secim.Clear();
             _onayBekliyor = false;
@@ -459,6 +502,7 @@ public sealed class OyunIciPanel : MonoBehaviour
         _kalin = new GUIStyle(_metin) { fontStyle = FontStyle.Bold };
         _baslik = new GUIStyle(_metin) { fontSize = 16, fontStyle = FontStyle.Bold };
         _baslik.normal.textColor = new Color(0.17f, 0.70f, 0.64f);
+        _buyukDugme = new GUIStyle(GUI.skin.button) { fontSize = 15, fontStyle = FontStyle.Bold };
         _stilHazir = true;
     }
 

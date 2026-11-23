@@ -112,6 +112,9 @@ public sealed class WebSunucu : IDisposable
                 case "/api/geri-al":
                     await _asistan.GeriAlAsync(j.GetProperty("id").GetString()!).ConfigureAwait(false);
                     break;
+                case "/api/eksikleri-gider":
+                    await _asistan.EksikleriGiderAsync(j.TryGetProperty("oyuncular", out var oy) && oy.ValueKind == JsonValueKind.True).ConfigureAwait(false);
+                    break;
                 case "/api/yetenek":
                     await _asistan.YetenekTestiAsync().ConfigureAwait(false);
                     break;
@@ -186,6 +189,9 @@ public sealed class WebSunucu : IDisposable
                         prop.SetValue(a, prop.PropertyType == typeof(int) ? (object)(int)Math.Round(d) : d);
                     }
 
+                    break;
+                case "otomatik":
+                    a.OtomatikUygula = j.GetProperty("deger").GetBoolean();
                     break;
                 case "surumUnut":
                     a.DogrulanmisSurumler.Remove(j.GetProperty("surum").GetString()!);

@@ -28,6 +28,7 @@ public sealed class Eklenti : BasePlugin
     internal static Action<string>? Logla { get; private set; }
 
     private McpfmBaglantisi? _baglanti;
+    private Timer? _otomatik;
 
     public override void Load()
     {
@@ -51,6 +52,18 @@ public sealed class Eklenti : BasePlugin
             Log.LogError($"Yerel panel {port} portunda açılamadı: {e.Message}. Ayarı BepInEx\\config\\{Kimlik}.cfg içinden değiştirin.");
         }
 
+        // Otomatik mod (Ayarlar'dan açılır): her dakika oyunun haftası/taktiği değişti mi diye bakar.
+        _otomatik = new Timer(_ =>
+        {
+            var a = Asistan;
+            if (a is null || !a.Ayarlar.OtomatikUygula) return;
+            _ = Task.Run(async () =>
+            {
+                try { await a.OtomatikKontrolAsync().ConfigureAwait(false); }
+                catch (Exception e) { Log.LogWarning("Otomatik kontrol: " + e.Message); }
+            });
+        }, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+
 #if IMGUI_PANEL
         try
         {
@@ -73,6 +86,7 @@ public sealed class Eklenti : BasePlugin
 
     public override bool Unload()
     {
+        _otomatik?.Dispose();
         Sunucu?.Dispose();
         _baglanti?.Dispose();
         return true;

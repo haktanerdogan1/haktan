@@ -21,6 +21,8 @@ button { background: var(--panel2); color: var(--metin); border: 1px solid var(-
 button:hover:not(:disabled) { border-color: var(--vurgu); }
 button.ana { background: var(--vurgu2); border-color: var(--vurgu); }
 button.tehlike { border-color: var(--yuksek); }
+button.buyuk { font-size: 15px; font-weight: 600; padding: 9px 18px; }
+.tavsiye { border-color: var(--yuksek); background: #3a1717; }
 button:disabled { opacity: .45; cursor: default; }
 nav { display: flex; gap: 2px; padding: 0 20px; background: var(--panel); border-bottom: 1px solid var(--cizgi); overflow-x: auto; }
 nav button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 10px 14px; color: var(--soluk); white-space: nowrap; }
@@ -81,7 +83,8 @@ h2 { font-size: 15px; margin: 18px 0 10px; }
   <h1>FM27 <span>Antrenman Asistanı</span></h1>
   <div class="bilgi" id="baslikBilgi">Bağlanılmadı</div>
   <div class="bosluk"></div>
-  <button class="ana" id="analizBtn" onclick="islem('analiz')">Oyundan oku ve analiz et</button>
+  <button id="analizBtn" onclick="islem('analiz')">Oyundan oku ve analiz et</button>
+  <button class="ana buyuk" id="tekTikBtn" onclick="tekTik()">⚡ Eksikleri gider</button>
 </header>
 <nav id="sekmeler"></nav>
 <main id="icerik"><div class="bos">Yükleniyor…</div></main>
@@ -129,6 +132,13 @@ async function islem(ad, govde = {}) {
   ciz();
 }
 
+async function tekTik() {
+  const oyuncular = confirm("Tek tıkla eksikleri gider:\n\n1) Oyun yeniden okunur, taktik anlayışındaki eksiklere göre iki haftalık program kurulur.\n2) Bu sürümde yazma henüz doğrulanmadıysa önce yazma testi yapılır (değiştir → geri oku → eski haline getir).\n3) Takım programındaki bütün önerilen seanslar oyuna yazılır ve geri okunarak doğrulanır.\n\nOyuncuların ek odak/yoğunluk önerileri de uygulansın mı?\n(Tamam = evet, İptal = yalnızca takım programı)");
+  if (!confirm("Kayıt yedeğiniz var mı? Devam edilsin mi?")) return;
+  await islem("eksikleri-gider", { oyuncular });
+  sekme = "uygula"; ciz();
+}
+
 const ayar = (islem, veri) => window.islem("ayar", { islem, ...veri });
 
 function ciz() {
@@ -140,12 +150,14 @@ function ciz() {
     ? `<b>${e(V.takim)}</b> · ${e(V.taktik)} · okunma ${e(V.okunma)} · ${e(V.surum || "sürüm okunamadı")}`
     : e(V.durum);
   document.getElementById("analizBtn").disabled = V.mesgul;
+  document.getElementById("tekTikBtn").disabled = V.mesgul;
   const f = { genel, takvim, oyuncular, uygula, izleme, baglanti, ayarlar }[sekme];
   document.getElementById("icerik").innerHTML = serit() + f();
 }
 
 function serit() {
   let h = `<div class="serit">${e(V.durum)}</div>`;
+  if (V.oyunTavsiyesi && !V.oyunTavsiyesiOlumlu) h += `<div class="serit tavsiye"><b>Oyunun tavsiyesi:</b> ${e(V.oyunTavsiyesi)} <span class="kucuk">— bu alan önceliklendirildi.</span></div>`;
   if (V.planUyarisi) h += `<div class="serit uyari">${e(V.planUyarisi)}</div>`;
   if (V.takim && !V.yazmaIzni.acik) h += `<div class="serit uyari">Oyuna yazma kapalı: ${e(V.yazmaIzni.neden)}</div>`;
   for (const u of V.uyarilar || []) h += `<div class="serit uyari">${e(u)}</div>`;
@@ -299,7 +311,10 @@ function ayarlar() {
   const a = V.ayarlar;
   const fz = a.fizyoterapistVar;
   const esik = (ad, baslik, aciklama) => `<tr><td>${baslik}<div class="kucuk">${aciklama}</div></td><td><input type="number" value="${a[ad[0].toLowerCase() + ad.slice(1)]}" onchange="ayar('esik',{ad:'${ad}',deger:+this.value})" style="width:80px"></td></tr>`;
-  let h = `<div class="ikili"><div class="kart"><h3>Personel</h3>
+  let h = `<div class="kart" style="margin-bottom:12px"><h3>Otomatik mod <span class="etiket ${V.otomatik ? "Yok" : "Belirsiz"}">${V.otomatik ? "Açık" : "Kapalı"}</span></h3>
+    <p class="kucuk">Açıkken oyun tarihi yeni haftaya geçtiğinde ya da aktif taktik değiştiğinde "Eksikleri gider" kendiliğinden çalışır (yalnızca takım programı). Yazma testi geçmiş sürümlerde çalışır; sonuçlar işlem günlüğüne yazılır.</p>
+    <button onclick="ayar('otomatik',{deger:${!V.otomatik}})">${V.otomatik ? "Kapat" : "Aç"}</button></div>
+    <div class="ikili"><div class="kart"><h3>Personel</h3>
     <p class="kucuk">MCPFM sağlık ekibini okumuyor. Toparlanma (rejenerasyon) seansları fizyoterapist gerektirir; durumu siz belirtin.</p>
     <div class="secimler">
       <button class="${fz === true ? "secili" : ""}" onclick="ayar('fizyoterapist',{deger:true})">Fizyoterapist var</button>

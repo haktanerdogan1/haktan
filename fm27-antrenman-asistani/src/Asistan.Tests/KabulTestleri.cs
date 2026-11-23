@@ -486,4 +486,68 @@ public class KabulTestleri : IDisposable
         Assert.DoesNotContain("tamamland", rapor.Ozet, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("0/2", rapor.Ozet);
     }
+
+    // ---------------- FM27 Türkçe ekranı ve tek tık ----------------
+
+    [Theory]
+    [InlineData("Oyun Kurulum", TaktikAlan.OyunKurma)]
+    [InlineData("Pozisyon Üretimi", TaktikAlan.FirsatYaratma)]
+    [InlineData("Karşılama Çizgisi", TaktikAlan.BaskiHatti)]
+    [InlineData("Baskı Hattı", TaktikAlan.BaskiHatti)]
+    [InlineData("Top Rakipteyken Diziliş", TaktikAlan.TopRakipteyken)]
+    public void FM27Turkce_AlanAdlariTaninir(string ad, TaktikAlan alan) => Assert.Equal(alan, Seanslar.Siniflandir(ad, "").Alan);
+
+    [Fact]
+    public async Task OyununTavsiyesi_AlaniYuksekOncelikYapar_VeProgramaKoyar()
+    {
+        // Ekran görüntüsündeki durum: "Antrenmanlarda Baskı Hattı kurgularına daha fazla zaman ayırmamız gerekiyor."
+        var taktik = Senaryo.Taktik("72", digerleri: "78");
+        var ta = taktik.Slots[0].Effectiveness!.TacticalUnderstanding!;
+        ta.LineOfEngagement = new TaktikAlanDto { Understanding = "68", MatchExposure = "50", TrainingContribution = "20" };
+        ta.AreasAdvice = new TavsiyeDto { Text = "Antrenmanlarda Baskı Hattı kurgularına daha fazla zaman ayırmamız gerekiyor.", IsPositive = false };
+        var a = Kur(new SahteOyun(Senaryo.Antrenman(new[] { 5, 12 }), taktik, Senaryo.Kadro()));
+        await a.AnalizEtAsync();
+
+        var kart = a.Analiz!.Kartlar.First();
+        Assert.Equal(TaktikAlan.BaskiHatti, kart.Alan);
+        Assert.Equal(Oncelik.Yuksek, kart.Oncelik);
+        Assert.Contains("Oyunun kendi tavsiyesi", kart.Gozlem);
+        var baskiSeanslari = a.Plan!.Gunler.Where(g => g.Tarih < Senaryo.Pazartesi.AddDays(7)).SelectMany(g => g.Hucreler).Count(h => h.Onerilen?.Id == 14);
+        Assert.True(baskiSeanslari >= 3, $"ilk haftada {baskiSeanslari} Baskı Hattı seansı");
+    }
+
+    [Fact]
+    public async Task TekTik_YazmaTestiniYapar_SeanslariUygular_VeDogrular()
+    {
+        var oyun = TekMacliOyun("40");
+        var a = Kur(oyun, yazmaDogrulanmis: false);
+        var rapor = await a.EksikleriGiderAsync(oyuncularDahil: false);
+
+        Assert.NotNull(rapor);
+        Assert.True(a.YazmaIzni.Acik);
+        Assert.Equal(IslemDurumu.Dogrulandi, rapor!.Durum);
+        Assert.All(rapor.Kalemler, k => Assert.Equal(DegisiklikTuru.Seans, k.Degisiklik.Tur));
+        Assert.Empty(a.Degisiklikler().Where(d => d.Tur == DegisiklikTuru.Seans));
+        Assert.Contains(oyun.Antrenman.Weeks.SelectMany(w => w.Days).SelectMany(d => d.Sessions), s => s.Type == 15);
+    }
+
+    [Fact]
+    public async Task OtomatikMod_YeniHaftadaKendiligindenCalisir()
+    {
+        var oyun = TekMacliOyun("40");
+        var a = Kur(oyun);
+        a.AyarDegistir(s => s.OtomatikUygula = true);
+        await a.OtomatikKontrolAsync();
+        var ilk = oyun.UygulamaSayisi;
+        Assert.True(ilk > 0);
+
+        await a.OtomatikKontrolAsync(); // aynı hafta: tekrar yazmaz
+        Assert.Equal(ilk, oyun.UygulamaSayisi);
+
+        var yeni = Senaryo.Antrenman(new[] { 5, 12 });
+        foreach (var (h, i) in yeni.Weeks.Select((h, i) => (h, i))) h.StartDate = Senaryo.Tarih(7 * (i + 1));
+        oyun.Antrenman = yeni;
+        await a.OtomatikKontrolAsync();
+        Assert.True(oyun.UygulamaSayisi > ilk);
+    }
 }
