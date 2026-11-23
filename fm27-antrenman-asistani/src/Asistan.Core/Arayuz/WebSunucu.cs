@@ -121,6 +121,9 @@ public sealed class WebSunucu : IDisposable
                 case "/api/eksikleri-gider":
                     await _asistan.EksikleriGiderAsync(j.TryGetProperty("oyuncular", out var oy) && oy.ValueKind == JsonValueKind.True).ConfigureAwait(false);
                     break;
+                case "/api/antrenor":
+                    AntrenorIslemi(j);
+                    break;
                 case "/api/yetenek":
                     await _asistan.YetenekTestiAsync().ConfigureAwait(false);
                     break;
@@ -201,6 +204,50 @@ public sealed class WebSunucu : IDisposable
                     break;
                 case "surumUnut":
                     a.DogrulanmisSurumler.Remove(j.GetProperty("surum").GetString()!);
+                    break;
+            }
+        });
+    }
+
+    private void AntrenorIslemi(JsonElement j)
+    {
+        var islem = j.GetProperty("islem").GetString();
+        string Str(string ad) => j.TryGetProperty(ad, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString()! : "";
+
+        _asistan.AntrenorDegistir(liste =>
+        {
+            var a = liste.FirstOrDefault(x => x.Id == Str("id"));
+
+            switch (islem)
+            {
+                case "ekle":
+                    var yeni = new Personel.Antrenor { Ad = string.IsNullOrWhiteSpace(Str("ad")) ? "Yeni antrenör" : Str("ad"), Gorev = Str("gorev") };
+                    foreach (var o in Personel.AntrenorEkibi.Ozellikler) yeni.Ozellikler[o.Kod] = 10;
+                    liste.Add(yeni);
+                    break;
+                case "sil":
+                    if (a is not null) liste.Remove(a);
+                    break;
+                case "ad":
+                    if (a is not null) a.Ad = Str("deger");
+                    break;
+                case "gorev":
+                    if (a is not null) a.Gorev = Str("deger");
+                    break;
+                case "ozellik":
+                    if (a is not null) a.Ozellikler[Str("kod")] = Math.Clamp(j.GetProperty("deger").GetInt32(), 1, 20);
+                    break;
+                case "kategori":
+                    if (a is not null) { if (j.GetProperty("deger").GetBoolean()) a.Kategoriler.Add(Str("kod")); else a.Kategoriler.Remove(Str("kod")); }
+                    break;
+                case "ice":
+                    var (gelen, _) = Personel.AntrenorEkibi.Ice(Str("metin"));
+                    if (j.TryGetProperty("degistir", out var d) && d.ValueKind == JsonValueKind.True) liste.Clear();
+                    liste.AddRange(gelen);
+                    break;
+                case "enIyiAtama":
+                    var analiz = Personel.AntrenorEkibi.Analiz(liste, _asistan.Plan);
+                    foreach (var x in liste) x.Kategoriler = analiz.EnIyiAtama[x.Id].ToHashSet();
                     break;
             }
         });

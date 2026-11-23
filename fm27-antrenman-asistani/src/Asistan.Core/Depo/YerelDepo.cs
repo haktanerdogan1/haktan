@@ -99,6 +99,12 @@ public sealed class YerelDepo
             .ToList();
     }
 
+    public List<Asistan.Core.Personel.Antrenor> Antrenorler(string kariyer) =>
+        Oku<List<Asistan.Core.Personel.Antrenor>>(Path.Combine(Klasor(kariyer), "antrenorler.json")) ?? new();
+
+    public void AntrenorleriYaz(string kariyer, List<Asistan.Core.Personel.Antrenor> liste) =>
+        Yaz(Path.Combine(Klasor(kariyer), "antrenorler.json"), liste);
+
     public void YetenekMatrisiYaz(YetenekMatrisi m) => Yaz(Path.Combine(_kok, "yetenek-matrisi.json"), m);
 
     public YetenekMatrisi? YetenekMatrisiOku() => Oku<YetenekMatrisi>(Path.Combine(_kok, "yetenek-matrisi.json"));

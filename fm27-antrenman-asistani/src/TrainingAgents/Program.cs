@@ -31,6 +31,11 @@ internal static class Program
         var depo = new YerelDepo(demo ? Path.Combine(klasor, "demo") : klasor);
         var asistan = new AntrenmanAsistani(baglanti, depo);
 
+        if (demo && asistan.Antrenorler().Count == 0)
+        {
+            asistan.AntrenorDegistir(l => l.AddRange(Asistan.Tests.Senaryo.DemoEkip()));
+        }
+
         var port = BosPort(ayar.PanelPortu);
         using var sunucu = new WebSunucu(asistan, port, m => Gunluk.Yaz(klasor, m));
         sunucu.Baslat();

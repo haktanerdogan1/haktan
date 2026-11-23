@@ -28,6 +28,7 @@ taktik.Active!.TeamInstructions["LineOfEngagement"] = "HigherLineOfEngagement";
 var oyun = new SahteOyun(antrenman, taktik, Senaryo.Kadro());
 var depo = new YerelDepo(klasor);
 var asistan = new AntrenmanAsistani(oyun, depo);
+if (asistan.Antrenorler().Count == 0) asistan.AntrenorDegistir(l => l.AddRange(Senaryo.DemoEkip()));
 using var sunucu = new WebSunucu(asistan, port, Console.WriteLine);
 sunucu.Baslat();
 Console.WriteLine("Demo çalışıyor. Kapatmak için Ctrl+C.");

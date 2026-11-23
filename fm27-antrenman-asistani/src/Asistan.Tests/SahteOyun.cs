@@ -220,6 +220,28 @@ public static class Senaryo
         };
     }
 
+    /// <summary>Demo için örnek antrenör ekibi (kurgusal isimler).</summary>
+    public static List<Asistan.Core.Personel.Antrenor> DemoEkip()
+    {
+        Asistan.Core.Personel.Antrenor K(string ad, string gorev, int[] d, params string[] kat)
+        {
+            var a = new Asistan.Core.Personel.Antrenor { Ad = ad, Gorev = gorev };
+            for (var i = 0; i < d.Length; i++) a.Ozellikler[Asistan.Core.Personel.AntrenorEkibi.Ozellikler[i].Kod] = d[i];
+            foreach (var k in kat) a.Kategoriler.Add(k);
+            return a;
+        }
+
+        return new()
+        {
+            K("Selim Aydın", "Yardımcı antrenör", new[] { 14, 13, 9, 2, 15, 11, 16, 14, 15, 16, 15 }, "TopaSahiplikTaktik", "SavunmaTaktik", "HucumTaktik", "TopaSahiplikTeknik", "DuranToplar"),
+            K("Murat Kaya", "Antrenör", new[] { 16, 9, 8, 1, 13, 10, 13, 15, 13, 12, 14 }, "HucumTeknik", "HucumTaktik"),
+            K("Okan Er", "Antrenör", new[] { 8, 15, 10, 1, 9, 12, 15, 11, 12, 14, 13 }, "SavunmaTeknik", "SavunmaTaktik"),
+            K("Cem Yurt", "Antrenör", new[] { 7, 8, 9, 1, 8, 7, 8, 9, 9, 8, 10 }, "TopaSahiplikTeknik", "SavunmaTeknik"),
+            K("Hakan Demir", "Kondisyon antrenörü", new[] { 4, 4, 17, 1, 5, 3, 6, 5, 14, 13, 15 }, "Fiziksel"),
+            K("Erkan Taş", "Kaleci antrenörü", new[] { 2, 4, 6, 12, 6, 3, 7, 6, 11, 10, 12 }, "Kaleciler")
+        };
+    }
+
     public static string Tarih(int gun) => Pazartesi.AddDays(gun).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
     private static OyuncuAntrenmanDto Oyuncu(int id, string ad, string rol, string poz, long? focus, bool yogunlukKilitli = false, string? oop = null) => new()

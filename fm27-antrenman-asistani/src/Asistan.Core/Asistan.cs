@@ -543,6 +543,39 @@ public sealed class AntrenmanAsistani
         };
     }
 
+    // ---------------- Antrenör ekibi ----------------
+
+    private string EkipAnahtari => Anlik?.Kimlik.KariyerAnahtari ?? "_varsayilan";
+
+    public List<Personel.Antrenor> Antrenorler()
+    {
+        var liste = _depo.Antrenorler(EkipAnahtari);
+
+        // Oyuna bağlanmadan girilen ekip, ilk bağlantıda o kariyere taşınır.
+        if (liste.Count == 0 && EkipAnahtari != "_varsayilan")
+        {
+            var bekleyen = _depo.Antrenorler("_varsayilan");
+
+            if (bekleyen.Count > 0)
+            {
+                _depo.AntrenorleriYaz(EkipAnahtari, bekleyen);
+                _depo.AntrenorleriYaz("_varsayilan", new());
+                return bekleyen;
+            }
+        }
+
+        return liste;
+    }
+
+    public void AntrenorDegistir(Action<List<Personel.Antrenor>> degisiklik)
+    {
+        var liste = Antrenorler();
+        degisiklik(liste);
+        _depo.AntrenorleriYaz(EkipAnahtari, liste);
+    }
+
+    public Personel.EkipAnalizi EkipAnalizi() => Personel.AntrenorEkibi.Analiz(Antrenorler(), Plan);
+
     public List<IslemRaporu> Gecmis() => Anlik is null ? new() : _depo.Islemler(Anlik.Kimlik.KariyerAnahtari);
 
     public List<AnalizKaydi> AnalizGecmisi() => Anlik is null ? new() : _depo.AnalizGecmisi(Anlik.Kimlik.KariyerAnahtari);

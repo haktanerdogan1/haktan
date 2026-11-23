@@ -140,6 +140,7 @@ public static class Gorunum
                     degisiklik = anahtarlar.ContainsKey($"odak:{r.Oyuncu.Id}") ? $"odak:{r.Oyuncu.Id}" : null
                 };
             }).ToList(),
+            ekip = Ekip(a),
             degisiklikler = degisiklikler.Select(d => new
             {
                 anahtar = d.Anahtar,
@@ -229,6 +230,40 @@ public static class Gorunum
             sureNotu = a.Ayarlar.PlanSuresiGun > 14
                 ? "Oyun takvimi aylık, ama MCPFM köprüsü yalnızca bu ve gelecek haftayı yazabiliyor. İlk iki hafta şimdi yazılır; kalan haftalar oyun ilerledikçe otomatik mod tarafından yazılır."
                 : null
+        };
+    }
+
+    private static object Ekip(AntrenmanAsistani a)
+    {
+        var liste = a.Antrenorler();
+        var analiz = Personel.AntrenorEkibi.Analiz(liste, a.Plan);
+        return new
+        {
+            toplam = analiz.ToplamYildiz,
+            enIyiToplam = analiz.EnIyiToplam,
+            ozellikler = Personel.AntrenorEkibi.Ozellikler.Select(o => new { kod = o.Kod, ad = o.Ad }).ToList(),
+            kategoriler = analiz.Kategoriler.Select(d => new
+            {
+                kod = d.Kategori.Kod,
+                ad = d.Kategori.Ad,
+                yildiz = d.Yildiz,
+                lider = d.Lider?.Ad,
+                enIyiYildiz = d.EnIyiYildiz,
+                enIyiLider = d.EnIyiLider?.Ad,
+                program = d.ProgramSeansi
+            }).ToList(),
+            antrenorler = liste.Select(x => new
+            {
+                id = x.Id,
+                ad = x.Ad,
+                gorev = x.Gorev,
+                ozellikler = x.Ozellikler,
+                kategoriler = x.Kategoriler.ToList(),
+                enIyiAtama = analiz.EnIyiAtama.TryGetValue(x.Id, out var ea) ? ea.ToList() : new List<string>(),
+                enIyiKategori = analiz.AntrenorOzeti.TryGetValue(x.Id, out var oz) ? Personel.AntrenorEkibi.Kategoriler.First(k => k.Kod == oz.EnIyiKategori).Ad : null,
+                enIyiPuan = analiz.AntrenorOzeti.TryGetValue(x.Id, out var oz2) ? Personel.AntrenorEkibi.Yildiz(oz2.Puan) : 0
+            }).ToList(),
+            uyarilar = analiz.Uyarilar.Select(u => new { tur = u.Tur.ToString(), baslik = u.Baslik, metin = u.Metin, antrenor = u.AntrenorId }).ToList()
         };
     }
 

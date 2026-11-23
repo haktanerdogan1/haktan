@@ -52,6 +52,24 @@ resmi eşik değil, koçluk yorumu). Odak listesi FM27'nin bireysel antrenman ek
 özellikleri çalıştırdığı oyunda yazılı değildir, eşleştirme tahmindir. Ek odak oyuna yazılabilir; rol değişikliği ve
 karakteristikler MCPFM ile yazılamadığı için yalnızca önerilir.
 
+## Antrenör ekibi
+
+FM27'nin 9 antrenman kategorisini (Fiziksel, Kaleciler, Savunma/Topa sahiplik/Hücum × taktik/teknik, Duran toplar) ve
+her kategoride kaç yıldız aldığınızı gösterir. Kural FM27 topluluk testlerinden: kategori gücü = ilgili antrenörlük
+özellikleri + Motivasyon, Otorite, Kararlılık; çok kategoriye dağılan antrenör her birinde zayıflar; yıldızı
+kategorinin en iyi antrenörü belirler. Ağırlıklar tahmindir, yıldızlar "tahmini" olarak gösterilir.
+
+Uyarılar:
+- **Görev dağılımı:** yeni antrenör almadan, kutuları yeniden işaretleyerek kazanılacak yıldız ve değişecek kutular.
+- **İşe al:** programın kullandığı ama en iyi dağılımla bile zayıf kalan kategori ve aranan profil.
+- **Değiştir:** en güçlü olduğu kategoride bile ekibi aşağı çeken antrenör.
+- **Yükü azalt / atamayı kaldır:** çok dağılmış ya da hiçbir kategoride en iyi olmayan antrenör.
+
+MCPFM antrenör ekibini okumadığı için antrenörler uygulamaya elle ya da Excel'den toplu yapıştırmayla girilir; görev
+dağılımı oyuna yazılmaz, oyunda Antrenman › Antrenör Görevleri ekranından uygulanır.
+
+![Antrenör ekibi](docs/antrenor-ekibi.png)
+
 ## Nasıl çalışır?
 
 ```
