@@ -2833,9 +2833,7 @@ def race_maiden(date_str, city_id, race_no):
     if data is None:
         is_today = date_str == tr_now().strftime("%d/%m/%Y")
         prog, race = _race_of(date_str, city_id, race_no, fresh=is_today)
-        if not MD.is_maiden_race(race):
-            raise ValueError("Bu koşu Maiden / Şartlı 1 / Şartlı 19 değil")
-        data = MD.analyze_race(race, prog["date"])
+        data = MD.analyze_race(race, prog["date"], general=not MD.is_maiden_race(race))
         cache_set(key, data)
     return data
 
@@ -2918,9 +2916,9 @@ def warm_once(days=2):
             except Exception:
                 continue
             for r in prog["races"]:
-                jobs = [("antrenör", race_trainers)]
+                jobs = [("antrenör", race_trainers), ("form tablosu", race_maiden)]
                 if MD.is_maiden_race(r):
-                    jobs += [("maiden", race_maiden), ("aile", race_family)]
+                    jobs += [("aile", race_family)]
                 for label, fn in jobs:
                     _wait_for_users()
                     WARM_STATE["step"] = f"{date_str} {c['name']} {r['race_no']}. koşu {label}"

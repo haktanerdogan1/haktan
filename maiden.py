@@ -91,8 +91,9 @@ def form_label(positions, n_prev):
     return "Durgun"
 
 
-def horse_prior(at_id, race_date):
-    """Yarıştan önceki koşular: en iyi ve son 1200 m karşılığı derece, son 3 sıra, form, dinlenme."""
+def horse_prior(at_id, race_date, msf=None, surface=None):
+    """Yarıştan önceki koşular: en iyi ve son 1200 m karşılığı derece, son 3 sıra, form, dinlenme;
+    msf/surface verilirse bugünkü mesafe ve pistteki en iyi derece ve o derecedeki kilo."""
     _, rows = _history_rows(at_id)
     hist = []
     for r in rows:
@@ -108,7 +109,13 @@ def horse_prior(at_id, race_date):
     best = min(secs, key=lambda x: x[0]) if secs else None
     last_norm = norm(hist[0][1]) if hist else None
     last3 = [r["sira"] for _, r in hist[:3]]
+    here = [r for _, r in hist if r.get("sec") and msf and r["msf"] == msf and (not surface or r["p_name"] == surface)]
+    best_here = min(here, key=lambda r: r["sec"]) if here else None
     return {
+        "best_here_str": best_here["derece_raw"] if best_here else None,
+        "best_here_kg": best_here["siklet"] if best_here else None,
+        "best_here_from": f"{best_here['sehir']} {best_here['tarih']} • {best_here['sira'] or '-'}." if best_here else None,
+        "n_here": len(here),
         "n_prev": len(hist),
         "last_pos": hist[0][1]["sira"] if hist else None,
         "last3": last3,
@@ -226,8 +233,14 @@ def family_debuts(horses, irk="İngiliz"):
     return out
 
 
-def analyze_race(race, race_date_str):
-    """Bir maiden tipi koşu için at başına özellikler ve Maiden şansı."""
+def race_surface(race):
+    s = S.tr_upper(race.get("surface", ""))
+    return "Çim" if "ÇİM" in s else "Sentetik" if "SENTET" in s else "Kum"
+
+
+def analyze_race(race, race_date_str, general=False):
+    """At başına form tablosu. Maiden / Şartlı 1 / Şartlı 19'da Maiden modelinin şansı;
+    general=True (diğer koşular) ise sitenin olağan şansı: AGF varsa halkın düzeltilmiş şansı, yoksa model."""
     model = load_model()
     race_date = datetime.strptime(race_date_str, "%d/%m/%Y")
     horses = race["horses"]
@@ -236,7 +249,7 @@ def analyze_race(race, race_date_str):
         info = {"no": h["no"], "name": h["name"], "start": h.get("start_no"), "agf_pct": h.get("agf_pct") or 0,
                 "agf_rank": h.get("agf_rank"), "sire": S.strip_country(h.get("sire", ""))}
         try:
-            info.update(horse_prior(h["at_id"], race_date) if h.get("at_id") else {"n_prev": 0})
+            info.update(horse_prior(h["at_id"], race_date, race.get("distance_m"), race_surface(race)) if h.get("at_id") else {"n_prev": 0})
         except Exception:
             info.update({"n_prev": None})
         info["sire_stats"] = sire_stats(info["sire"])
@@ -269,6 +282,18 @@ def analyze_race(race, race_date_str):
         }
 
     has_agf = sum(r["agf_pct"] for r in rows) > 10
+    if general:
+        by_no = {h["no"]: h.get("simulation") or {} for h in horses}
+        for r in rows:
+            sim = by_no.get(r["no"], {})
+            p = sim.get("market_prob") if sim.get("market_prob") is not None else sim.get("win_prob")
+            r["maiden_prob"] = round(p or 0, 1)
+            r["fair_ganyan"] = round(100 / max(0.5, r["maiden_prob"]), 2)
+        rows.sort(key=lambda r: -r["maiden_prob"])
+        for rank, r in enumerate(rows):
+            r["maiden_rank"] = rank + 1
+        return {"race_no": race["race_no"], "has_agf": has_agf, "general": True,
+                "class": S.classify_race(race.get("condition", ""))[1], "rows": rows}
     weights = (model.get("with_agf") if has_agf else model.get("without_agf")) or {}
     utils = []
     for r in rows:
