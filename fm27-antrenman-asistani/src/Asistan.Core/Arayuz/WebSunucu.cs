@@ -112,6 +112,12 @@ public sealed class WebSunucu : IDisposable
                 case "/api/geri-al":
                     await _asistan.GeriAlAsync(j.GetProperty("id").GetString()!).ConfigureAwait(false);
                     break;
+                case "/api/secenekler":
+                    _asistan.SecenekleriAyarla(
+                        j.GetProperty("sure").GetInt32(),
+                        Enum.Parse<ProgramYogunlugu>(j.GetProperty("yogunluk").GetString()!),
+                        j.TryGetProperty("haricAlanlar", out var ha) ? ha.EnumerateArray().Select(x => Enum.Parse<TaktikAlan>(x.GetString()!)).ToList() : new List<TaktikAlan>());
+                    break;
                 case "/api/eksikleri-gider":
                     await _asistan.EksikleriGiderAsync(j.TryGetProperty("oyuncular", out var oy) && oy.ValueKind == JsonValueKind.True).ConfigureAwait(false);
                     break;

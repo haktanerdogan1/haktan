@@ -2,6 +2,17 @@ using Asistan.Core.Veri;
 
 namespace Asistan.Core;
 
+/// <summary>Günün 3 antrenman bölümünün ne kadar doldurulacağı.</summary>
+public enum ProgramYogunlugu
+{
+    /// <summary>Günde en fazla 1 çalışma seansı, kalan bölümler dinlenme.</summary>
+    Az,
+    /// <summary>Günde en fazla 2 çalışma seansı.</summary>
+    Normal,
+    /// <summary>Uygun günlerde 3 bölümün tamamı çalışma; yük sınırları yükselir.</summary>
+    Yogun
+}
+
 public sealed record SeansEslestirmesi(SeansAmaci Amac, TaktikAlan? Alan);
 
 /// <summary>
@@ -52,6 +63,15 @@ public sealed class Ayarlar
     public List<string> DogrulanmisSurumler { get; set; } = new();
     /// <summary>İlk kullanımda otomatik uygulama kapalıdır; her uygulama kullanıcı onayıyla yapılır.</summary>
     public bool OtomatikUygula { get; set; }
+    /// <summary>Otomatik modun kendiliğinden kapanacağı oyun günü ("yyyy-MM-dd"); "1 ay" seçeneği bunu kurar.</summary>
+    public string? OtomatikBitis { get; set; }
+
+    // ---- Eksikleri gider seçenekleri
+    public ProgramYogunlugu Yogunluk { get; set; } = ProgramYogunlugu.Normal;
+    /// <summary>Planlanacak süre (gün): 7 = 1 hafta, 14 = 2 hafta, 28 = 1 ay (oyun 2 haftayı düzenletir; kalanı otomatik modla yazılır).</summary>
+    public int PlanSuresiGun { get; set; } = 14;
+    /// <summary>Kullanıcının hedeflemek istemediği taktik alanları.</summary>
+    public HashSet<TaktikAlan> HedefDisiAlanlar { get; set; } = new();
 
     // ---- Kullanıcı kararları
     public Dictionary<int, SeansEslestirmesi> SeansEslestirmeleri { get; set; } = new();

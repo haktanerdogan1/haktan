@@ -16,7 +16,9 @@ public enum HucreDurumu
     /// <summary>Kullanıcı kilitledi.</summary>
     Kilitli,
     /// <summary>Önerilecek uygun seans bulunamadı; mevcut korundu.</summary>
-    Korundu
+    Korundu,
+    /// <summary>Seçilen plan süresinin (ör. 1 hafta) dışında kalan gün.</summary>
+    SureDisi
 }
 
 public enum HaftaTipi { Macsiz, TekMacli, CiftMacli }
@@ -76,9 +78,13 @@ public static class TakimPlanlayici
         var secici = new SeansSecici(a);
         // Yüksek öncelikli eksikler sırada iki kez yer alır: kalan kapasitenin çoğu en büyük eksiğe gider.
         var taktikSirasi = analiz.Oncelikli
+            .Where(k => !ayar.HedefDisiAlanlar.Contains(k.Alan))
             .SelectMany(k => k.Oncelik == Oncelik.Yuksek ? new[] { k, k } : new[] { k })
             .ToList();
-        var eksikVar = analiz.Oncelikli.Any(k => k.Oncelik == Oncelik.Yuksek);
+        var eksikVar = taktikSirasi.Any(k => k.Oncelik == Oncelik.Yuksek);
+        var ilkGunPlan = a.Kimlik.IlkDuzenlenebilirGun ?? gunler[0].Tarih;
+        var sonGunPlan = ilkGunPlan.AddDays(Math.Max(1, ayar.PlanSuresiGun) - 1);
+        var yogunlukEk = ayar.Yogunluk switch { ProgramYogunlugu.Yogun => 2, ProgramYogunlugu.Az => -3, _ => 0 };
         var haftalikSeansSayisi = new Dictionary<(int Hafta, int Seans), int>();
         var haftalikYuk = new Dictionary<int, int>();
         var sosyalKonuldu = new HashSet<int>();
@@ -95,8 +101,8 @@ public static class TakimPlanlayici
 
         if (!a.Fizyoterapist.VarMi)
         {
-            notlar.Add("Fizyoterapist durumu oyundan okunamıyor (MCPFM personel bilgisi vermiyor). Toparlanma seansı yerine Dinlenme önerildi; "
-                       + "Ayarlar'da fizyoterapistiniz olduğunu işaretlerseniz Toparlanma önerilir.");
+            notlar.Add("Fizyoterapist durumu oyundan okunamıyor (MCPFM personel bilgisi vermiyor). Topluluk rehberlerinin hepsi maç ertesine "
+                       + "toparlanma koyduğu için toparlanma önerildi; fizyoterapistiniz yoksa Ayarlar'dan \"Yok\" seçin, dinlenmeye çevrilir.");
         }
         else if (a.Fizyoterapist.Deger == false)
         {
@@ -112,11 +118,12 @@ public static class TakimPlanlayici
             var sonrakiMac = maclar.Where(m => m > gun.Tarih).Select(m => (int?)(m.DayNumber - gun.Tarih.DayNumber)).FirstOrDefault();
             var oncekiMac = maclar.Where(m => m < gun.Tarih).Select(m => (int?)(gun.Tarih.DayNumber - m.DayNumber)).LastOrDefault();
             var (baglam, ihtiyaclar) = GunIhtiyaci(gun, tip, sonrakiMac, oncekiMac, maclar.Count == 0, eksikVar);
-            var gunSiniri = tip == HaftaTipi.CiftMacli ? ayar.CiftMacHaftasiGunlukYukSiniri : ayar.GunlukYukSiniri;
+            ihtiyaclar = YogunlugaGore(ihtiyaclar, ayar.Yogunluk, gun.MacGunu, oncekiMac == 1);
+            var gunSiniri = Math.Max(1, (tip == HaftaTipi.CiftMacli ? ayar.CiftMacHaftasiGunlukYukSiniri : ayar.GunlukYukSiniri) + yogunlukEk);
 
             if (sonrakiMac == 1)
             {
-                gunSiniri = Math.Min(gunSiniri, 3);
+                gunSiniri = Math.Min(gunSiniri, ayar.Yogunluk == ProgramYogunlugu.Yogun ? 4 : 3);
             }
 
             if (oncekiMac == 1)
@@ -145,6 +152,11 @@ public static class TakimPlanlayici
                 {
                     sabit = HucreDurumu.Duzenlenemez;
                     neden = "Oyun bu seansın değiştirilmesine izin vermiyor (geçmiş gün veya sabit blok).";
+                }
+                else if (gun.Tarih > sonGunPlan)
+                {
+                    sabit = HucreDurumu.SureDisi;
+                    neden = $"Seçilen plan süresinin ({SureAdi(ayar.PlanSuresiGun)}) dışında; dokunulmadı.";
                 }
                 else if (ayar.SlotKilitli(gun.TarihMetni, s.No))
                 {
@@ -193,10 +205,10 @@ public static class TakimPlanlayici
                             secim = secici.Bul(SeansAmaci.Dinlenme);
                             gerekce = "Bu güne zaten bir toparlanma seansı var; ikincisi konmadı (PLAN-05).";
                         }
-                        else if (a.Fizyoterapist.VarMi && a.Fizyoterapist.Deger == true && secici.Bul(SeansAmaci.Toparlanma) is { } top)
+                        else if (!(a.Fizyoterapist.VarMi && a.Fizyoterapist.Deger == false) && secici.Bul(SeansAmaci.Toparlanma) is { } top)
                         {
                             secim = top;
-                            gerekce = baglam + " Maç yükünden toparlanma.";
+                            gerekce = baglam + " Maç yükünden toparlanma." + (a.Fizyoterapist.VarMi ? "" : " (Fizyoterapist durumu doğrulanamadı.)");
                             gunToparlanma++;
                         }
                         else
@@ -262,7 +274,12 @@ public static class TakimPlanlayici
                     secim = dinlenme;
                 }
 
-                var haftaHedefi = (int)Math.Floor(HaftaYukSiniri(tip, ayar) * ayar.HaftalikHedefOrani);
+                var haftaHedefi = (int)Math.Floor(HaftaYukSiniri(tip, ayar) * ayar.Yogunluk switch
+                {
+                    ProgramYogunlugu.Yogun => 1.2,
+                    ProgramYogunlugu.Az => 0.6,
+                    _ => ayar.HaftalikHedefOrani
+                });
 
                 if (secim is not null && haftalikYuk.GetValueOrDefault(hafta) + gunYuku + (int)secim.Yuk > haftaHedefi && secim.Yuk >= YukSinifi.Orta)
                 {
@@ -354,6 +371,37 @@ public static class TakimPlanlayici
         return new TakimPlani(a.Kimlik.PlanAnahtari, Ayarlar.KuralSurumu, gunPlanlari, haftalar, notlar);
     }
 
+    public static string SureAdi(int gun) => gun switch { <= 7 => "1 hafta", <= 14 => "2 hafta", _ => $"{gun / 7} hafta" };
+
+    // Günün 3 bölümü: Az = 1 çalışma, Normal = 2, Yoğun = 3. Maç günü ve maç ertesi kendi kuralında kalır (dinlenme/toparlanma).
+    private static List<Ihtiyac> YogunlugaGore(List<Ihtiyac> liste, ProgramYogunlugu y, bool macGunu, bool macErtesi)
+    {
+        if (macGunu || macErtesi)
+        {
+            return liste;
+        }
+
+        var calisma = y switch { ProgramYogunlugu.Az => 1, ProgramYogunlugu.Normal => 2, _ => 3 };
+        var sonuc = new List<Ihtiyac>();
+
+        foreach (var i in liste)
+        {
+            if (sonuc.Count(x => x != Ihtiyac.Dinlenme) >= calisma)
+            {
+                break;
+            }
+
+            sonuc.Add(i == Ihtiyac.Dinlenme && y == ProgramYogunlugu.Yogun ? Ihtiyac.Taktik : i);
+        }
+
+        while (sonuc.Count < 3)
+        {
+            sonuc.Add(Ihtiyac.Dinlenme);
+        }
+
+        return sonuc;
+    }
+
     private static int HaftaYukSiniri(HaftaTipi tip, Ayarlar ayar) => tip switch
     {
         HaftaTipi.Macsiz => ayar.HaftalikYukSiniri + 4,
@@ -376,7 +424,7 @@ public static class TakimPlanlayici
 
         if (onceki == 1)
         {
-            return ("Maçtan bir gün sonra.", new() { Ihtiyac.Toparlanma, Ihtiyac.Dinlenme, Ihtiyac.Dinlenme });
+            return ("Maçtan bir gün sonra.", new() { Ihtiyac.Toparlanma, Ihtiyac.Dinlenme, Ihtiyac.Sosyal });
         }
 
         if (sonraki == 1)

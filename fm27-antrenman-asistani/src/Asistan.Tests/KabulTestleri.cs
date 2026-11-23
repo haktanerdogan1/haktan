@@ -550,4 +550,71 @@ public class KabulTestleri : IDisposable
         await a.OtomatikKontrolAsync();
         Assert.True(oyun.UygulamaSayisi > ilk);
     }
+
+    // ---------------- Eksikleri gider seçenekleri ----------------
+
+    [Fact]
+    public async Task Yogunluk_AzNormalYogun_TaktikSeansSayisiniBelirler()
+    {
+        var a = Kur(TekMacliOyun("40"));
+        await a.AnalizEtAsync();
+        int Say() => a.Plan!.Gunler.SelectMany(g => g.Hucreler).Count(h => h.Durum != HucreDurumu.SureDisi && h.Onerilen?.Amac == SeansAmaci.Taktik);
+        int EnFazlaCalisma() => a.Plan!.Gunler.Max(g => g.Hucreler.Count(h => h.Onerilen is { } o && o.Amac is not (SeansAmaci.Dinlenme or SeansAmaci.Mac)));
+
+        a.SecenekleriAyarla(14, ProgramYogunlugu.Az, Array.Empty<TaktikAlan>());
+        var az = Say();
+        Assert.True(EnFazlaCalisma() <= 1, "Az: günde en fazla 1 çalışma");
+        a.SecenekleriAyarla(14, ProgramYogunlugu.Normal, Array.Empty<TaktikAlan>());
+        var normal = Say();
+        Assert.True(EnFazlaCalisma() <= 2, "Normal: günde en fazla 2 çalışma");
+        a.SecenekleriAyarla(14, ProgramYogunlugu.Yogun, Array.Empty<TaktikAlan>());
+        var yogun = Say();
+
+        Assert.True(az < normal && normal < yogun, $"az {az}, normal {normal}, yoğun {yogun}");
+        // Maç ertesi her seçenekte korunur.
+        Assert.Equal(SeansAmaci.Toparlanma, a.Plan!.Gunler.First(g => g.Tarih == Senaryo.Pazartesi.AddDays(6)).Hucreler[0].Onerilen!.Amac);
+    }
+
+    [Fact]
+    public async Task Sure_BirHafta_IkinciHaftayaDokunmaz()
+    {
+        var a = Kur(TekMacliOyun("40"));
+        await a.AnalizEtAsync();
+        a.SecenekleriAyarla(7, ProgramYogunlugu.Normal, Array.Empty<TaktikAlan>());
+        Assert.All(a.Plan!.Gunler.Where(g => g.Tarih >= Senaryo.Pazartesi.AddDays(7)).SelectMany(g => g.Hucreler),
+            h => Assert.True(h.Durum is HucreDurumu.SureDisi or HucreDurumu.Mac));
+        Assert.DoesNotContain(a.Degisiklikler(), d => d.Tur == DegisiklikTuru.Seans && string.CompareOrdinal(d.Tarih, Senaryo.Tarih(7)) >= 0);
+    }
+
+    [Fact]
+    public async Task Sure_BirAy_OtomatikModuBitisTarihiyleAcar()
+    {
+        var a = Kur(TekMacliOyun("40"));
+        await a.AnalizEtAsync();
+        a.SecenekleriAyarla(28, ProgramYogunlugu.Normal, Array.Empty<TaktikAlan>());
+        await a.EksikleriGiderAsync(false);
+        Assert.True(a.Ayarlar.OtomatikUygula);
+        Assert.Equal(Senaryo.Tarih(27), a.Ayarlar.OtomatikBitis);
+    }
+
+    [Fact]
+    public async Task HedefDisiAlan_ProgramaKonmaz()
+    {
+        var a = Kur(TekMacliOyun("40"));
+        await a.AnalizEtAsync();
+        Assert.Contains(a.Plan!.Gunler.SelectMany(g => g.Hucreler), h => h.Onerilen?.Alan == TaktikAlan.PresYogunlugu && h.Gerekce.Contains("öncelik"));
+        a.SecenekleriAyarla(14, ProgramYogunlugu.Normal, new[] { TaktikAlan.PresYogunlugu });
+        Assert.DoesNotContain(a.Plan!.Gunler.SelectMany(g => g.Hucreler), h => h.Onerilen?.Alan == TaktikAlan.PresYogunlugu && h.Gerekce.Contains("öncelik"));
+    }
+
+    [Theory]
+    [InlineData("Defensive Block", "Match Preparation", SeansAmaci.MacHazirligi)]
+    [InlineData("Corners", "Match Preparation", SeansAmaci.DuranTop)]
+    [InlineData("Possession Ball Work", "Playing Development", SeansAmaci.Teknik)]
+    [InlineData("Light Conditioning", "Physical & Recovery", SeansAmaci.Fiziksel)]
+    [InlineData("Recovery", "Physical & Recovery", SeansAmaci.Toparlanma)]
+    [InlineData("Rest", "Physical & Recovery", SeansAmaci.Dinlenme)]
+    [InlineData("Community Outreach", "Extra-Curricular", SeansAmaci.Sosyal)]
+    [InlineData("Line of Engagement", "Tactical Understanding", SeansAmaci.Taktik)]
+    public void FM27_SeansKategorileri(string ad, string kategori, SeansAmaci amac) => Assert.Equal(amac, Seanslar.Siniflandir(ad, kategori).Amac);
 }

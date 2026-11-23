@@ -32,6 +32,16 @@ public static class Gorunum
             oyunTavsiyesi = an?.OyunTavsiyesi,
             oyunTavsiyesiOlumlu = an?.OyunTavsiyesiOlumlu ?? false,
             otomatik = a.Ayarlar.OtomatikUygula,
+            otomatikBitis = a.Ayarlar.OtomatikBitis,
+            genelVerimlilik = an?.GenelVerimlilik,
+            verimlilik = an?.Verimlilik.Select(v => new { baslik = v.Baslik, puan = v.Puan, metin = v.Metin, olumlu = v.Olumlu, antrenman = v.AntrenmanlaDuzelir, ne = v.Ne }).ToList(),
+            secenekler = new
+            {
+                sure = a.Ayarlar.PlanSuresiGun,
+                yogunluk = a.Ayarlar.Yogunluk.ToString(),
+                haricAlanlar = a.Ayarlar.HedefDisiAlanlar.Select(x => x.ToString()).ToList()
+            },
+            onizleme = Onizleme(a),
             fizyoterapist = an is null ? null : new { deger = an.Fizyoterapist.Deger, durum = an.Fizyoterapist.Durum.ToString(), kaynak = an.Fizyoterapist.Kaynak },
             uyarilar = an?.Uyarilar ?? (IReadOnlyList<string>)Array.Empty<string>(),
             analizNotlari = a.Analiz?.GenelNotlar ?? (IReadOnlyList<string>)Array.Empty<string>(),
@@ -154,6 +164,34 @@ public static class Gorunum
             },
             amaclar = Enum.GetValues<SeansAmaci>().Select(x => new { kod = x.ToString(), ad = Seanslar.AmacAdi(x) }).ToList(),
             alanlar = Enum.GetValues<TaktikAlan>().Select(x => new { kod = x.ToString(), ad = Seanslar.AlanAdi(x) }).ToList()
+        };
+    }
+
+    // Seçilen süre ve yoğunlukla programın ne yapacağı: alan başına taktik seans sayısı, haftalık yük, değişiklik sayısı.
+    private static object? Onizleme(AntrenmanAsistani a)
+    {
+        if (a.Plan is not { } plan)
+        {
+            return null;
+        }
+
+        var hucreler = plan.Gunler.SelectMany(g => g.Hucreler).Where(h => h.Durum != HucreDurumu.SureDisi).ToList();
+        var taktik = hucreler.Where(h => h.Onerilen?.Alan is not null).GroupBy(h => h.Onerilen!.Alan!.Value)
+            .ToDictionary(g => g.Key.ToString(), g => g.Count());
+        var gunSayisi = Math.Max(1, plan.Gunler.Count(g => g.Hucreler.Any(h => h.Durum != HucreDurumu.SureDisi)));
+
+        return new
+        {
+            taktikSeans = taktik,
+            toplamTaktik = taktik.Values.Sum(),
+            haftalikTaktik = Math.Round(taktik.Values.Sum() * 7.0 / gunSayisi, 1),
+            calismaSeansi = hucreler.Count(h => h.Onerilen is { } o && o.Amac is not (SeansAmaci.Dinlenme or SeansAmaci.Mac or SeansAmaci.Bilinmiyor)),
+            dinlenme = hucreler.Count(h => h.Onerilen?.Amac == SeansAmaci.Dinlenme),
+            degisiklik = plan.Degisiklikler.Count(),
+            haftalar = plan.Haftalar.Select(h => new { no = h.No, yuk = h.TahminiYuk, sinir = h.YukSiniri }).ToList(),
+            sureNotu = a.Ayarlar.PlanSuresiGun > 14
+                ? "Oyun takvimi aylık, ama MCPFM köprüsü yalnızca bu ve gelecek haftayı yazabiliyor. İlk iki hafta şimdi yazılır; kalan haftalar oyun ilerledikçe otomatik mod tarafından yazılır."
+                : null
         };
     }
 

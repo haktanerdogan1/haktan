@@ -111,10 +111,39 @@ public sealed class TavsiyeDto
     public bool IsPositive { get; set; }
 }
 
+public sealed class YetenekPuaniDto
+{
+    public string? Overall { get; set; }
+    public string? RoleSuitability { get; set; }
+    public string? Capability { get; set; }
+    public TavsiyeDto? Advice { get; set; }
+}
+
+public sealed class BenimsemeDto
+{
+    public string? Overall { get; set; }
+    public string? ManagerSupport { get; set; }
+    public string? Relationships { get; set; }
+    public TavsiyeDto? Advice { get; set; }
+}
+
+public sealed class SonrakiMacDto
+{
+    public string? Overall { get; set; }
+    public TavsiyeDto? Advice { get; set; }
+}
+
+public sealed class KarmasiklikDto
+{
+    public string? Overall { get; set; }
+}
+
 public sealed class TaktikAnlayisDto
 {
     public string? Overall { get; set; }
     public string? Comprehension { get; set; }
+    public TavsiyeDto? ComprehensionAdvice { get; set; }
+    public KarmasiklikDto? Complexity { get; set; }
     public TaktikAlanDto? InPossessionShape { get; set; }
     public TaktikAlanDto? OutOfPossessionShape { get; set; }
     public TaktikAlanDto? BuildUpStrategy { get; set; }
@@ -129,7 +158,10 @@ public sealed class TaktikAnlayisDto
 public sealed class EtkinlikDto
 {
     public string? Overall { get; set; }
+    public YetenekPuaniDto? PlayerAbility { get; set; }
+    public BenimsemeDto? PlayerBuyIn { get; set; }
     public TaktikAnlayisDto? TacticalUnderstanding { get; set; }
+    public SonrakiMacDto? NextMatch { get; set; }
     public List<string>? Warnings { get; set; }
 }
 

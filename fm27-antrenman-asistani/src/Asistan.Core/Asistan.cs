@@ -324,6 +324,17 @@ public sealed class AntrenmanAsistani
     /// bütün önerilen değişiklikleri (istenirse oyuncu önerilerini de) tek seferde uygular. Bu sürümde yazma henüz
     /// doğrulanmadıysa önce yazma testini yapar. Kullanıcı onayı arayüzde bu tek tıklamayla alınır.
     /// </summary>
+    /// <summary>"Eksikleri gider" penceresindeki seçimleri kaydeder ve planı önbellekteki veriden yeniden üretir (oyuna yazmaz).</summary>
+    public void SecenekleriAyarla(int sureGun, ProgramYogunlugu yogunluk, IEnumerable<TaktikAlan> hedefDisi)
+    {
+        AyarDegistir(a =>
+        {
+            a.PlanSuresiGun = sureGun is 7 or 14 or 28 ? sureGun : 14;
+            a.Yogunluk = yogunluk;
+            a.HedefDisiAlanlar = hedefDisi.ToHashSet();
+        });
+    }
+
     public async Task<IslemRaporu?> EksikleriGiderAsync(bool oyuncularDahil, CancellationToken ct = default)
     {
         if (!await _is.WaitAsync(0, ct).ConfigureAwait(false))
@@ -352,6 +363,14 @@ public sealed class AntrenmanAsistani
             {
                 Durum = "Program zaten eksiklere uygun: değiştirilecek seans yok.";
                 return null;
+            }
+
+            // "1 ay": MCPFM yalnızca bu ve gelecek haftayı yazabildiği için kalan haftalar oyun ilerledikçe otomatik yazılır.
+            if (Ayarlar.PlanSuresiGun > 14 && Anlik?.Kimlik.IlkDuzenlenebilirGun is { } ilk)
+            {
+                Ayarlar.OtomatikUygula = true;
+                Ayarlar.OtomatikBitis = ilk.AddDays(Ayarlar.PlanSuresiGun - 1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                _depo.AyarlariYaz(Ayarlar);
             }
 
             Durum = $"Eksikler gideriliyor: {secilen.Count} değişiklik gönderiliyor…";
@@ -398,6 +417,18 @@ public sealed class AntrenmanAsistani
         }
 
         var hafta = string.Join(",", ant.Veri!.Weeks.Select(w => w.StartDate ?? "?"));
+
+        // Süreli otomatik mod (ör. "1 ay") bitiş gününü geçince kendiliğinden kapanır.
+        var bugun = ant.Veri.Weeks.SelectMany(w => w.Days).FirstOrDefault(d => d.Sessions.Any(x => x.CanEdit == true))?.Date;
+
+        if (Ayarlar.OtomatikBitis is { } bitis && bugun is not null && string.CompareOrdinal(bugun, bitis) > 0)
+        {
+            Ayarlar.OtomatikUygula = false;
+            Ayarlar.OtomatikBitis = null;
+            _depo.AyarlariYaz(Ayarlar);
+            Durum = "Seçilen plan süresi doldu; otomatik mod kapandı.";
+            return;
+        }
         var taktik = tak.Veri!.Slots.FirstOrDefault(s => s.IsActive)?.Name;
         var imza = hafta + "|" + taktik;
 
@@ -455,7 +486,8 @@ public sealed class AntrenmanAsistani
             Kimlik = a.Kimlik, OkunmaZamani = a.OkunmaZamani, Gunler = a.Gunler, SeansTurleri = turler, Oyuncular = a.Oyuncular,
             OdakSecenekleri = a.OdakSecenekleri, YogunlukSecenekleri = a.YogunlukSecenekleri, Taktik = a.Taktik, Anlayis = a.Anlayis,
             GenelAnlayis = a.GenelAnlayis, Fizyoterapist = fizyo, Uyarilar = a.Uyarilar,
-            OyunTavsiyesi = a.OyunTavsiyesi, OyunTavsiyesiOlumlu = a.OyunTavsiyesiOlumlu
+            OyunTavsiyesi = a.OyunTavsiyesi, OyunTavsiyesiOlumlu = a.OyunTavsiyesiOlumlu,
+            Verimlilik = a.Verimlilik, GenelVerimlilik = a.GenelVerimlilik
         };
     }
 

@@ -47,6 +47,9 @@ public sealed record Oyuncu(
     bool YogunlukKilitli,
     IReadOnlyDictionary<string, Puan> Ozellikler);
 
+/// <summary>Taktiksel Verimlilik ekranındaki bir kalem. Antrenmanla düzeltilebilenler ayrıca işaretlenir.</summary>
+public sealed record VerimlilikKalemi(string Baslik, string? Puan, string? Metin, bool Olumlu, bool AntrenmanlaDuzelir, string Ne);
+
 public sealed record AktifTaktik(string Ad, int Slot, string? Bicim, string? StilAnahtari, string? MentaliteAnahtari, IReadOnlyDictionary<string, string?> Talimatlar);
 
 /// <summary>Oyundan bir seferde okunan, normalleştirilmiş durum. Tüm analiz ve planlama bunun üzerinde çalışır.</summary>
@@ -66,6 +69,9 @@ public sealed class Anlik
     public required IReadOnlyList<string> Uyarilar { get; init; }
     /// <summary>Oyunun taktik ekranındaki kendi tavsiyesi (ör. "Antrenmanlarda Baskı Hattı kurgularına daha fazla zaman ayırmamız gerekiyor.").</summary>
     public string? OyunTavsiyesi { get; init; }
+    /// <summary>Taktiksel Verimlilik ekranının bütün kalemleri: oyuncu yeteneği, benimseme, anlayış, sonraki maç, uyarılar.</summary>
+    public IReadOnlyList<VerimlilikKalemi> Verimlilik { get; init; } = Array.Empty<VerimlilikKalemi>();
+    public string? GenelVerimlilik { get; init; }
     /// <summary>Oyunun tavsiyesinin olumlu mu (her şey yolunda) olduğu.</summary>
     public bool OyunTavsiyesiOlumlu { get; init; }
 
@@ -178,6 +184,8 @@ public sealed class Anlik
         // ---- Taktik ve taktiksel anlayış
         Okuma<AktifTaktik> taktik;
         string? tavsiye = null;
+        IReadOnlyList<VerimlilikKalemi> verimlilik = Array.Empty<VerimlilikKalemi>();
+        string? genelVerimlilik = null;
         var tavsiyeOlumlu = false;
         var anlayis = new Dictionary<TaktikAlan, AlanOlcumu>();
         Okuma<Puan> genel;
@@ -193,6 +201,8 @@ public sealed class Anlik
 
             var ta = aktifSlot?.Effectiveness?.TacticalUnderstanding;
             tavsiye = ta?.AreasAdvice?.Text;
+            verimlilik = VerimlilikKalemleri(aktifSlot?.Effectiveness);
+            genelVerimlilik = aktifSlot?.Effectiveness?.Overall;
             tavsiyeOlumlu = ta?.AreasAdvice?.IsPositive == true;
             genel = Okuma<Puan>.Belki(Puan.Coz(ta?.Overall), KaynakTaktik, zaman, "0-100");
 
@@ -249,8 +259,40 @@ public sealed class Anlik
             Fizyoterapist = fizyo,
             Uyarilar = uyarilar,
             OyunTavsiyesi = tavsiye,
+            Verimlilik = verimlilik,
+            GenelVerimlilik = genelVerimlilik,
             OyunTavsiyesiOlumlu = tavsiyeOlumlu
         };
+    }
+
+    private static IReadOnlyList<VerimlilikKalemi> VerimlilikKalemleri(EtkinlikDto? e)
+    {
+        var liste = new List<VerimlilikKalemi>();
+
+        if (e is null)
+        {
+            return liste;
+        }
+
+        void Ekle(string baslik, string? puan, TavsiyeDto? t, bool antrenman, string ne)
+        {
+            if (puan is null && t?.Text is null) return;
+            liste.Add(new VerimlilikKalemi(baslik, puan, t?.Text, t?.IsPositive ?? true, antrenman, ne));
+        }
+
+        var ta = e.TacticalUnderstanding;
+        Ekle("Taktik anlayışı", ta?.Overall, ta?.AreasAdvice, true, "Taktik seanslarıyla ve maç oynadıkça artar.");
+        Ekle("Kavrayış", ta?.Comprehension, ta?.ComprehensionAdvice, true, "Taktik seansları ve zamanla artar; karmaşık talimatlar yavaşlatır.");
+        if (ta?.Complexity?.Overall is { } k)
+            liste.Add(new VerimlilikKalemi("Taktik karmaşıklığı", k, null, true, false, "Talimat sayısı arttıkça anlayış yavaş gelir; antrenmanla değil talimatları sadeleştirerek düşer."));
+        Ekle("Oyuncu yeteneği", e.PlayerAbility?.Overall, e.PlayerAbility?.Advice, false, "Rol uygunluğu ve oyuncu kalitesi: ek odak ve rol/pozisyon değişikliğiyle kısmen, asıl olarak kadro ile."); 
+        Ekle("Oyuncu benimsemesi", e.PlayerBuyIn?.Overall, e.PlayerBuyIn?.Advice, false, "Menajere destek ve ilişkiler; antrenmanla düzelmez, takım kaynaşması kısmen yardımcı olur.");
+        Ekle("Sonraki maç", e.NextMatch?.Overall, e.NextMatch?.Advice, false, "Rakibe uygunluk; maç hazırlığı seansı yardımcı olur.");
+
+        foreach (var w in e.Warnings ?? new())
+            liste.Add(new VerimlilikKalemi("Uyarı", null, w, false, false, "Oyunun taktik uyarısı."));
+
+        return liste;
     }
 
     private static IEnumerable<(TaktikAlan, TaktikAlanDto?)> Alanlar(TaktikAnlayisDto? t)

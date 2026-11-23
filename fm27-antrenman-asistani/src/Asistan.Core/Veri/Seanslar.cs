@@ -35,7 +35,8 @@ public enum YukSinifi { Yok = 0, Dusuk = 1, Orta = 2, Yuksek = 3 }
 
 public sealed record SeansTuru(int Id, string Ad, int KategoriId, string KategoriAdi, SeansAmaci Amac, TaktikAlan? Alan, bool KullaniciEslestirdi)
 {
-    public YukSinifi Yuk => Seanslar.Yuk(Amac);
+    public YukSinifi Yuk => Amac == SeansAmaci.Fiziksel && (Seanslar.Kucuk(Ad).Contains("light") || Seanslar.Kucuk(Ad).Contains("hafif")) ? YukSinifi.Dusuk
+        : Seanslar.Yuk(Amac);
     /// <summary>Oyunda rejenerasyon/toparlanma seansları sağlık ekibine (fizyoterapist) dayanır.</summary>
     public bool FizyoterapistGerekir => Amac == SeansAmaci.Toparlanma;
 }
@@ -96,9 +97,9 @@ public static class Seanslar
         (SeansAmaci.MacHazirligi, new[] { "maç hazırlığı", "maç önizleme", "maç provası", "mac hazirligi", "match preview", "match practice", "match preparation", "préparation", "avant-match", "veille de match" }),
         (SeansAmaci.Toparlanma, new[] { "rejenerasyon", "toparlanma", "recovery", "regeneration", "récupération", "recuperation" }),
         (SeansAmaci.Dinlenme, new[] { "dinlenme", "izin", "rest", "repos", "no training", "antrenman yok" }),
-        (SeansAmaci.DuranTop, new[] { "duran top", "set piece", "coups de pied arrêtés", "coups de pied arretes", "cpa" }),
-        (SeansAmaci.Sosyal, new[] { "takım kaynaş", "kaynaşma", "team bonding", "cohésion", "cohesion", "sosyal" }),
-        (SeansAmaci.Fiziksel, new[] { "fiziksel", "kondisyon", "dayanıklılık", "dayaniklilik", "physical", "endurance", "resistance", "résistance", "physique", "sürat", "quickness" }),
+        (SeansAmaci.DuranTop, new[] { "duran top", "set piece", "korner", "corner", "serbest vuruş", "serbest vurus", "free kick", "penaltı", "penalti", "penalties", "penalty", "coups de pied arrêtés", "coups de pied arretes", "cpa" }),
+        (SeansAmaci.Sosyal, new[] { "community outreach", "toplum", "takım kaynaş", "kaynaşma", "team bonding", "cohésion", "cohesion", "sosyal" }),
+        (SeansAmaci.Fiziksel, new[] { "conditioning", "fiziksel", "kondisyon", "dayanıklılık", "dayaniklilik", "physical", "endurance", "resistance", "résistance", "physique", "sürat", "quickness" }),
         (SeansAmaci.Teknik, new[] { "teknik", "technical", "technique", "atak", "savunma", "attacking", "defending", "attack", "defence", "defense", "kaleci", "goalkeeping", "şut", "shooting", "possession", "topa sahip olma" })
     };
 
@@ -114,16 +115,40 @@ public static class Seanslar
             }
         }
 
-        foreach (var (amac, kelimeler) in AmacKelimeleri)
+        // FM27'nin beş seans kategorisi: Taktik Anlayışı, Maç Hazırlığı, Futbol Gelişimi, Fiziksel ve Toparlanma, Ders Dışı.
+        // Kategori biliniyorsa ad tek başına yanıltmasın (ör. "Defensive Block" bir maç hazırlığı seansıdır, teknik değil).
+        var kategori = Kucuk(kategoriAdi);
+        var adAmaci = AmacKelimeleri.Where(x => x.Kelimeler.Any(k => KelimeVar(ad, k))).Select(x => (SeansAmaci?)x.Amac).FirstOrDefault();
+
+        if (kategori.Contains("takti") || kategori.Contains("tacti") || kategori.Contains("anlayis") || kategori.Contains("understanding"))
         {
-            if (kelimeler.Any(k => KelimeVar(ad, k)))
-            {
-                return (amac, null);
-            }
+            return (SeansAmaci.Taktik, null);
         }
 
-        // Ad bir şey söylemiyorsa kategori adına bakılır (ör. "Taktik", "Fiziksel").
-        var kategori = Kucuk(kategoriAdi);
+        if (kategori.Contains("hazirl") || kategori.Contains("preparation") || kategori.Contains("preparat"))
+        {
+            return (adAmaci == SeansAmaci.DuranTop ? SeansAmaci.DuranTop : SeansAmaci.MacHazirligi, null);
+        }
+
+        if (kategori.Contains("fizik") || kategori.Contains("physical") || kategori.Contains("physique") || kategori.Contains("recovery") || kategori.Contains("toparlan"))
+        {
+            return (adAmaci is SeansAmaci.Dinlenme or SeansAmaci.Toparlanma ? adAmaci.Value : SeansAmaci.Fiziksel, null);
+        }
+
+        if (kategori.Contains("gelisim") || kategori.Contains("development") || kategori.Contains("developpement"))
+        {
+            return (SeansAmaci.Teknik, null);
+        }
+
+        if (kategori.Contains("ders disi") || kategori.Contains("extra") || kategori.Contains("sosyal"))
+        {
+            return (SeansAmaci.Sosyal, null);
+        }
+
+        if (adAmaci is { } bulunan)
+        {
+            return (bulunan, null);
+        }
 
         if (kategori.Contains("takti") || kategori.Contains("tacti"))
         {
@@ -141,7 +166,6 @@ public static class Seanslar
         return (SeansAmaci.Bilinmiyor, null);
     }
 
-    /// <summary>Küçük harf + aksan katlama: "BASKI HATTI", "Baskı hattı" ve "baski hatti" aynı metne iner.</summary>
     /// <summary>Oyunun kendi tavsiye metninde ("Antrenmanlarda Baskı Hattı kurgularına daha fazla zaman…") adı geçen alanlar.</summary>
     public static List<TaktikAlan> MetindekiAlanlar(string? metin)
     {
@@ -149,6 +173,7 @@ public static class Seanslar
         return AlanKelimeleri.Where(a => a.Kelimeler.Any(k => m.Contains(Kucuk(k)))).Select(a => a.Alan).Distinct().ToList();
     }
 
+    /// <summary>Küçük harf + aksan katlama: "BASKI HATTI", "Baskı hattı" ve "baski hatti" aynı metne iner.</summary>
     internal static string Kucuk(string metin)
     {
         var duz = (metin ?? "").Replace('İ', 'i').Replace('I', 'i').Replace('ı', 'i').ToLowerInvariant().Normalize(NormalizationForm.FormD);
