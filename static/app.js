@@ -103,6 +103,7 @@ async function loadProgram(cityId = null, forceRefresh = false, opts = {}) {
     renderHeaderAndTabs();
     loadDates();
     if (STATE.activeTab === 'surprise') loadSurprise(false);
+    if (STATE.activeTab === 'sim') { if (!(opts.keepRace && sameCity)) STATE.simRaceIdx = 0; renderSim(); }
     renderCurrentRace();
     renderValueRadar();
     generateAltiliTicket();
@@ -262,7 +263,7 @@ function selectRace(idx) {
 
 function switchTab(tabName) {
   STATE.activeTab = tabName;
-  const tabs = ['race', 'pace', 'value', 'surprise', 'altili', 'xray'];
+  const tabs = ['race', 'pace', 'value', 'surprise', 'altili', 'xray', 'sim'];
   tabs.forEach(t => {
     const viewEl = document.getElementById(`view-${t}`);
     const navEl = document.getElementById(`nav-${t}`);
@@ -276,6 +277,7 @@ function switchTab(tabName) {
   });
   window.scrollTo({ top: 0, behavior: 'smooth' });
   if (tabName === 'surprise') loadSurprise(false);
+  if (tabName === 'sim') { STATE.simRaceIdx = STATE.currentRaceIndex || 0; renderSim(); }
   if (tabName === 'altili') { showDayiPopup(); loadSurprise(false); loadDayiMaiden(); renderDayi(); }
 }
 
@@ -1522,6 +1524,98 @@ function renderAltiliGroupPicker() {
       ? `<div class="club-card rounded-xl px-3 py-2 text-[11px] text-[#7A1C1C] border-l-4 border-l-[#7A1C1C]">TJK bülteninde "6'LI GANYAN Bu koşudan başlar" işareti bulunamadı; ayaklar tahmini olarak günün son 6 koşusundan kuruldu.</div>`
       : '';
   }
+}
+
+// ------------------------------------------------------------------
+// SİMÜLASYON — koşu 500 kez koşturulur (sim.py): sonuç sırası, derece, boy farkı ve tek tek turlar
+// ------------------------------------------------------------------
+const SIM = {};
+function renderSim() {
+  const p = STATE.program;
+  const tabsEl = document.getElementById('simRaceTabs');
+  const el = document.getElementById('simContent');
+  if (!p || !tabsEl || !el) return;
+  const idx = Math.min(STATE.simRaceIdx || 0, p.races.length - 1);
+  tabsEl.innerHTML = p.races.map((r, i) => `<button onclick="STATE.simRaceIdx=${i}; renderSim()"
+      class="px-2.5 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap ${i === idx ? 'bg-[#0F291E] text-[#F9F6F0]' : 'bg-[#EFECE4] text-[#44403C]'}">${r.race_no}. Koşu <span class="mono opacity-80">${r.time}</span></button>`).join('');
+  const race = p.races[idx];
+  const key = `${p.date}|${p.city_id}|${race.race_no}`;
+  const d = SIM[key];
+  if (!d) {
+    el.innerHTML = `<div class="club-card rounded-xl p-5 text-center text-xs text-[#57534E]">⏳ ${race.race_no}. koşu 500 kez koşturuluyor… (atların geçmiş dereceleri ilk açılışta TJK'dan çekilir)</div>`;
+    fetchJSON(`/api/simulate?date=${encodeURIComponent(p.date)}&city_id=${encodeURIComponent(p.city_id)}&race_no=${race.race_no}`)
+      .then(x => { SIM[key] = x; if (STATE.activeTab === 'sim') renderSim(); })
+      .catch(e => { if (STATE.activeTab === 'sim') el.innerHTML = `<div class="club-card rounded-xl p-4 text-xs text-[#7A1C1C]">⚠️ Simülasyon yapılamadı: ${esc(e.message)} <button onclick="renderSim()" class="underline font-bold">Tekrar dene</button></div>`; });
+    return;
+  }
+  const maxPos = Math.min(d.rows.length, 8);
+  const posBar = r => `<div class="flex items-end gap-px h-6" title="${r.pos_dist.slice(0, maxPos).map((v, i) => `${i + 1}.: %${v}`).join(' • ')}">
+      ${r.pos_dist.slice(0, maxPos).map((v, i) => `<div style="height:${Math.max(2, Math.min(100, v * 1.6))}%;width:6px" class="${i === 0 ? 'bg-[#0F291E]' : i < 3 ? 'bg-[#A67C37]' : 'bg-[#C8C1B2]'} rounded-t-sm"></div>`).join('')}
+    </div>`;
+  const basisTip = { same: 'aynı pistteki derecelerinden', mixed: 'aynı ve farklı pist derecelerinden', other: 'farklı pist derecelerinden (tahmini)', none: 'derecesi yok: sahanın ortalamasından' };
+  el.innerHTML = `
+    <div class="club-card rounded-xl p-3.5">
+      <div class="flex items-start justify-between gap-2 flex-wrap mb-2">
+        <div>
+          <div class="serif-title text-base font-bold text-[#0F291E]">${race.race_no}. Koşu • ${d.distance} m ${d.surface}</div>
+          <div class="text-[10px] text-[#57534E]">${race.condition || ''} • şans kaynağı: ${d.source}</div>
+        </div>
+        <div class="text-right">
+          <div class="text-[9px] uppercase font-bold text-[#8C5A3C]">Tahmini kazanan derecesi</div>
+          <div class="mono font-extrabold text-[#7A1C1C] text-base">${d.win_time}</div>
+          <div class="text-[9px] mono text-[#57534E]">%80 aralık ${d.win_time_lo} – ${d.win_time_hi}${d.record ? ` • rekor ${d.record}` : ''}</div>
+        </div>
+      </div>
+      <div class="text-[10px] font-extrabold uppercase text-[#0F291E] mb-1">🏁 ${d.n} koşunun sonucu (ortalama bitiş sırasına göre)</div>
+      <div class="overflow-x-auto -mx-1">
+        <table class="w-full text-[11px]">
+          <thead><tr class="text-[9px] uppercase text-[#8C5A3C] font-extrabold border-b border-[#D8D2C5]">
+            <th class="text-left pb-1 px-1">Sıra</th><th class="text-left pb-1 px-1">At</th>
+            <th class="pb-1 px-1 text-right">1.</th><th class="pb-1 px-1 text-right">İlk 3</th><th class="pb-1 px-1 text-right">Ort.</th>
+            <th class="pb-1 px-1" title="1.'den ${maxPos}.'ye bitirme sıklığı">Sıra dağılımı</th><th class="pb-1 px-1 text-right">Derece</th><th class="pb-1 px-1 text-right">Fark</th>
+          </tr></thead>
+          <tbody class="divide-y divide-[#E8E3D8]">
+            ${d.rows.map((r, i) => `
+              <tr class="sim-row cursor-pointer" style="animation-delay:${i * 60}ms" onclick="selectRace(${idx}); switchTab('race'); openHorseModal(${r.no});">
+                <td class="py-1 px-1 mono font-extrabold ${i === 0 ? 'text-[#7A1C1C]' : 'text-[#0F291E]'}">${r.sim_rank}.</td>
+                <td class="py-1 px-1"><div class="font-bold text-[#18181B] leading-tight">#${r.no} ${r.name}</div><div class="text-[9px] text-[#57534E]">${r.jockey || ''} • ${r.weight} kg</div></td>
+                <td class="py-1 px-1 mono text-right font-extrabold text-[#0F291E]">%${r.win}</td>
+                <td class="py-1 px-1 mono text-right">%${r.top3}</td>
+                <td class="py-1 px-1 mono text-right">${r.avg_pos}</td>
+                <td class="py-1 px-1">${posBar(r)}</td>
+                <td class="py-1 px-1 mono text-right" title="Dayanak: ${basisTip[r.basis] || ''} • %80 aralık ${r.time_lo} – ${r.time_hi}">${r.time}<div class="text-[9px] text-[#78716C]">${r.time_lo}–${r.time_hi}</div></td>
+                <td class="py-1 px-1 mono text-right text-[#57534E]">${i === 0 ? '—' : '+' + Math.max(0, (r.t_sec - d.rows[0].t_sec) / 0.2).toFixed(1) + ' boy'}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="club-card rounded-xl p-3.5">
+      <div class="flex items-center justify-between gap-2 mb-2">
+        <div class="serif-title text-base font-bold text-[#0F291E]">🏇 Tek koşu izle</div>
+        <button onclick="simNextRun('${key}')" class="px-3 py-1.5 rounded-lg bg-[#7A1C1C] text-white text-[12px] font-extrabold">▶ Bir koşu daha koştur</button>
+      </div>
+      <div id="simRun" class="text-[11px] text-[#57534E]">500 turun içinden rastgele bir koşuyu baştan sona görmek için düğmeye basın.</div>
+    </div>
+
+    <div class="text-[9px] text-[#78716C] leading-snug px-1">Nasıl çalışır: her atın geçmiş dereceleri bugünkü mesafe, pist ve kiloya çevrilir; her turda bu derecenin etrafında rastgele bir derece çekilir ve sıralanır. Atların kazanma sıklığı sitenin en iyi tahminine oturtulur (${d.source}). Geçmiş koşularda kazanan derecesi tahmini ortalama ±2 sn tuttu. Fark: tahmini derecenin ilk sıradaki ata göre farkı (1 boy ≈ 0,2 sn). Tahmindir, garanti değildir.</div>`;
+}
+
+function simNextRun(key) {
+  const d = SIM[key];
+  const el = document.getElementById('simRun');
+  if (!d || !el || !d.samples.length) return;
+  STATE.simRunIdx = ((STATE.simRunIdx || 0) + 1) % d.samples.length;
+  const run = d.samples[STATE.simRunIdx];
+  const medal = i => ['🥇', '🥈', '🥉'][i] || `${i + 1}.`;
+  el.innerHTML = `<div class="text-[10px] text-[#8C5A3C] font-bold mb-1">Koşu #${STATE.simRunIdx + 1} / ${d.n}</div>` + run.map((x, i) => `
+    <div class="sim-row flex items-center gap-2 py-1 border-t border-[#E8E3D8] first:border-t-0" style="animation-delay:${i * 180}ms">
+      <span class="w-7 text-center font-extrabold ${i < 3 ? 'text-base' : 'mono text-[#57534E]'}">${medal(i)}</span>
+      <span class="flex-1 font-bold text-[#18181B]">#${x.no} ${x.name}</span>
+      <span class="mono text-[#7A1C1C] font-bold">${x.time}</span>
+      <span class="mono text-[10px] text-[#57534E] w-14 text-right">${i === 0 ? '' : '+' + x.gap_boy + ' boy'}</span>
+    </div>`).join('');
 }
 
 // ------------------------------------------------------------------

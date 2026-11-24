@@ -2838,6 +2838,33 @@ def race_maiden(date_str, city_id, race_no):
     return data
 
 
+def race_simulation(date_str, city_id, race_no):
+    """Koşuyu 500 kez koşturur (sim.py). Şans hedefi: Maiden tipi koşuda Maiden modeli, diğerlerinde
+    AGF varsa halkın düzeltilmiş şansı, yoksa model."""
+    import maiden as MD
+    import sim as SIM
+    key = f"sim_{date_str}_{city_id}_{race_no}"
+    data = cache_get(key, 300)
+    if data is None:
+        is_today = date_str == tr_now().strftime("%d/%m/%Y")
+        prog, race = _race_of(date_str, city_id, race_no, fresh=is_today)
+        if MD.is_maiden_race(race):
+            md = race_maiden(date_str, city_id, race_no)
+            targets = {r["no"]: r["maiden_prob"] for r in md["rows"]}
+            source = "Maiden modeli"
+        else:
+            targets = {}
+            for h in race["horses"]:
+                s = h.get("simulation") or {}
+                targets[h["no"]] = s["market_prob"] if s.get("market_prob") is not None else s.get("win_prob", 0)
+            has_agf = any((h.get("simulation") or {}).get("market_prob") is not None for h in race["horses"])
+            source = "AGF (halkın düzeltilmiş şansı)" if has_agf else "model (AGF yok)"
+        data = SIM.simulate_race(race, prog["date"], targets, lambda at: MD._history_rows(at)[1])
+        data["source"] = source
+        cache_set(key, data)
+    return data
+
+
 def race_family(date_str, city_id, race_no):
     import maiden as MD
     key = f"maidenfam_{date_str}_{city_id}_{race_no}"
@@ -2916,7 +2943,7 @@ def warm_once(days=2):
             except Exception:
                 continue
             for r in prog["races"]:
-                jobs = [("antrenör", race_trainers), ("form tablosu", race_maiden)]
+                jobs = [("antrenör", race_trainers), ("form tablosu", race_maiden), ("simülasyon", race_simulation)]
                 if MD.is_maiden_race(r):
                     jobs += [("aile", race_family)]
                 for label, fn in jobs:
@@ -3104,7 +3131,7 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
                 self.send_json(500, {"ok": False, "error": str(e)})
             return
 
-        if parsed.path in ("/api/maiden", "/api/maiden_family", "/api/race_trainers"):
+        if parsed.path in ("/api/maiden", "/api/maiden_family", "/api/race_trainers", "/api/simulate"):
             params = urllib.parse.parse_qs(parsed.query)
             date_str = params.get("date", [tr_now().strftime("%d/%m/%Y")])[0]
             city_id = params.get("city_id", [""])[0]
@@ -3112,7 +3139,8 @@ class TurfQuantHandler(SimpleHTTPRequestHandler):
             try:
                 if not (re.match(r'^\d{2}/\d{2}/\d{4}$', date_str) and city_id.isdigit() and race_no.isdigit()):
                     raise ValueError("Geçersiz parametre")
-                fn = {"/api/maiden": race_maiden, "/api/maiden_family": race_family, "/api/race_trainers": race_trainers}[parsed.path]
+                fn = {"/api/maiden": race_maiden, "/api/maiden_family": race_family, "/api/race_trainers": race_trainers,
+                      "/api/simulate": race_simulation}[parsed.path]
                 self.send_json(200, {"ok": True, "data": fn(date_str, city_id, int(race_no))})
             except Exception as e:
                 self.send_json(500, {"ok": False, "error": str(e)})
