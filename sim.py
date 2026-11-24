@@ -109,6 +109,12 @@ def simulate(entries, n=N_SIMS, seed=7, iters=6, samples=25):
     win_times = []
     margins = [[] for _ in range(k)]
     sample_runs = []
+    # Sürpriz: şans sıralamasında ilk 3 favori dışındaki bir atın birinci gelmesi
+    favs = set(sorted(range(k), key=lambda i: -entries[i]["target"])[:3])
+    surprise_runs = []
+    surprise_wins = 0
+    surprise_win_times = [[] for _ in range(k)]
+    long_top3 = 0  # ilk 3'ünde en az bir favori dışı at olan koşu
     for s in range(n):
         ts = [entries[i]["mu"] + shift[i] + entries[i]["sd"] * zs[s][i] + shared[s] for i in range(k)]
         order = sorted(range(k), key=lambda i: ts[i])
@@ -117,8 +123,16 @@ def simulate(entries, n=N_SIMS, seed=7, iters=6, samples=25):
             times[i].append(ts[i])
             margins[i].append(ts[i] - ts[order[0]])
         win_times.append(ts[order[0]])
+        run = [{"no": entries[i]["no"], "t": ts[i], "gap": ts[i] - ts[order[0]]} for i in order]
         if s < samples:
-            sample_runs.append([{"no": entries[i]["no"], "t": ts[i], "gap": ts[i] - ts[order[0]]} for i in order])
+            sample_runs.append(run)
+        if order[0] not in favs:
+            surprise_wins += 1
+            surprise_win_times[order[0]].append(ts[order[0]])
+            if len(surprise_runs) < samples:
+                surprise_runs.append(run)
+        if any(i not in favs for i in order[:3]):
+            long_top3 += 1
 
     def pct(xs, q):
         xs = sorted(xs)
@@ -136,8 +150,23 @@ def simulate(entries, n=N_SIMS, seed=7, iters=6, samples=25):
             "t_med": pct(times[i], 0.5), "t_lo": pct(times[i], 0.1), "t_hi": pct(times[i], 0.9),
             "margin_med": pct(margins[i], 0.5),
         })
+    surprises = []
+    for i, e in enumerate(entries):
+        if i in favs:
+            continue
+        w, t3 = pos_counts[i][0], sum(pos_counts[i][:3])
+        if t3 == 0:
+            continue
+        surprises.append({"no": e["no"], "wins": w, "top3": t3, "win_pct": round(w / n * 100, 1),
+                          "top3_pct": round(t3 / n * 100, 1),
+                          "eq_ganyan": round(n / w, 1) if w else None,
+                          "t_win": pct(surprise_win_times[i], 0.5) if surprise_win_times[i] else None})
+    surprises.sort(key=lambda x: (-x["wins"], -x["top3"]))
     return {"rows": out, "win_time_med": pct(win_times, 0.5), "win_time_lo": pct(win_times, 0.1),
-            "win_time_hi": pct(win_times, 0.9), "n": n, "samples": sample_runs}
+            "win_time_hi": pct(win_times, 0.9), "n": n, "samples": sample_runs,
+            "favorites": [entries[i]["no"] for i in sorted(favs, key=lambda i: -entries[i]["target"])],
+            "surprise_wins": surprise_wins, "surprise_top3_runs": long_top3,
+            "surprises": surprises, "surprise_samples": surprise_runs}
 
 
 def fmt(sec):
@@ -189,9 +218,16 @@ def simulate_race(race, race_date_str, targets, history_of, n=N_SIMS):
     rows.sort(key=lambda r: (r["avg_pos"], -r["win"]))
     for i, r in enumerate(rows):
         r["sim_rank"] = i + 1
-    samples = [[{"no": x["no"], "name": names[x["no"]]["name"], "time": fmt(x["t"]), "gap_boy": round(x["gap"] / BOY_SEC, 1)}
-                for x in run] for run in res["samples"]]
+    def pack(runs):
+        return [[{"no": x["no"], "name": names[x["no"]]["name"], "time": fmt(x["t"]), "gap_boy": round(x["gap"] / BOY_SEC, 1)}
+                 for x in run] for run in runs]
+    samples = pack(res["samples"])
+    surprises = [dict(x, name=names[x["no"]]["name"], jockey=names[x["no"]].get("jockey"),
+                      t_win=fmt(x["t_win"])) for x in res["surprises"]]
     return {"race_no": race["race_no"], "n": res["n"], "distance": dist, "surface": surface,
             "record": race.get("record_time"), "win_time": fmt(res["win_time_med"]),
             "win_time_lo": fmt(res["win_time_lo"]), "win_time_hi": fmt(res["win_time_hi"]),
-            "rows": rows, "samples": samples}
+            "rows": rows, "samples": samples,
+            "favorites": res["favorites"], "surprise_wins": res["surprise_wins"],
+            "surprise_top3_runs": res["surprise_top3_runs"], "surprises": surprises,
+            "surprise_samples": pack(res["surprise_samples"])}

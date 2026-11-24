@@ -36,3 +36,14 @@ class SimTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SimSurpriseTests(unittest.TestCase):
+    def test_surprises_exclude_favorites(self):
+        entries = [{"no": i + 1, "mu": 85.0, "sd": 1.0, "target": t}
+                   for i, t in enumerate((0.4, 0.25, 0.15, 0.1, 0.06, 0.04))]
+        out = sim.simulate(entries, n=500)
+        self.assertEqual(out["favorites"], [1, 2, 3])
+        self.assertTrue(all(x["no"] not in (1, 2, 3) for x in out["surprises"]))
+        self.assertEqual(out["surprise_wins"], sum(x["wins"] for x in out["surprises"]))
+        self.assertTrue(all(run[0]["no"] not in (1, 2, 3) for run in out["surprise_samples"]))

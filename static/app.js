@@ -1591,6 +1591,8 @@ function renderSim() {
       </div>
     </div>
 
+    ${simSurpriseHTML(d, key, idx)}
+
     <div class="club-card rounded-xl p-3.5">
       <div class="flex items-center justify-between gap-2 mb-2">
         <div class="serif-title text-base font-bold text-[#0F291E]">🏇 Tek koşu izle</div>
@@ -1602,17 +1604,56 @@ function renderSim() {
     <div class="text-[9px] text-[#78716C] leading-snug px-1">Nasıl çalışır: her atın geçmiş dereceleri bugünkü mesafe, pist ve kiloya çevrilir; her turda bu derecenin etrafında rastgele bir derece çekilir ve sıralanır. Atların kazanma sıklığı sitenin en iyi tahminine oturtulur (${d.source}). Geçmiş koşularda kazanan derecesi tahmini ortalama ±2 sn tuttu. Fark: tahmini derecenin ilk sıradaki ata göre farkı (1 boy ≈ 0,2 sn). Tahmindir, garanti değildir.</div>`;
 }
 
-function simNextRun(key) {
+function simSurpriseHTML(d, key, idx) {
+  if (!d.surprises) return '';
+  const favs = (d.favorites || []).map(no => `#${no}`).join(', ');
+  const pct = v => Math.round(v / d.n * 100);
+  const list = d.surprises.slice(0, 6);
+  return `
+    <div class="club-card rounded-xl p-3.5 border-l-4 border-l-[#7A1C1C]">
+      <div class="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+        <div class="serif-title text-base font-bold text-[#7A1C1C]">😮 500 Koşudaki Sürprizler</div>
+        ${d.surprise_samples && d.surprise_samples.length ? `<button onclick="simNextRun('${key}', 'surprise')" class="px-3 py-1.5 rounded-lg bg-[#7A1C1C] text-white text-[12px] font-extrabold">▶ Sürprizli bir koşu göster</button>` : ''}
+      </div>
+      <div class="text-[11px] text-[#18181B] leading-snug mb-2">
+        İlk 3 favori (${favs}) dışında bir at <strong>${d.n} koşudan ${d.surprise_wins} tanesinde (%${pct(d.surprise_wins)})</strong> birinci geldi;
+        <strong>${d.surprise_top3_runs} koşuda (%${pct(d.surprise_top3_runs)})</strong> ilk 3'e en az bir favori dışı at girdi.
+      </div>
+      ${list.length ? `
+        <table class="w-full text-[11px]">
+          <thead><tr class="text-[9px] uppercase text-[#8C5A3C] font-extrabold border-b border-[#D8D2C5]">
+            <th class="text-left pb-1">At</th><th class="text-right pb-1">Birinci</th><th class="text-right pb-1">İlk 3</th>
+            <th class="text-right pb-1" title="500 koşudaki birincilik sıklığına denk gelen ganyan">Eder gny</th><th class="text-right pb-1" title="Sürpriz yaptığı koşulardaki ortalama derece">Kazandığında</th>
+          </tr></thead>
+          <tbody class="divide-y divide-[#E8E3D8]">
+            ${list.map(x => `<tr class="cursor-pointer" onclick="selectRace(${idx}); switchTab('race'); openHorseModal(${x.no});">
+              <td class="py-1"><div class="font-bold text-[#18181B]">#${x.no} ${x.name}</div><div class="text-[9px] text-[#57534E]">${x.jockey || ''}</div></td>
+              <td class="py-1 mono text-right font-extrabold text-[#7A1C1C]">${x.wins} <span class="text-[9px] text-[#57534E] font-normal">(%${x.win_pct})</span></td>
+              <td class="py-1 mono text-right">${x.top3} <span class="text-[9px] text-[#57534E]">(%${x.top3_pct})</span></td>
+              <td class="py-1 mono text-right">${x.eq_ganyan || '—'}</td>
+              <td class="py-1 mono text-right">${x.t_win || '—'}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>` : '<div class="text-[11px] text-[#57534E]">Bu koşuda favori dışı at neredeyse hiç kazanmadı.</div>'}
+      <div class="text-[9px] text-[#78716C] mt-1.5">Eder ganyan: 500 koşudaki birincilik sıklığına denk gelen ganyan. Gerçek ganyanı bundan yüksekse değerli sürpriz olabilir.</div>
+    </div>`;
+}
+
+function simNextRun(key, kind) {
   const d = SIM[key];
   const el = document.getElementById('simRun');
-  if (!d || !el || !d.samples.length) return;
-  STATE.simRunIdx = ((STATE.simRunIdx || 0) + 1) % d.samples.length;
-  const run = d.samples[STATE.simRunIdx];
+  const runs = d && (kind === 'surprise' ? d.surprise_samples : d.samples);
+  if (!d || !el || !runs || !runs.length) return;
+  const k = kind === 'surprise' ? 'simSurpIdx' : 'simRunIdx';
+  STATE[k] = ((STATE[k] ?? -1) + 1) % runs.length;
+  const run = runs[STATE[k]];
+  const favs = new Set(d.favorites || []);
   const medal = i => ['🥇', '🥈', '🥉'][i] || `${i + 1}.`;
-  el.innerHTML = `<div class="text-[10px] text-[#8C5A3C] font-bold mb-1">Koşu #${STATE.simRunIdx + 1} / ${d.n}</div>` + run.map((x, i) => `
+  if (kind === 'surprise') el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.innerHTML = `<div class="text-[10px] text-[#8C5A3C] font-bold mb-1">${kind === 'surprise' ? `😮 Sürprizli koşu ${STATE[k] + 1} / ${runs.length} (${d.n} koşudan ${d.surprise_wins} tanesi sürprizli)` : `Koşu #${STATE[k] + 1} / ${d.n}`}</div>` + run.map((x, i) => `
     <div class="sim-row flex items-center gap-2 py-1 border-t border-[#E8E3D8] first:border-t-0" style="animation-delay:${i * 180}ms">
       <span class="w-7 text-center font-extrabold ${i < 3 ? 'text-base' : 'mono text-[#57534E]'}">${medal(i)}</span>
-      <span class="flex-1 font-bold text-[#18181B]">#${x.no} ${x.name}</span>
+      <span class="flex-1 font-bold text-[#18181B]">#${x.no} ${x.name}${i < 3 && !favs.has(x.no) ? ' <span class="px-1 rounded bg-[#7A1C1C] text-white text-[9px] font-extrabold">SÜRPRİZ</span>' : ''}</span>
       <span class="mono text-[#7A1C1C] font-bold">${x.time}</span>
       <span class="mono text-[10px] text-[#57534E] w-14 text-right">${i === 0 ? '' : '+' + x.gap_boy + ' boy'}</span>
     </div>`).join('');
